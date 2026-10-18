@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted for implementation (2026-10-13); gate not yet passed.** The owner started Phase 18 on 2026-10-13 as the next phase, answered section 9 the same day and approved the implementation plan. Branch `phase-18-windows-native`, from `main` at `ff74397`. This ADR supersedes the sentence "Windows is not supported" in `docs/adr/0001` for Windows x64 with MSVC, CPU only; everything else in ADR 0001 stands.
+**Accepted; Phase 18 COMPLETE (2026-10-18).** The owner accepted the Phase 18 gate on 2026-10-18 on the evidence in section 10 (section 10.4). The owner started Phase 18 on 2026-10-13 as the next phase, answered section 9 the same day and approved the implementation plan. Branch `phase-18-windows-native`, from `main` at `ff74397`. This ADR supersedes the sentence "Windows is not supported" in `docs/adr/0001` for Windows x64 with MSVC, CPU only; everything else in ADR 0001 stands.
 
 Labels follow `docs/adr/0014`–`0021`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9).
 
@@ -136,7 +136,7 @@ OpenBLAS runs its own threads for BLAS calls. MENOS still does not set `OPENBLAS
 
 ## 10. Gate evidence
 
-Recorded on 2026-10-14 on commit `7fa38ce`, the fix for section 3.1 (MSVC 14.50 pinned, 14.51 refused at configure time, the C++ suite run in CI). Every run below is on that commit. An earlier record on `916d98f` was superseded because section 3.1 found that wheels built with MSVC 14.51 are miscompiled. **The owner has not yet confirmed the gate.**
+Recorded on 2026-10-14 on commit `7fa38ce`, the fix for section 3.1 (MSVC 14.50 pinned, 14.51 refused at configure time, the C++ suite run in CI). Every run below is on that commit. An earlier record on `916d98f` was superseded because section 3.1 found that wheels built with MSVC 14.51 are miscompiled. The owner accepted the gate on 2026-10-18 (section 10.4).
 
 ### 10.1 Runs
 
@@ -163,3 +163,7 @@ Recorded on 2026-10-14 on commit `7fa38ce`, the fix for section 3.1 (MSVC 14.50 
 - The Microsoft bug report on MSVC 14.51 (section 3.1) is drafted but not filed, and the reduced reproducer in it was not confirmed standalone.
 - The documentation site was not built in either run (no Node.js in WSL).
 - A Windows machine without Visual Studio installed was not used to test a wheel: delvewheel's vendoring of the C++ runtime is the mechanism, and its output was inspected rather than run on such a machine.
+
+### 10.4 Owner acceptance (2026-10-18)
+
+The owner accepted the Phase 18 gate on 2026-10-18 on the evidence above, recorded on `7fa38ce`. No ruling was made. The branch had already been merged into `main` (`8742433`) before the gate was decided. Later Windows runs on the Phase 19 and 20 commits are recorded in their own ADRs: `scripts\verify-windows.ps1` exit 0 on `bb720d8` (`docs/adr/0023` section 10) and on `5da898e` (`docs/adr/0024` section 10). Phase 18 is COMPLETE.

@@ -10,7 +10,7 @@ The authoritative plan is `docs/BUILD_PLAN.md`. Read the current phase specifica
 
 ## Current phase
 
-**Phase 20 is COMPLETE: the owner instructed on 2026-10-17 that its gate be marked passed once every criterion passed, and it was recorded passed on 2026-10-18, on the evidence in `docs/adr/0024` section 10 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `5da898e`), recorded in section 10.7. Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is STARTED; its gate is not passed. Phases 12–17 are COMPLETE. The rest of the interoperability roadmap (Phases 21–26) in `docs/BUILD_PLAN.md` is a proposal only, and the owner sets its order and scope.**
+**Phase 20 is COMPLETE: the owner instructed on 2026-10-17 that its gate be marked passed once every criterion passed, and it was recorded passed on 2026-10-18, on the evidence in `docs/adr/0024` section 10 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `5da898e`), recorded in section 10.7. Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is COMPLETE (gate accepted 2026-10-18 on the evidence on `7fa38ce`, `docs/adr/0022` section 10.4). Phases 12–17 are COMPLETE. On 2026-10-18 the owner placed the memory roadmap (Phases 21–23: memory accounting and copy removal, CUDA memory efficiency, tiered VRAM/RAM/disk memory) next in `docs/BUILD_PLAN.md`; Phase 21 is NOT STARTED and starts only on the owner's instruction. The rest of the interoperability roadmap, renumbered to Phases 24–29, is a proposal only, and the owner sets its order and scope.**
 
 Platform note (2026-10-02, `docs/adr/0014` section 17): the CUDA backend supports toolkits 12.0 and later. On the WSL machine (driver 566.14), only the `cuda12-dev`/`cuda12-release` presets reach the GPU; `scripts/lsan-wsl-libcuda.supp` suppresses, by path, a leak inside WSL's CUDA driver shim. Git inside WSL has no identity configured; commits use the repository's existing author.
 
@@ -102,7 +102,7 @@ Invariants:
 
 ## Phase 18
 
-**Native Windows (MSVC).** Specification and gate: `docs/BUILD_PLAN.md`, Phase 18. Design: `docs/adr/0022`. The owner started the phase on 2026-10-13 as the next phase, renumbered the proposed interoperability roadmap to Phases 19–26, answered section 9 and approved the plan the same day. Branch `phase-18-windows-native`. **STARTED; gate not passed.**
+**Native Windows (MSVC).** Specification and gate: `docs/BUILD_PLAN.md`, Phase 18. Design: `docs/adr/0022`. The owner started the phase on 2026-10-13 as the next phase, renumbered the proposed interoperability roadmap to Phases 19–26, answered section 9 and approved the plan the same day. Branch `phase-18-windows-native`, merged to `main` in `8742433`. **COMPLETE (frozen): the owner accepted the gate on 2026-10-18** on the evidence in `docs/adr/0022` section 10 (`7fa38ce`), recorded in section 10.4.
 
 Scope decisions: Windows x64, MSVC, CPU only (CUDA on Windows is refused at configure time); wheels for CPython 3.10–3.14 `win_amd64`; MSVC ASan in the `windows-dev` preset, with UBSan/LSan coverage staying in the Linux `verify.sh`; LAPACK from the official OpenBLAS 0.3.34 x64 (LP64) release, pinned by SHA-256 and shipped in the wheel; any Windows-only last-bit numeric failure goes to the owner, never a tolerance change. Windows verification: `scripts/verify-windows.ps1`; Linux verification stays `scripts/verify.sh` in the WSL clone.
 
