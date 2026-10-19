@@ -30,6 +30,12 @@ $Installer = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Install
 $env:PATH = "$Installer;$env:PATH"
 $VsPath = & vswhere.exe -latest -products * `
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+# vswhere hides pre-release installs (for example Visual Studio 2026 Insiders)
+# unless asked; look for one only when no release install has the tools.
+if (-not $VsPath) {
+    $VsPath = & vswhere.exe -latest -prerelease -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
 if (-not $VsPath) { Fail "no Visual Studio installation with the x64 C++ tools" }
 Import-Module (Join-Path $VsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
 # The 14.50 toolset is pinned: 14.51 miscompiles MENOS and CMake refuses it
