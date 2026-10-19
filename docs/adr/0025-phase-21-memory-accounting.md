@@ -220,4 +220,60 @@ The owner took the recommended option, (a), for every question:
 
 ## 10. Gate evidence
 
-Not started.
+### 10.1 Step 1: the measurements before any change — [MEASURED], 2026-10-20
+
+Measured with the step-1 tools (`tests/memory`) and with the engines and runtime unchanged from `1f89192`. Linux: the WSL clone, `release` and `cuda12-release` presets (g++, RTX 4060 Laptop GPU, driver 566.14). Windows: `windows-release` (MSVC 14.50). Tracked = the heap-tracker peak above the live bytes at entry. RSS Δ = `VmHWM` after the run minus `VmRSS` before it, in a fresh process, after a high-water reset (`/proc/self/clear_refs`). B = the same figure for the engine's 1-qubit fixture. Bytes.
+
+| Fixture | Estimate | Reported actual | Tracked, Linux | Tracked, Windows | RSS Δ, Linux | B, Linux |
+|---|---|---|---|---|---|---|
+| dense_statevector (n = 18) | 4 194 304 | 4 194 304 | 8 389 600 | 8 389 855 | 8 900 608 | 847 872 |
+| dense_counts (S = 20 000) | 4 194 304 | 4 194 304 | 4 712 304 | 4 712 415 | 5 615 616 | 782 336 |
+| dense_expectation | 4 194 304 | 4 194 304 | 4 194 560 | 4 194 560 | 4 804 608 | 835 584 |
+| dense_all | 4 194 304 | 4 194 304 | 8 906 608 | 8 906 758 | 9 678 848 | 794 624 |
+| dense_region_counts (n = 16, sampler) | 1 048 576 | 1 048 576 | 4 194 360 | 4 194 438 | 6 197 248 | 778 240 |
+| dense_statevector_24 (probe only) | 268 435 456 | 268 435 456 | — | — | 537 571 328 | 847 872 |
+| dense_cuda_statevector | 4 194 304 (device 4 194 304) | 4 194 304 | 8 388 608 | n/a (no CUDA) | 8 732 672 | 782 336 |
+| dense_cuda_counts | 4 194 304 | 4 194 304 | 4 712 304 | n/a | 5 115 904 | 700 416 |
+| dense_cuda_expectation | 0 (device 4 194 304) | 4 194 304 | 16 432 | n/a | 720 896 | 720 896 |
+| dense_cuda_all | 4 194 304 | 4 194 304 | 8 906 656 | n/a | 8 982 528 | 667 648 |
+| dense_cuda_region_counts | 1 048 576 | 1 048 576 | 4 194 360 | n/a | 5 984 256 | 761 856 |
+| dense_cuda_statevector_24 (probe only) | 268 435 456 | 268 435 456 | — | n/a | 536 940 544 | 688 128 |
+| density_matrix_counts (n = 8) | 1 050 880 | 1 050 624 | 1 228 064 | 1 228 175 | 1 691 648 | 774 144 |
+| density_matrix_counts_readout | 1 050 880 | 1 050 624 | 1 083 400 | 1 083 615 | 1 499 136 | 790 528 |
+| density_matrix_expectation | 1 048 832 | 1 048 576 | 1 049 096 | 1 049 096 | 1 515 520 | 724 992 |
+| density_matrix_region_counts | 1 050 880 | 1 050 624 | 1 063 000 | 1 063 039 | 1 409 024 | 806 912 |
+| trajectory_counts (n = 14, N = S = 300) | 396 800 | 396 800 | 1 074 384 | 1 074 654 | 2 002 944 | 786 432 |
+| trajectory_expectation | 265 728 | 265 728 | 269 272 | 269 344 | 782 336 | 774 144 |
+| stabilizer_counts (n = 256) | 16 416 | 16 416 | 2 145 464 | 2 143 685 | 3 219 456 | 524 288 |
+| stabilizer_expectation | 16 416 | 16 416 | 78 032 | 78 149 | 610 304 | 524 288 |
+| stabilizer_region_counts | 16 416 | 16 416 | 2 096 416 | 2 096 527 | 3 096 576 | 475 136 |
+| pauli_expectation (n = 30) | 24 576 | 64 | 25 824 | 25 863 | 663 552 | 458 752 |
+| mps_counts (n = 40, Exact) | 37 504 | **535 168** | 1 235 496 | 1 237 964 | 4 390 912 | 778 240 |
+| mps_expectation (Exact) | 37 504 | **535 168** | 607 704 | 609 225 | 3 604 480 | 856 064 |
+| mps_counts_controlled (χ ≤ 16) | 273 024 | 253 824 | 673 016 | 675 340 | 3 817 472 | 815 104 |
+| mps_region_counts (Exact) | 37 504 | **535 168** | 1 123 383 | 1 126 161 | 4 014 080 | 798 720 |
+| tensor_network_expectation (n = 14) | 8 192 | 1 024 | 117 584 | 111 417 | 757 760 | 737 280 |
+| run_dense_statevector | 4 194 304 | 4 194 304 | 8 408 179 | 8 408 344 | see below | |
+| run_factorized_statevector | 4 202 496 | 4 202 496 | 4 330 624 | 4 316 309 | see below | |
+| run_factorized_counts | 8 192 | 8 192 | 998 592 | 998 340 | see below | |
+| run_factorized_expectation | 8 192 | 8 192 | 395 316 | 407 452 | see below | |
+| run_cut_expectation | 512 | 512 | 39 836 | 40 120 | see below | |
+| run_mitigated (3 runs, estimates summed) | 16 785 568 | 16 785 408 | 16 915 399 | 16 914 309 | see below | |
+
+What these show:
+
+- **Every fixture's tracked peak is above its estimate, on both platforms.** The two platforms agree to within a few hundred bytes. Every figure in section 1.2 is confirmed in direction, and the largest gaps are where section 1.2 put them:
+  - The statevector copy: dense and CUDA dense are 2.00× at n = 18. At n = 24 the RSS Δ is 537.6 MB against an estimate of 268.4 MB.
+  - The counts sampler: 4.0× its estimate for a 16-qubit region.
+  - The stabilizer's working copies and counts: 130× the bit-word estimate for counts at n = 256.
+  - The per-shot trajectory table: 2.7×.
+- **The MPS bond exceeds the Schmidt-rank bound under Exact (Q7: confirmed).** The engine's own `actual_bytes` for the final state is 535 168 against an estimate of 37 504. A diagnostic run of the fixture's circuit (40 qubits, a 5-layer nearest-neighbour brick) through `apply_gate` with `AccuracyPolicy::Exact` gave these bonds against `compute_schmidt_rank_bound`:
+  - cuts 3–35 alternate 16 against a bound of 4 and 32 against a bound of 8;
+  - cuts 0–2 and 36–38 equal their bounds (2, 4, 8).
+  - The hand trace of section 1.2 also holds: H(0) then CX(0,5) on 6 qubits leaves bonds 2, 4, 4, 4, 2 against bounds that are all 2.
+
+  Cause: under Exact every split keeps min(m, n) singular values, numerically zero ones included (`apply_gate.cpp:89-90`). So a bond grows to twice its neighbour's, not to twice its own true rank. The existing consistency suite (`tests/engines/mps/schmidt_rank_bound_consistency_test.cpp`, Phase 6 criterion 2: "the rank bound is never smaller than the bond dimension actually reached") passes only because its circuits are short enough that the two coincide. The same bond figures feed the MPS work estimate (χ³), so MPS time estimates are low by the same factor.
+- **The RSS check needs B.** B is 0.5–0.9 MB on Linux and 0.08–0.16 MB on Windows for every engine fixture. It is measured, not constant: a fresh process's startup and the first allocations of the C++ runtime.
+- **Job fixtures on Windows:** `PeakWorkingSetSize` cannot be reset, and the planner's one-time CPU calibration (about 67 MB of RSS on Linux, measured before the reset was added) is larger than every job fixture's own peak. So the probe reports `masked=1` for all six job fixtures on Windows, and their RSS check runs on Linux only. Their heap-tracker check runs on both platforms.
+- **Cross-platform bits:** counts and strategies are bitwise identical between Linux and Windows on all 34 fixtures. Statevectors and expectation values differ in their last bits on 11 of them. Engines and runtime are unchanged from `1f89192`, so this predates Phase 21; the cause was not investigated. The bitwise baseline is therefore kept per platform (`tests/memory/data/baseline_linux.json`, `baseline_windows.json`). Each is deterministic run to run, and the Linux one is identical between `release`, `cuda12-release` and `dev` (Debug, ASan, UBSan).
+- **CUDA versus CPU:** counts and statevectors are bitwise identical. Expectation values differ in their last bits, as documented in Phase 17.

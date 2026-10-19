@@ -216,6 +216,7 @@ add_subdirectory(tests/plan)
 add_subdirectory(tests/runtime)
 add_subdirectory(tests/api)
 add_subdirectory(tests/mitigation)
+add_subdirectory(tests/memory)
 
 if(MENOS_BUILD_PYTHON_BINDINGS)
     add_subdirectory(src/python)

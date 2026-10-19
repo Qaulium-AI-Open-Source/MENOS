@@ -1,0 +1,206 @@
+{
+  "dense_statevector": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "8a8884b93d3f90f1",
+    "expectation": "-"
+  },
+  "dense_counts": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_expectation": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "98430fa7b9441793"
+  },
+  "dense_all": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "8a8884b93d3f90f1",
+    "expectation": "98430fa7b9441793"
+  },
+  "dense_region_counts": {
+    "strategy": "dense",
+    "counts": "2b3789cb8ffddf17",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_b": {
+    "strategy": "dense",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "density_matrix_counts": {
+    "strategy": "density_matrix",
+    "counts": "f3f24553859a14b5",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "density_matrix_counts_readout": {
+    "strategy": "density_matrix",
+    "counts": "78a3305b8f6a02a3",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "density_matrix_expectation": {
+    "strategy": "density_matrix",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "d2878656a3ae6965"
+  },
+  "density_matrix_region_counts": {
+    "strategy": "density_matrix",
+    "counts": "c4a5e4e7a2349b68",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "density_matrix_b": {
+    "strategy": "density_matrix",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "trajectory_counts": {
+    "strategy": "trajectory",
+    "counts": "598f41e4133cb325",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "trajectory_expectation": {
+    "strategy": "trajectory",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "f5b0009bffa75ae6"
+  },
+  "trajectory_b": {
+    "strategy": "trajectory",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "stabilizer_counts": {
+    "strategy": "stabilizer",
+    "counts": "1df8588d28fcdb82",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "stabilizer_expectation": {
+    "strategy": "stabilizer",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "54cee3ac002f0f78"
+  },
+  "stabilizer_region_counts": {
+    "strategy": "stabilizer",
+    "counts": "6082b83bf9901fa7",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "stabilizer_b": {
+    "strategy": "stabilizer",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "pauli_expectation": {
+    "strategy": "pauli",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "01769fd40f84d7b1"
+  },
+  "pauli_b": {
+    "strategy": "pauli",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "88201fb960ff6465"
+  },
+  "mps_counts": {
+    "strategy": "mps",
+    "counts": "4a31c6a721b43ced",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "mps_expectation": {
+    "strategy": "mps",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "03caedeae1ee0dad"
+  },
+  "mps_counts_controlled": {
+    "strategy": "mps",
+    "counts": "7c48a32f1af5d548",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "mps_region_counts": {
+    "strategy": "mps",
+    "counts": "ffde160a9ca7ce49",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "mps_b": {
+    "strategy": "mps",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "tensor_network_expectation": {
+    "strategy": "tensor_network",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "451432321a9e7c14"
+  },
+  "tensor_network_b": {
+    "strategy": "tensor_network",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "603766a548448382"
+  },
+  "run_dense_statevector": {
+    "strategy": "DirectDense",
+    "counts": "-",
+    "statevector": "8a8884b93d3f90f1",
+    "expectation": "-"
+  },
+  "run_factorized_statevector": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "e79510c18b4d1441",
+    "expectation": "-"
+  },
+  "run_factorized_counts": {
+    "strategy": "Factorized",
+    "counts": "02cc67efd428ef7a",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "run_factorized_expectation": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "534dd548d5280472"
+  },
+  "run_cut_expectation": {
+    "strategy": "CutAndRecombine",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "bfc01552bf92ef15"
+  },
+  "run_b": {
+    "strategy": "DirectMPS",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "run_mitigated": {
+    "strategy": "DirectDensityMatrix",
+    "counts": "b022f01c32d9fafe",
+    "statevector": "-",
+    "expectation": "ffea56f4226a2691"
+  }
+}
