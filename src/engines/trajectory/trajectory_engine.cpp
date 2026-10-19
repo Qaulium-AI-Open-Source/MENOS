@@ -361,7 +361,6 @@ EngineExecutionResult TrajectoryEngine::execute(const EngineExecutionRequest& re
         term_sums.assign(request.observable->terms.size(), Complex{0.0, 0.0});
     }
     std::map<BitString, std::uint64_t> counts;
-    std::uint64_t distribution_bytes = 0;
 
     Boundaries boundaries{request.monitor};
     for (std::uint64_t t = 0; t < num_trajectories; ++t) {
@@ -385,10 +384,9 @@ EngineExecutionResult TrajectoryEngine::execute(const EngineExecutionRequest& re
         if (request.want_counts && t < request.shots) {
             // After the channel draws: one word for the shot, then one uniform
             // per readout-errored target, in measure_targets order.
-            const dense::CumulativeDistribution distribution(
-                psi, request.measure_targets, request.bitstring_width);
-            distribution_bytes = psi.size_bytes() / 2;  // 8 * 2^n
-            BitString outcome = distribution.sample_one(rng);
+            // One cumulative pass, with no per-shot table (docs/adr/0025).
+            BitString outcome = dense::CumulativeDistribution::sample_once(
+                psi.amplitudes(), request.measure_targets, request.bitstring_width, rng);
             noise::apply_readout(outcome, readouts, rng);
             counts[outcome] += 1;
         }
@@ -397,8 +395,7 @@ EngineExecutionResult TrajectoryEngine::execute(const EngineExecutionRequest& re
 
     EngineExecutionResult result;
     result.statistical = true;
-    result.actual_bytes =
-        checked_add(checked_add(psi.size_bytes(), product_bytes), distribution_bytes);
+    result.actual_bytes = checked_add(psi.size_bytes(), product_bytes);
     if (request.want_counts) {
         result.counts = std::move(counts);
     }

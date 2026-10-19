@@ -4,13 +4,13 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
-#include "engines/dense/state_vector.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
 #include "kernels/cuda/device_buffer.h"
@@ -238,16 +238,20 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
     }
 
     // A statevector or counts request is what forces the transfer back. Both
-    // are served from one copy.
+    // are served from one host copy, which becomes the result's statevector
+    // when one is requested (docs/adr/0025 section 3.3): the device state is
+    // copied straight into it, the CPU sampler reads it, and it is then moved,
+    // never copied again.
     if (request.want_statevector || request.want_counts) {
-        engines::dense::StateVector host_state(static_cast<int>(request.num_qubits),
-                                               request.budget_bytes);
-        buffer.copy_to_host(host_state.amplitudes());
-
-        if (request.want_statevector) {
-            const auto amps = host_state.amplitudes();
-            result.statevector = std::vector<std::complex<double>>(amps.begin(), amps.end());
+        const std::uint64_t host_bytes =
+            common::checked_mul(num_amplitudes, sizeof(std::complex<double>));
+        if (host_bytes > request.budget_bytes) {
+            throw ResourceExceeded("CUDA dense: the host copy needs " + std::to_string(host_bytes) +
+                                   " bytes, budget is " + std::to_string(request.budget_bytes) +
+                                   " bytes");
         }
+        std::vector<std::complex<double>> host(static_cast<std::size_t>(num_amplitudes));
+        buffer.copy_to_host(host);
 
         if (request.want_counts) {
             // The CPU sampler, unchanged. This is what makes counts identical
@@ -256,11 +260,15 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
             const std::span<const std::pair<QubitId, ClbitId>> targets = request.measure_targets;
             if (request.is_sole_region) {
                 result.counts = engines::dense::sample(
-                    host_state, request.shots, request.seed, targets, request.bitstring_width);
+                    host, request.shots, request.seed, targets, request.bitstring_width);
             } else {
                 result.counts_sampler = std::make_unique<engines::dense::CumulativeDistribution>(
-                    host_state, targets, request.bitstring_width);
+                    host, targets, request.bitstring_width);
             }
+        }
+
+        if (request.want_statevector) {
+            result.statevector = std::move(host);
         }
     }
 

@@ -1,6 +1,6 @@
 # The CUDA dense engine. Links menos_engines_dense because it deliberately
-# REUSES that engine's host-side sampler (sample/CumulativeDistribution) and
-# StateVector rather than reimplementing them: that reuse is what makes counts
+# REUSES that engine's host-side sampler (sample/CumulativeDistribution)
+# rather than reimplementing it: that reuse is what makes counts
 # identical between backends for a given seed (docs/adr/0014), so it is shared
 # code, not a layering shortcut.
 add_library(menos_engines_dense_cuda STATIC

@@ -77,7 +77,15 @@ std::map<BitString, std::uint64_t> sample(
     std::uint64_t seed,
     std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
     std::uint32_t bitstring_width) {
-    const std::span<const std::complex<double>> amps = state.amplitudes();
+    return sample(state.amplitudes(), shots, seed, measure_targets, bitstring_width);
+}
+
+std::map<BitString, std::uint64_t> sample(
+    std::span<const std::complex<double>> amps,
+    std::uint64_t shots,
+    std::uint64_t seed,
+    std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+    std::uint32_t bitstring_width) {
     return sample_impl(
         amps.size(),
         [amps](std::size_t basis) { return std::norm(amps[basis]); },

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <complex>
 #include <cstdint>
 #include <map>
 #include <span>
@@ -28,6 +29,15 @@ namespace menos::engines::dense {
 // correlation -- see docs/adr/0005).
 [[nodiscard]] std::map<BitString, std::uint64_t> sample(
     const StateVector& state,
+    std::uint64_t shots,
+    std::uint64_t seed,
+    std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+    std::uint32_t bitstring_width);
+
+// The same, over amplitudes held outside a StateVector: the CUDA backend's
+// host copy, which is the result's own statevector buffer (docs/adr/0025).
+[[nodiscard]] std::map<BitString, std::uint64_t> sample(
+    std::span<const std::complex<double>> amplitudes,
     std::uint64_t shots,
     std::uint64_t seed,
     std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
