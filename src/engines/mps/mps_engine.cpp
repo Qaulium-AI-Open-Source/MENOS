@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "analysis/schmidt_rank_bound.h"
@@ -215,9 +216,24 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
     EngineExecutionResult result;
     result.actual_bytes = actual_bytes_of(state);
 
+    // Before sampling, which takes the state itself rather than a copy
+    // (docs/adr/0025 section 3.3) and moves its orthogonality center. The
+    // expectation therefore reads the same state, in the same gauge, as
+    // before Phase 21.
+    if (request.want_expectation) {
+        std::vector<std::complex<double>> terms;
+        terms.reserve(request.observable->terms.size());
+        for (const auto& [pauli, coefficient] : request.observable->terms) {
+            static_cast<void>(coefficient);  // Applied by the caller (docs/adr/0007).
+            terms.push_back(compute_expectation(state, pauli));
+        }
+        result.expectation_terms = std::move(terms);
+    }
+
     if (request.want_counts) {
         if (request.is_sole_region) {
-            const MPSCountsSampler sampler(state, request.measure_targets, request.bitstring_width);
+            const MPSCountsSampler sampler(
+                std::move(state), request.measure_targets, request.bitstring_width);
             common::Rng rng(request.seed);
             std::map<BitString, std::uint64_t> counts;
             // Per shot, continuing the same counter the gate sweep used. This
@@ -235,18 +251,8 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
             result.counts = std::move(counts);
         } else {
             result.counts_sampler = std::make_unique<MPSCountsSampler>(
-                state, request.measure_targets, request.bitstring_width);
+                std::move(state), request.measure_targets, request.bitstring_width);
         }
-    }
-
-    if (request.want_expectation) {
-        std::vector<std::complex<double>> terms;
-        terms.reserve(request.observable->terms.size());
-        for (const auto& [pauli, coefficient] : request.observable->terms) {
-            static_cast<void>(coefficient);  // Applied by the caller (docs/adr/0007).
-            terms.push_back(compute_expectation(state, pauli));
-        }
-        result.expectation_terms = std::move(terms);
     }
 
     if (stats.any_truncation()) {
