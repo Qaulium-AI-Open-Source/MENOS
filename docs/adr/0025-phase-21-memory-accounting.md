@@ -218,6 +218,8 @@ The owner took the recommended option, (a), for every question:
 - **Q8:** an infeasibility change is allowed only after that path's copy removal, and each is listed in section 10.
 - **Q9:** the gate as written in Q9, with the proposed figures: 1 MiB and 1 KiB allowances, a 2% dense and a 5% MPS benchmark ratio.
 
+**Q7 revisited (2026-10-20), after step 1 measured the bond growth (section 10.1).** The owner was shown that Exact bonds reach 16–32 where the bound is 4–8, which makes both the MPS memory and time estimates low. The owner kept (a): results stay bitwise identical, and the MPS estimates (memory and work units) follow the bond the code actually builds.
+
 ## 10. Gate evidence
 
 ### 10.1 Step 1: the measurements before any change — [MEASURED], 2026-10-20
@@ -277,3 +279,34 @@ What these show:
 - **Job fixtures on Windows:** `PeakWorkingSetSize` cannot be reset, and the planner's one-time CPU calibration (about 67 MB of RSS on Linux, measured before the reset was added) is larger than every job fixture's own peak. So the probe reports `masked=1` for all six job fixtures on Windows, and their RSS check runs on Linux only. Their heap-tracker check runs on both platforms.
 - **Cross-platform bits:** counts and strategies are bitwise identical between Linux and Windows on all 34 fixtures. Statevectors and expectation values differ in their last bits on 11 of them. Engines and runtime are unchanged from `1f89192`, so this predates Phase 21; the cause was not investigated. The bitwise baseline is therefore kept per platform (`tests/memory/data/baseline_linux.json`, `baseline_windows.json`). Each is deterministic run to run, and the Linux one is identical between `release`, `cuda12-release` and `dev` (Debug, ASan, UBSan).
 - **CUDA versus CPU:** counts and statevectors are bitwise identical. Expectation values differ in their last bits, as documented in Phase 17.
+
+### 10.2 Step 2: copy removal — [MEASURED], 2026-10-20
+
+All of section 3.3 is done. Every fixture's outputs are bitwise identical to its platform's step-1 baseline on Linux `release`, `cuda12-release` and Windows `windows-release`. The full suites pass: 735/735 `release`, 801/801 `cuda12-release` (three skips that depend on the device, as before), 736/736 `windows-release`. The direct `zgesdd` call matches `LAPACKE_zgesdd` bit for bit on 158 shapes (`tests/common/svd_lapacke_reference_test.cpp`), on both the Linux LAPACK and Windows OpenBLAS.
+
+The tracked heap peak, Linux, before → after (bytes):
+
+| Fixture | Before | After | Removed |
+|---|---|---|---|
+| dense_statevector | 8 389 600 | 4 195 552 | the result copy, 16·2^n |
+| dense_all | 8 906 608 | 4 712 304 | the result copy |
+| dense_region_counts | 4 194 360 | 1 573 056 | 2^m `BitString`s; the sampler is now 8·2^m |
+| dense_cuda_statevector | 8 388 608 | 4 194 304 | the host `StateVector` |
+| dense_cuda_region_counts | 4 194 360 | 1 573 056 | as dense |
+| density_matrix_counts_readout | 1 083 400 | 1 073 224 | the sampler's `BitString`s |
+| density_matrix_region_counts | 1 063 000 | 1 052 832 | as above |
+| trajectory_counts | 1 074 384 | 288 200 | the per-shot table |
+| mps_counts | 1 235 496 | 698 728 | the sampler's copy of the state |
+| mps_region_counts | 1 123 383 | 698 888 | as above |
+| mps_counts_controlled | 673 016 | 417 592 | as above |
+| run_dense_statevector | 8 408 179 | 4 227 090 | the result copy |
+| run_factorized_counts | 998 592 | 957 792 | region samplers' `BitString`s |
+| run_mitigated | 16 915 399 | 16 874 519 | the sampler's `BitString`s |
+
+At the ADR's Q9 size, n = 24, the RSS Δ of a statevector job fell from 537 571 328 to 268 996 608 bytes (CPU), and from 536 940 544 to 268 378 112 bytes (CUDA host).
+
+As built, differing from section 3.3:
+
+- **MPS order.** The MPS engine now computes the expectation before sampling, because sampling consumes the state. The expectation reads the same state in the same gauge as before. The Phase 11 boundaries are unchanged in kind and number: the expectation loop has none.
+- **SVD.** The direct call releases its input and workspace before building the row-major outputs, so `a_copy` and LAPACKE's internal copies are gone. This is reflected in `mps_*` as part of the "after" figures.
+- **Trajectory `actual_bytes`.** It no longer adds the 8·2^n per-shot table, which is no longer allocated. Its estimate is corrected in step 3.
