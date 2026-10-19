@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; awaiting owner answers to section 9.** The owner started Phase 21 on 2026-10-20 as the first phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"). Branch `phase-21-memory-accounting`, from `main` at `1f89192`. No implementation, source, test or build file has changed. After section 9 is answered, the implementation plan goes through plan mode and owner approval.
+**Accepted; section 9 answered (2026-10-20).** The owner started Phase 21 on 2026-10-20 as the first phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), and the same day took the recommended option for every question in section 9. Branch `phase-21-memory-accounting`, from `main` at `1f89192`. No implementation, source, test or build file has changed yet; the implementation plan goes through plan mode and owner approval next.
 
 Labels follow `docs/adr/0014`–`0024`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). In section 1 every figure is **[DERIVED] from reading the source at `1f89192`**: x64 release layouts (`sizeof(std::vector)` = 24, a `std::map` node header = 32 bytes), with malloc's per-block overhead not included. None of them has been measured yet. Step 1 of section 6 measures them before any code changes, and section 10 will record the results.
 
@@ -203,6 +203,20 @@ The counts map is charged min(S, 2^m) nodes. Each node is charged `sizeof(std::p
   5. Every feasibility change is listed (Q8).
   6. `Result` and `explain()` carry the new fields (Q2), with tests, including Python.
   7. `scripts/verify.sh` (WSL) and `scripts/verify-windows.ps1` exit 0 on the final commit. Documentation is updated, and every new symbol has a production caller and tests.
+
+### Owner answers (2026-10-20)
+
+The owner took the recommended option, (a), for every question:
+
+- **Q1:** the default host budget stays half of total RAM.
+- **Q2:** `Result` reports the ledger peak of section 3.2.
+- **Q3:** free device memory is re-read at the start of each `plan_job` and printed in `explain()`.
+- **Q4:** the heap tracker with no slack, plus the RSS check against B measured in the same session, on Linux and Windows.
+- **Q5:** `StateVector` uses the default allocator and the statevector is moved into the result.
+- **Q6:** the SVD calls `zgesdd_` directly, with workspace MENOS owns.
+- **Q7:** if step 1 confirms the Exact bond growth, the estimate follows the code's growth rule; results are not changed.
+- **Q8:** an infeasibility change is allowed only after that path's copy removal, and each is listed in section 10.
+- **Q9:** the gate as written in Q9, with the proposed figures: 1 MiB and 1 KiB allowances, a 2% dense and a 5% MPS benchmark ratio.
 
 ## 10. Gate evidence
 

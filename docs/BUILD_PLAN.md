@@ -486,7 +486,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 ### Phase 21: Memory accounting and copy removal — STARTED (2026-10-20)
 
-*The owner started this phase on 2026-10-20. Design: `docs/adr/0025`, awaiting the owner's answers to its section 9. Branch: `phase-21-memory-accounting`, from `main` at `1f89192`.*
+*The owner started this phase on 2026-10-20. Design: `docs/adr/0025`; the owner answered its section 9 the same day, taking every recommended option. Branch: `phase-21-memory-accounting`, from `main` at `1f89192`.*
 
 **Goal.** Every estimate is an upper bound on the memory the job really uses, shown by measurement, and the avoidable copies are removed. No new dependency.
 
