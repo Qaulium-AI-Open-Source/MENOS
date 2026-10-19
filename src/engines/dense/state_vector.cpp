@@ -1,5 +1,7 @@
 #include "engines/dense/state_vector.h"
 
+#include <utility>
+
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "kernels/dense_kernels.h"
@@ -38,6 +40,10 @@ std::span<std::complex<double>> StateVector::amplitudes() {
 
 std::span<const std::complex<double>> StateVector::amplitudes() const {
     return {data_.data(), data_.size()};
+}
+
+std::vector<std::complex<double>> StateVector::release() && {
+    return std::move(data_);
 }
 
 void initialize(StateVector& state, double global_phase) {

@@ -157,11 +157,6 @@ EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request
     EngineExecutionResult result;
     result.actual_bytes = state.size_bytes();
 
-    if (request.want_statevector) {
-        const auto amps = state.amplitudes();
-        result.statevector = std::vector<std::complex<double>>(amps.begin(), amps.end());
-    }
-
     if (request.want_counts) {
         const std::span<const std::pair<QubitId, ClbitId>> targets = request.measure_targets;
         if (request.is_sole_region) {
@@ -184,6 +179,12 @@ EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request
                 state.amplitudes(), term.first.x_words[0], term.first.z_words[0]));
         }
         result.expectation_terms = std::move(terms);
+    }
+
+    // Last, after sampling and the expectation have read the state: the
+    // amplitudes are moved into the result, not copied (docs/adr/0025).
+    if (request.want_statevector) {
+        result.statevector = std::move(state).release();
     }
 
     return result;
