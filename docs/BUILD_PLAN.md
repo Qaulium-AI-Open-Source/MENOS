@@ -458,7 +458,7 @@ Written on 2026-10-13 from `docs/adr/0022` (owner answers in its section 9).
 
 ADR `docs/adr/0022` first, then plan mode and owner approval (both done on 2026-10-13). Windows verification runs through `scripts/verify-windows.ps1`; Linux verification stays `scripts/verify.sh` in the WSL clone.
 
-## Memory roadmap (Phases 21–23) — next, each phase NOT STARTED
+## Memory roadmap (Phases 21–23) — Phase 21 STARTED, Phases 22–23 NOT STARTED
 
 **Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18).
 
@@ -484,7 +484,9 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 - The Phase 11 invariants hold (no tuning constants; an observation only raises a cost; state migration needs a measurement and an ADR first). The Phase 15 and 16 invariants hold (bitwise-identical kernels, `-fmad=false`, one synchronisation per gate).
 - New dependencies are optional, pinned (ADR 0001), behind a CMake option, and added only after a measurement shows they beat what MENOS does without them.
 
-### Phase 21: Memory accounting and copy removal — NOT STARTED
+### Phase 21: Memory accounting and copy removal — STARTED (2026-10-20)
+
+*The owner started this phase on 2026-10-20. Design: `docs/adr/0025`, awaiting the owner's answers to its section 9. Branch: `phase-21-memory-accounting`, from `main` at `1f89192`.*
 
 **Goal.** Every estimate is an upper bound on the memory the job really uses, shown by measurement, and the avoidable copies are removed. No new dependency.
 
