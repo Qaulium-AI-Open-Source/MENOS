@@ -2,7 +2,7 @@
 
 Two subcommands:
 
-  run     Sweeps qubit counts over one fixed circuit family, timing MENOS
+  run     Sweeps qubit counts over one circuit family, timing MENOS
           (through the Qiskit converter and menos.run) and Qiskit's reference
           simulator, qiskit.quantum_info.Statevector, on the same circuit, and
           checks that their statevectors agree. Optionally merges the JSON that
@@ -13,9 +13,10 @@ Two subcommands:
   render  Embeds a results JSON in template.html and writes one self-contained
           HTML file.
 
-The circuit family is the crossover benchmark's own (6 layers of H on every
-qubit, T on q0, CX on alternating pairs), so all three series measure the same
-work. Nothing measured is ever filled in: a value that was not measured is
+The default family, "baseline", is the crossover benchmark's own (6 layers of
+H on every qubit, T on q0, CX on alternating pairs), so all three series measure
+the same work. --family picks "clifford" or "product" instead, which have no
+CUDA crossover counterpart, so --crossover-json is refused with them. Nothing measured is ever filled in: a value that was not measured is
 null in the JSON and blank on the page.
 """
 
@@ -73,6 +74,37 @@ def build_circuit(num_qubits: int) -> QuantumCircuit:
     return qc
 
 
+def build_clifford(num_qubits: int) -> QuantumCircuit:
+    """6 layers of H and S on every qubit, CX on alternating pairs."""
+    qc = QuantumCircuit(num_qubits)
+    for layer in range(LAYERS):
+        for q in range(num_qubits):
+            qc.h(q)
+            qc.s(q)
+        for q in range(layer % 2, num_qubits - 1, 2):
+            qc.cx(q, q + 1)
+    return qc
+
+
+def build_product(num_qubits: int) -> QuantumCircuit:
+    """6 layers of H and RZ on every qubit, no two-qubit gate: the planner can
+    split it into independent one-qubit regions."""
+    qc = QuantumCircuit(num_qubits)
+    for layer in range(LAYERS):
+        for q in range(num_qubits):
+            qc.h(q)
+            qc.rz(0.3 * (layer + 1), q)
+    return qc
+
+
+# name -> (builder, description of what one layer does)
+FAMILIES = {
+    "baseline": (build_circuit, "H on all qubits, T on q0, CX on alternating pairs, per layer"),
+    "clifford": (build_clifford, "H and S on all qubits, CX on alternating pairs, per layer"),
+    "product": (build_product, "H and RZ on all qubits, no entangling gate, per layer"),
+}
+
+
 def planner_backend(result: menos.Result) -> str:
     """The backend the plan recorded for region 0 (as examples/cuda.py reads it)."""
     region = next(line for line in result.explain().splitlines() if line.startswith("region 0"))
@@ -112,10 +144,10 @@ def spread(samples: list[float]) -> dict:
     }
 
 
-def measure_point(num_qubits: int, repeats: int) -> dict:
+def measure_point(num_qubits: int, repeats: int, family: str = "baseline") -> dict:
     """One warm-up run of each, then `repeats` timed runs. Each series keeps
     its raw samples and their spread; its *_seconds key is the median."""
-    qc = build_circuit(num_qubits)
+    qc = FAMILIES[family][0](num_qubits)
     _run_menos(qc)
     _run_qiskit(qc)
 
@@ -336,6 +368,7 @@ def sweep(
     repeats: int,
     crossover: dict | None = None,
     progress=None,
+    family: str = "baseline",
 ) -> dict:
     # The environment (including power) is read before the timed runs, and
     # the power state again after them, so a sweep that was unplugged
@@ -343,7 +376,7 @@ def sweep(
     env = environment()
     points = []
     for n in qubit_counts:
-        point = measure_point(n, repeats)
+        point = measure_point(n, repeats, family)
         if progress is not None:
             progress(point)
         points.append(point)
@@ -352,8 +385,9 @@ def sweep(
         "schema_version": SCHEMA_VERSION,
         "environment": env,
         "circuit": {
+            "family": family,
             "layers": LAYERS,
-            "description": "H on all qubits, T on q0, CX on alternating pairs, per layer",
+            "description": FAMILIES[family][1],
         },
         "repeats": repeats,
         "abs_tol": ABS_TOL,
@@ -395,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--max-qubits", type=int, default=22)
     run_p.add_argument("--step", type=int, default=2)
     run_p.add_argument("--repeats", type=int, default=10)
+    run_p.add_argument("--family", choices=sorted(FAMILIES), default="baseline")
     run_p.add_argument("--crossover-json", type=Path, help="MENOS_CROSSOVER_JSON output")
     run_p.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR / "results.json")
 
@@ -408,9 +443,11 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("need 1 <= --min-qubits <= --max-qubits and --step >= 1")
         if args.repeats < 1:
             parser.error("--repeats must be >= 1")
+        if args.crossover_json and args.family != "baseline":
+            parser.error("--crossover-json only matches the baseline family")
         crossover = load_crossover(args.crossover_json) if args.crossover_json else None
         counts = list(range(args.min_qubits, args.max_qubits + 1, args.step))
-        document = sweep(counts, args.repeats, crossover, progress=_print_point)
+        document = sweep(counts, args.repeats, crossover, progress=_print_point, family=args.family)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(document, indent=2, allow_nan=False) + "\n")
         print(f"wrote {args.out}")

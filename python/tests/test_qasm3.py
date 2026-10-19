@@ -167,6 +167,12 @@ ctrl @ gphase(0.5) q[1];
 """
 
 
+# qiskit-qasm3-import 0.6.0 (converter.py, _apply_gate_modifier) still calls
+# Gate.control(annotated=None), which Qiskit 2.3+ deprecates. The call is in the
+# reference importer, not in MENOS; drop this when that package is updated.
+@pytest.mark.filterwarnings(
+    r"ignore:.*Gate\.control\(\).*annotated.*:DeprecationWarning"
+)
 def test_modifier_program_equals_qiskits_import():
     mine = _statevector(from_qasm3(MODIFIER_PROGRAM))
     theirs = Statevector(qasm3.loads(MODIFIER_PROGRAM)).data
