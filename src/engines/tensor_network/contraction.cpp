@@ -410,6 +410,10 @@ ContractionResult contract(ContractionNetwork network,
 
         live[root_a] = contract_pair(live[root_a], live[root_b]);
         redirect[root_b] = root_a;
+        // root_b's slot is never read again (find_root now leads past it), so
+        // its tensor is released here rather than when contract() returns
+        // (docs/adr/0025 section 3.3).
+        live[root_b] = LabeledTensor{};
         peak_legs = std::max(peak_legs, live[root_a].legs.size());
     }
 

@@ -142,7 +142,7 @@ Result execute_direct(const Plan& plan,
         executed_plan.trajectory_summary->standard_error = result.expectation_standard_error;
     }
 
-    return Result(result.counts.value_or(std::map<BitString, std::uint64_t>{}),
+    return Result(std::move(result.counts).value_or(std::map<BitString, std::uint64_t>{}),
                   std::move(result.statevector),
                   expectation_value,
                   actually_exact,
