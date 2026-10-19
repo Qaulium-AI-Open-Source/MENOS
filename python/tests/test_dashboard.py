@@ -58,6 +58,39 @@ def test_circuit_matches_the_crossover_benchmark(dashboard):
     assert dashboard.LAYERS == 6
 
 
+def test_other_families_have_the_documented_shape(dashboard):
+    # clifford: 6 layers of (4 H + 4 S) + the same CX pattern (9 in all).
+    assert len(dashboard.build_clifford(4).data) == 6 * 8 + 3 * 2 + 3 * 1
+    # product: 6 layers of (4 H + 4 RZ), and no two-qubit gate at all.
+    product = dashboard.build_product(4)
+    assert len(product.data) == 6 * 8
+    assert all(inst.operation.num_qubits == 1 for inst in product.data)
+    assert set(dashboard.FAMILIES) == {"baseline", "clifford", "product"}
+
+
+@pytest.mark.parametrize("family", ["clifford", "product"])
+def test_sweep_of_other_families_agrees_with_qiskit(dashboard, family):
+    document = dashboard.sweep([2, 4], repeats=1, family=family)
+    assert document["circuit"]["family"] == family
+    assert document["circuit"]["description"] == dashboard.FAMILIES[family][1]
+    for point in document["menos_vs_qiskit"]:
+        assert point["agrees"], point
+
+
+def test_baseline_is_the_default_family(dashboard):
+    assert dashboard.sweep([2], repeats=1)["circuit"]["family"] == "baseline"
+
+
+def test_cli_refuses_a_crossover_json_with_another_family(dashboard, tmp_path):
+    crossover = tmp_path / "crossover.json"
+    crossover.write_text(json.dumps(_crossover_fixture()))
+    with pytest.raises(SystemExit):
+        dashboard.main(["run", "--family", "clifford", "--crossover-json", str(crossover),
+                        "--out", str(tmp_path / "results.json")])
+    with pytest.raises(SystemExit):
+        dashboard.main(["run", "--family", "nope", "--out", str(tmp_path / "results.json")])
+
+
 def test_sweep_agrees_with_qiskit(dashboard):
     document = dashboard.sweep([2, 4, 6], repeats=3)
     assert document["schema_version"] == dashboard.SCHEMA_VERSION
