@@ -240,7 +240,21 @@ struct EngineEstimateRequest {
     // 0 for every other engine, and the trajectory engine reports 0 as
     // infeasible rather than costing an empty run.
     std::uint64_t trajectories = 0;
+    // Branch-and-bound bound (planning speed only, never a result change).
+    // When set below its default, the caller already holds a feasible
+    // alternative costing exactly this many work units, so an engine whose
+    // estimate() builds its figure up incrementally MAY stop as soon as its
+    // running total is strictly greater than this, returning
+    // CostEstimate::feasible = false with a reason that starts with
+    // kPrunedReasonPrefix. Strictly greater: running totals only grow, so such
+    // a candidate could never have been strictly cheaper than the alternative,
+    // and ties already go to the earlier-enumerated candidate. An engine may
+    // ignore the field; the default never prunes.
+    std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max();
 };
+
+// Prefix of every infeasible_reason produced by the bound above.
+inline constexpr std::string_view kPrunedReasonPrefix = "pruned by branch-and-bound";
 
 // A simulation engine: something that can estimate the cost of, and
 // execute, a region (docs/BUILD_PLAN.md Phase 4). The planner sees

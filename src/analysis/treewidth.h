@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <span>
 #include <tuple>
@@ -175,8 +176,17 @@ struct EliminationOrder {
     // so a caller must report this as "did not fit within the given
     // budget", never as "proven infeasible regardless of budget".
     bool exceeded_budget = false;
+    // True iff the caller's stop_after_step predicate (see
+    // estimate_treewidth_min_fill) asked the search to stop; order and
+    // per_step_degree are then the prefix up to and including that step.
+    bool stopped_by_caller = false;
 };
 
+// Called with each step's degree right after that step is recorded; returning
+// true stops the search (EliminationOrder::stopped_by_caller). Used by a
+// caller that is only interested in the result while some running figure of
+// its own (e.g. accumulated work) stays under a bound.
+using MinFillStopPredicate = std::function<bool(std::size_t degree)>;
 
 // Greedy minimum-fill-in elimination ordering (a standard treewidth
 // heuristic, e.g. Bodlaender & Koster's treewidth-heuristics survey;
@@ -211,7 +221,8 @@ struct EliminationOrder {
 // merely suspected).
 [[nodiscard]] EliminationOrder estimate_treewidth_min_fill(
     const TensorNetworkGraph& graph,
-    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
+    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max(),
+    const MinFillStopPredicate& stop_after_step = {});
 
 // The two implementations estimate_treewidth_min_fill dispatches between
 // (dense bitset adjacency for graphs up to a size bound, the original
@@ -219,9 +230,11 @@ struct EliminationOrder {
 // tests can check that equivalence directly.
 [[nodiscard]] EliminationOrder estimate_treewidth_min_fill_dense(
     const TensorNetworkGraph& graph,
-    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
+    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max(),
+    const MinFillStopPredicate& stop_after_step = {});
 [[nodiscard]] EliminationOrder estimate_treewidth_min_fill_sparse(
     const TensorNetworkGraph& graph,
-    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
+    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max(),
+    const MinFillStopPredicate& stop_after_step = {});
 
 }  // namespace menos::analysis

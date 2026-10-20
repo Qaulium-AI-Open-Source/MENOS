@@ -349,7 +349,8 @@ bool degree_exceeds_budget(std::size_t degree, std::uint64_t max_peak_bytes) {
 }  // namespace
 
 EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& graph,
-                                                   std::uint64_t max_peak_bytes) {
+                                                   std::uint64_t max_peak_bytes,
+    const MinFillStopPredicate& stop_after_step) {
     BitAdjacency adjacency(graph.num_nodes);
     for (const auto& [a, b] : graph.edges) {
         common::ensure(a < graph.num_nodes && b < graph.num_nodes,
@@ -411,6 +412,10 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         result.width = std::max(result.width, degree);
         result.order.push_back(best_vertex);
         result.per_step_degree.push_back(degree);
+        if (stop_after_step && stop_after_step(degree)) {
+            result.stopped_by_caller = true;
+            break;
+        }
 
         for (std::size_t i = 0; i < neighbors.size(); ++i) {
             for (std::size_t j = i + 1; j < neighbors.size(); ++j) {
@@ -450,7 +455,8 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
 }
 
 EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& graph,
-                                                    std::uint64_t max_peak_bytes) {
+                                                    std::uint64_t max_peak_bytes,
+    const MinFillStopPredicate& stop_after_step) {
     std::vector<std::set<std::size_t>> adjacency(graph.num_nodes);
     for (const auto& [a, b] : graph.edges) {
         adjacency.at(a).insert(b);
@@ -504,6 +510,10 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
         result.width = std::max(result.width, degree);
         result.order.push_back(best_vertex);
         result.per_step_degree.push_back(degree);
+        if (stop_after_step && stop_after_step(degree)) {
+            result.stopped_by_caller = true;
+            break;
+        }
 
         const std::vector<std::size_t> neighbors(adjacency[best_vertex].begin(),
                                                  adjacency[best_vertex].end());
@@ -545,10 +555,11 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
 constexpr std::size_t kDenseMinFillMaxNodes = 23000;
 
 EliminationOrder estimate_treewidth_min_fill(const TensorNetworkGraph& graph,
-                                             std::uint64_t max_peak_bytes) {
+                                             std::uint64_t max_peak_bytes,
+    const MinFillStopPredicate& stop_after_step) {
     return graph.num_nodes <= kDenseMinFillMaxNodes
-               ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes)
-               : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes);
+               ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes, stop_after_step)
+               : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes, stop_after_step);
 }
 
 }  // namespace menos::analysis

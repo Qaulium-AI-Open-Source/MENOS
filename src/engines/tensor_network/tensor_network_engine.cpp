@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <complex>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -70,6 +71,41 @@ std::uint64_t work_units_for_order(const analysis::EliminationOrder& order) {
     return work;
 }
 
+constexpr std::uint64_t kNoPruneBound = std::numeric_limits<std::uint64_t>::max();
+
+std::uint64_t saturating_add(std::uint64_t a, std::uint64_t b) {
+    return a > kNoPruneBound - b ? kNoPruneBound : a + b;
+}
+
+// work_units_for_order's per-step cost, (d+1) * 2^(d+1), saturating instead
+// of throwing: used only to compare a running total with a prune bound, where
+// "too large to represent" simply means "above the bound".
+std::uint64_t saturating_step_cost(std::size_t degree) {
+    if (degree >= 57) {
+        return kNoPruneBound;
+    }
+    return (static_cast<std::uint64_t>(degree) + 1) * (std::uint64_t{1} << (degree + 1));
+}
+
+// The estimate returned when the caller's branch-and-bound bound is passed.
+CostEstimate pruned_estimate(const EngineEstimateRequest& request,
+                             std::size_t costed_terms,
+                             std::uint64_t reached_work_units) {
+    return CostEstimate{
+        /*feasible=*/false,
+        0,
+        0,
+        std::string(kPrunedReasonPrefix) + ": costing stopped in observable term " +
+            std::to_string(costed_terms + 1) + " of " +
+            std::to_string(request.observable->terms.size()) + ", at " +
+            (reached_work_units == kNoPruneBound ? std::string("more than 2^64")
+                                                 : std::to_string(reached_work_units)) +
+            " work units, already more than the " +
+            std::to_string(request.prune_above_work_units) +
+            " of a cheaper feasible alternative",
+        {}};
+}
+
 }  // namespace
 
 std::string_view TensorNetworkEngine::name() const {
@@ -123,13 +159,29 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
     try {
         std::uint64_t peak_bytes = 0;
         std::uint64_t work = 0;
+        std::size_t costed_terms = 0;
         for (const auto& [pauli, coefficient] : request.observable->terms) {
             static_cast<void>(coefficient);  // Applied by the caller (docs/adr/0007).
             const analysis::ClosedTimelines timelines =
                 analysis::build_closed_timelines(request.num_qubits, *request.operations, pauli);
             const analysis::LineGraph line_graph = analysis::build_line_graph(timelines);
-            const analysis::EliminationOrder order =
-                analysis::estimate_treewidth_min_fill(line_graph.graph, request.budget_bytes);
+            // Branch and bound inside the search: each elimination step's
+            // cost is known the moment it is taken, so the running total can
+            // be compared with the caller's bound step by step instead of only
+            // after the whole (expensive) min-fill search for this term.
+            std::uint64_t running = work;
+            const bool bounded = request.prune_above_work_units != kNoPruneBound;
+            const analysis::MinFillStopPredicate stop =
+                bounded ? analysis::MinFillStopPredicate([&](std::size_t degree) {
+                    running = saturating_add(running, saturating_step_cost(degree));
+                    return running > request.prune_above_work_units;
+                })
+                        : analysis::MinFillStopPredicate{};
+            const analysis::EliminationOrder order = analysis::estimate_treewidth_min_fill(
+                line_graph.graph, request.budget_bytes, stop);
+            if (order.stopped_by_caller) {
+                return pruned_estimate(request, costed_terms, running);
+            }
             if (order.exceeded_budget) {
                 // The search stopped before finishing, so order.width is
                 // only a lower bound on what a completed search would
@@ -157,6 +209,12 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
             // engine claim to fit a budget it does not fit.
             peak_bytes = std::max(peak_bytes, bytes_for_legs(order.width + 1));
             work = checked_add(work, work_units_for_order(order));
+            // Every later term only adds work, so once the running total is
+            // strictly above the caller's bound this candidate cannot win.
+            if (work > request.prune_above_work_units) {
+                return pruned_estimate(request, costed_terms, work);
+            }
+            ++costed_terms;
         }
         return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {

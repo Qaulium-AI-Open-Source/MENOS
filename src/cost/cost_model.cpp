@@ -1,6 +1,7 @@
 #include "cost/cost_model.h"
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -22,8 +23,19 @@ EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engin
     std::optional<std::size_t> best;
     CostEstimate best_estimate{/*feasible=*/false, 0, 0, "", {}};
     std::string reasons;
+    // Branch and bound: once one engine is feasible, every later engine is
+    // only asked whether it can beat it. A pruned engine's running total is
+    // already strictly above the incumbent, so it could never have replaced it
+    // (replacement needs strictly fewer work units), and a pruned reason is
+    // never reported because a feasible engine exists whenever one is pruned.
+    // The choice is therefore identical to costing every engine in full.
+    EngineEstimateRequest bounded = request;
     for (std::size_t i = 0; i < engines.size(); ++i) {
-        const CostEstimate estimate = engines[i]->estimate(request);
+        bounded.prune_above_work_units =
+            best.has_value() ? std::min(request.prune_above_work_units,
+                                        best_estimate.estimated_work_units)
+                             : request.prune_above_work_units;
+        const CostEstimate estimate = engines[i]->estimate(bounded);
         if (!estimate.feasible) {
             if (!reasons.empty()) {
                 reasons += "; ";
@@ -51,7 +63,8 @@ CostEstimate estimate_direct(const Circuit& circuit,
                              const Observable* observable,
                              std::uint64_t budget_bytes,
                              const AccuracyPolicy& accuracy_policy,
-                             std::uint64_t trajectories) {
+                             std::uint64_t trajectories,
+                             std::uint64_t prune_above_work_units) {
     const EngineEstimateRequest request{circuit.num_qubits(),
                                         &circuit.operations(),
                                         want_statevector,
@@ -60,7 +73,8 @@ CostEstimate estimate_direct(const Circuit& circuit,
                                         observable,
                                         accuracy_policy,
                                         budget_bytes,
-                                        trajectories};
+                                        trajectories,
+                                        prune_above_work_units};
     CostEstimate estimate = engine.estimate(request);
     if (!estimate.feasible) {
         return estimate;
@@ -221,11 +235,34 @@ CostEstimate estimate_factorized(const Circuit& circuit,
     }
 }
 
+namespace {
+
+// The estimate returned when estimate_cut's branch-and-bound bound is passed
+// while costing fragment `fragment_index` (0-based).
+CostEstimate pruned_cut_estimate(std::size_t fragment_index,
+                                 std::size_t num_fragments,
+                                 std::uint64_t reached_work_units,
+                                 std::uint64_t bound) {
+    return CostEstimate{/*feasible=*/false,
+                        0,
+                        0,
+                        std::string(kPrunedReasonPrefix) + ": costing stopped in fragment " +
+                            std::to_string(fragment_index + 1) + " of " +
+                            std::to_string(num_fragments) + ", at " +
+                            std::to_string(reached_work_units) +
+                            " work units, already more than the " + std::to_string(bound) +
+                            " of a cheaper feasible alternative",
+                        {}};
+}
+
+}  // namespace
+
 CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
                           const Observable& observable,
                           std::span<const SimulationEngine* const> engines,
                           std::uint64_t budget_bytes,
-                          const AccuracyPolicy& accuracy_policy) {
+                          const AccuracyPolicy& accuracy_policy,
+                          std::uint64_t prune_above_work_units) {
     if (cut_plan.fragments.size() < 2) {
         return CostEstimate{
             /*feasible=*/false, 0, 0, "a cut plan needs at least two fragments", {}};
@@ -245,6 +282,7 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
     try {
         std::uint64_t peak_bytes = 0;
         std::uint64_t total_work = 0;
+        std::size_t costed_fragments = 0;
         for (const analysis::CutFragment& fragment : cut_plan.fragments) {
             // Cost this fragment on a representative assignment. Every
             // assignment has the same circuit shape -- only which Clifford
@@ -255,6 +293,9 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
                 std::vector<ir::CutPrepState>(fragment.prepared.size(), ir::CutPrepState::MinusI)};
             const Circuit fragment_circuit = analysis::build_fragment_circuit(fragment, probe);
 
+            // Eq. (4.1): this fragment runs once per DISTINCT assignment, not
+            // once per branch.
+            const std::uint64_t evaluations = analysis::distinct_evaluation_count(fragment);
             std::uint64_t fragment_work = 0;
             std::uint64_t fragment_peak = 0;
             for (const auto& [term, coefficient] : observable.terms) {
@@ -281,14 +322,33 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
                 }
                 fragment_work = checked_add(fragment_work, choice.estimate.estimated_work_units);
                 fragment_peak = std::max(fragment_peak, choice.estimate.estimated_peak_bytes);
+                // Branch and bound, term by term: the fragment's work so far,
+                // times its evaluation count, is already part of the total.
+                if (prune_above_work_units != std::numeric_limits<std::uint64_t>::max()) {
+                    const std::uint64_t running =
+                        checked_add(total_work, checked_mul(evaluations, fragment_work));
+                    if (running > prune_above_work_units) {
+                        return pruned_cut_estimate(costed_fragments,
+                                                   cut_plan.fragments.size(),
+                                                   running,
+                                                   prune_above_work_units);
+                    }
+                }
             }
 
-            // Eq. (4.1): this fragment runs once per DISTINCT assignment, not
-            // once per branch.
-            const std::uint64_t evaluations = analysis::distinct_evaluation_count(fragment);
             total_work = checked_add(total_work, checked_mul(evaluations, fragment_work));
             // Eq. (4.3): max, not sum.
             peak_bytes = std::max(peak_bytes, fragment_peak);
+            ++costed_fragments;
+            // Branch and bound: every remaining fragment and the
+            // recombination term below only add work, so a running total
+            // strictly above the bound can no longer win.
+            if (total_work > prune_above_work_units) {
+                return pruned_cut_estimate(costed_fragments - 1,
+                                           cut_plan.fragments.size(),
+                                           total_work,
+                                           prune_above_work_units);
+            }
         }
 
         // Eq. (4.2): 8^K signed scalar multiply-adds per observable term.

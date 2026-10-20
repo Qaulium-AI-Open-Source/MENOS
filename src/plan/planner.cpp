@@ -1,5 +1,7 @@
 #include "plan/planner.h"
+
 #include <algorithm>
+#include <limits>
 
 #include <optional>
 #include <string>
@@ -374,6 +376,35 @@ Plan plan_job(const JobSpec& job_spec,
         .is_winner = false,
     });
 
+    // Branch-and-bound bound for the two candidates whose costing is itself an
+    // expensive search (DirectTensorNetwork's min-fill elimination per
+    // observable term, CutAndRecombine's per-fragment engine choice). The
+    // winner is the feasible candidate with the fewest work units, ties to the
+    // earlier one, so once a feasible candidate is in hand, a later candidate
+    // whose running total is strictly above it can never win; its estimate is
+    // stopped and explain() reports it as pruned, with the figure it reached.
+    //
+    // Enabled only where no later step of plan_job can change a candidate
+    // after enumeration: with a time budget a cheaper-in-work candidate can
+    // still be rejected on seconds (and a replan raises figures from
+    // observations), and the CUDA backend step can replace the dense
+    // candidate's work units. In every such job the bound stays at its
+    // default and every candidate is costed in full, exactly as before.
+    const bool branch_and_bound =
+        !job_spec.time_budget_seconds.has_value() && job_spec.backend != Backend::Cuda &&
+        !(job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated);
+    const auto incumbent_work_units = [&]() {
+        std::uint64_t bound = std::numeric_limits<std::uint64_t>::max();
+        if (branch_and_bound) {
+            for (const CandidateSummary& candidate : candidates) {
+                if (candidate.feasible) {
+                    bound = std::min(bound, candidate.estimated_work_units);
+                }
+            }
+        }
+        return bound;
+    };
+
     // Candidate: DirectStabilizer, always enumerated -- its own
     // estimate() reports infeasibility (naming the first non-Clifford
     // operation, or that a statevector was requested) so explain()
@@ -471,7 +502,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                                want_expectation,
                                                                reduced_observable,
                                                                budget,
-                                                               job_spec.accuracy_policy);
+                                                               job_spec.accuracy_policy,
+                                                               /*trajectories=*/0,
+                                                               incumbent_work_units());
         tensor_network_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectTensorNetwork,
@@ -605,8 +638,12 @@ Plan plan_job(const JobSpec& job_spec,
     if (want_expectation) {
         cut_plan = analysis::find_cut_plan(circuit, analysis::kMaxCuts);
         if (cut_plan.has_value()) {
-            cut_estimate = cost::estimate_cut(
-                *cut_plan, *remapped_expectation, engines, budget, job_spec.accuracy_policy);
+            cut_estimate = cost::estimate_cut(*cut_plan,
+                                              *remapped_expectation,
+                                              engines,
+                                              budget,
+                                              job_spec.accuracy_policy,
+                                              incumbent_work_units());
             cut_index = candidates.size();
             candidates.push_back(CandidateSummary{
                 .strategy = Strategy::CutAndRecombine,

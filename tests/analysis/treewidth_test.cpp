@@ -12,6 +12,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
 namespace menos::analysis {
 namespace {
 
@@ -259,6 +263,53 @@ TEST(TreewidthTest, TightBudgetStopsTheSearchEarlyWithAPartialOrder) {
     const EliminationOrder unbounded = estimate_treewidth_min_fill(graph);
     EXPECT_FALSE(unbounded.exceeded_budget);
     EXPECT_EQ(unbounded.width, 5U);
+}
+
+// The dense-bitset search and the original std::set search must agree exactly
+// -- order, per-step degrees, width and the budget flag -- on graphs of every
+// density, with and without a peak-byte bound.
+TEST(TreewidthTest, DenseAndSparseMinFillAgreeOnRandomGraphs) {
+    std::uint64_t state = 0x2545F4914F6CDD1DULL;
+    const auto next = [&state]() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return state;
+    };
+    for (int trial = 0; trial < 200; ++trial) {
+        const std::size_t n = 1 + next() % 90;
+        const std::uint64_t density = 1 + next() % 40;  // percent
+        TensorNetworkGraph g{n, {}};
+        for (std::size_t a = 0; a < n; ++a) {
+            for (std::size_t b = a + 1; b < n; ++b) {
+                if (next() % 100 < density) {
+                    g.edges.emplace_back(a, b);
+                }
+            }
+        }
+        const std::uint64_t bound =
+            trial % 3 == 0 ? std::numeric_limits<std::uint64_t>::max() : (16ULL << (next() % 20));
+        const EliminationOrder dense = estimate_treewidth_min_fill_dense(g, bound);
+        const EliminationOrder sparse = estimate_treewidth_min_fill_sparse(g, bound);
+        EXPECT_EQ(dense.order, sparse.order) << "trial " << trial;
+        EXPECT_EQ(dense.per_step_degree, sparse.per_step_degree) << "trial " << trial;
+        EXPECT_EQ(dense.width, sparse.width) << "trial " << trial;
+        EXPECT_EQ(dense.exceeded_budget, sparse.exceeded_budget) << "trial " << trial;
+    }
+}
+
+// The caller's stop predicate stops the search right after the step that
+// returned true, leaving that step recorded.
+TEST(TreewidthTest, StopPredicateStopsAfterTheRequestedStep) {
+    const TensorNetworkGraph g = make_grid_graph(4);
+    const EliminationOrder full = estimate_treewidth_min_fill(g);
+    std::size_t calls = 0;
+    const EliminationOrder stopped = estimate_treewidth_min_fill(
+        g, std::numeric_limits<std::uint64_t>::max(), [&](std::size_t) { return ++calls == 5; });
+    EXPECT_TRUE(stopped.stopped_by_caller);
+    EXPECT_FALSE(full.stopped_by_caller);
+    ASSERT_EQ(stopped.order.size(), 5U);
+    EXPECT_TRUE(std::equal(stopped.order.begin(), stopped.order.end(), full.order.begin()));
 }
 
 }  // namespace
