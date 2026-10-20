@@ -177,6 +177,7 @@ struct EliminationOrder {
     bool exceeded_budget = false;
 };
 
+
 // Greedy minimum-fill-in elimination ordering (a standard treewidth
 // heuristic, e.g. Bodlaender & Koster's treewidth-heuristics survey;
 // also the classic choice in the quantum-circuit-treewidth literature,
@@ -209,6 +210,17 @@ struct EliminationOrder {
 // unbounded search take minutes, confirmed by direct measurement, not
 // merely suspected).
 [[nodiscard]] EliminationOrder estimate_treewidth_min_fill(
+    const TensorNetworkGraph& graph,
+    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
+
+// The two implementations estimate_treewidth_min_fill dispatches between
+// (dense bitset adjacency for graphs up to a size bound, the original
+// std::set adjacency above it). They return identical results; exposed so
+// tests can check that equivalence directly.
+[[nodiscard]] EliminationOrder estimate_treewidth_min_fill_dense(
+    const TensorNetworkGraph& graph,
+    std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
+[[nodiscard]] EliminationOrder estimate_treewidth_min_fill_sparse(
     const TensorNetworkGraph& graph,
     std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max());
 
