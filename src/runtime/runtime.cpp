@@ -103,6 +103,7 @@ Result execute_direct(const Plan& plan,
         .trajectories =
             plan.trajectory_summary.has_value() ? plan.trajectory_summary->trajectories : 0,
         .max_threads = job_spec.max_threads,
+        .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
     };
 
     const auto start_execute = std::chrono::steady_clock::now();
@@ -289,6 +290,7 @@ Result execute_factorized(const Plan& plan,
                 .accuracy_policy = job_spec.accuracy_policy,
                 .monitor = monitor,
                 .max_threads = job_spec.max_threads,
+                .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
             };
             engine_result = engine.execute(request);
             if (request.want_statevector) {
@@ -472,6 +474,7 @@ Result execute_cut(const Plan& plan,
                 .accuracy_policy = job_spec.accuracy_policy,
                 .monitor = monitor,
                 .max_threads = job_spec.max_threads,
+                .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
             };
             EngineExecutionResult result = engine.execute(request);
             actual_peak_bytes = std::max(actual_peak_bytes, result.actual_bytes);

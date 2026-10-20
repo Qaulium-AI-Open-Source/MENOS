@@ -21,6 +21,7 @@ add_executable(menos_api_tests
     readout_mitigation_run_test.cpp
     max_threads_test.cpp
     backend_request_test.cpp
+    fuse_diagonal_run_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)

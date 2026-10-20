@@ -160,6 +160,10 @@ struct EngineExecutionRequest {
     // built directly (calibration, benchmarks, tests) measures and exercises
     // the configuration jobs run in rather than silently running on one.
     std::uint32_t max_threads = common::default_thread_count();
+    // RunOptions::fuse_diagonal_gates (src/ir/fuse_diagonal.h). Read by the
+    // CPU dense engine only; every other engine applies the operations as
+    // given. Off unless the job asked for it.
+    bool fuse_diagonal_gates = false;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
