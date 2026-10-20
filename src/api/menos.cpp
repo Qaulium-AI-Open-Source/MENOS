@@ -11,6 +11,7 @@
 #include "ir/validate.h"
 #include "plan/hardware_profile.h"
 #include "plan/job_spec.h"
+#include "plan/plan_cache.h"
 #include "plan/planner.h"
 
 namespace menos {
@@ -72,13 +73,15 @@ std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
         .noise_method = options.noise_method,
         .expectation_precision = options.expectation_precision,
         .max_threads = max_threads,
+        .fuse_diagonal_gates = options.fuse_diagonal_gates,
         .backend = options.backend,
     };
     // Calibrated, not merely detected: the time budget is evaluated against
     // measured throughput. Cached after the first call, so only the first job
     // in a process pays for the microbenchmarks.
-    const plan::HardwareProfile& hardware_profile = plan::calibrated_hardware_profile();
-    Plan job_plan = plan::plan_job(job_spec, hardware_profile);
+    const plan::HardwareProfile& hardware_profile =
+        plan::hardware_profile_for(options.time_budget_seconds.has_value());
+    Plan job_plan = plan::plan_job_cached(job_spec, hardware_profile);
     return {std::move(job_plan), std::move(job_spec)};
 }
 
@@ -88,14 +91,24 @@ Result run(const Circuit& circuit, const RunOptions& options) {
     auto [execution_plan, job_spec] = validate_and_plan(circuit, options);
     // A fresh steady_clock per execution attempt (Phase 11, docs/adr/0015 --
     // see BudgetMonitor for why the budget bounds an attempt, not the job).
-    return api::run_with_replanning(job_spec,
-                                    plan::calibrated_hardware_profile(),
-                                    std::move(execution_plan),
-                                    &api::steady_elapsed_source);
+    return api::run_with_replanning(
+        job_spec,
+        plan::hardware_profile_for(options.time_budget_seconds.has_value()),
+        std::move(execution_plan),
+        &api::steady_elapsed_source);
 }
 
 Plan preview(const Circuit& circuit, const RunOptions& options) {
     return validate_and_plan(circuit, options).first;
+}
+
+PlanCacheStats plan_cache_stats() {
+    const plan::PlanCacheStats s = plan::plan_cache_stats();
+    return PlanCacheStats{s.hits, s.misses, s.bypasses};
+}
+
+void plan_cache_clear() {
+    plan::plan_cache_clear();
 }
 
 }  // namespace menos

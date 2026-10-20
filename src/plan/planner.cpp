@@ -1107,4 +1107,50 @@ Plan plan_job(const JobSpec& job_spec,
     return plan;
 }
 
+Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec) {
+    common::ensure(cached.regions.size() == 1 && cached.reduced_circuit.has_value(),
+                   "reparameterize_direct_plan: not a Direct plan");
+    const bool want_counts = job_spec.shots > 0;
+    const std::vector<QubitId> support = compute_light_cone_support(
+        job_spec.circuit, job_spec.want_statevector, want_counts, job_spec.expectation);
+    analysis::LightConeResult reduced = analysis::compute_light_cone(job_spec.circuit, support);
+
+    const std::vector<Operation>& fresh = reduced.reduced_circuit.operations();
+    const std::vector<Operation>& stale = cached.reduced_circuit->operations();
+    common::ensure(
+        reduced.reduced_circuit.num_qubits() == cached.reduced_circuit->num_qubits() &&
+            fresh.size() == stale.size(),
+        "reparameterize_direct_plan: reduced circuit shape differs from the cached plan");
+    for (std::size_t i = 0; i < fresh.size(); ++i) {
+        const bool same = std::visit(
+            [&](const auto& a, const auto& b) -> bool {
+                using A = std::decay_t<decltype(a)>;
+                using B = std::decay_t<decltype(b)>;
+                if constexpr (!std::is_same_v<A, B>) {
+                    return false;
+                } else if constexpr (std::is_same_v<A, GateOp>) {
+                    return a.opcode == b.opcode && a.qubits == b.qubits &&
+                           a.params.size() == b.params.size();
+                } else if constexpr (std::is_same_v<A, UnitaryOp>) {
+                    return a.qubits == b.qubits && a.matrix.size() == b.matrix.size();
+                } else if constexpr (std::is_same_v<A, MeasureOp>) {
+                    return a.qubit == b.qubit && a.clbit == b.clbit;
+                } else {
+                    static_assert(std::is_same_v<A, ChannelOp>);
+                    return false;  // never cached
+                }
+            },
+            fresh[i],
+            stale[i]);
+        common::ensure(same,
+                       "reparameterize_direct_plan: operation " + std::to_string(i) +
+                           " differs in structure from the cached plan");
+    }
+
+    Plan plan = cached;
+    plan.regions[0].operations = fresh;
+    plan.reduced_circuit = std::move(reduced.reduced_circuit);
+    return plan;
+}
+
 }  // namespace menos::plan

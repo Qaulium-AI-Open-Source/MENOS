@@ -1,6 +1,7 @@
 add_library(menos_plan STATIC
     hardware_profile.cpp
     planner.cpp
+    plan_cache.cpp
     region_builder.cpp
     available_engines.cpp
     execution_engines.cpp
