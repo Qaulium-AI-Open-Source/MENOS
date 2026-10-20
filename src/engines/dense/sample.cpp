@@ -4,6 +4,7 @@
 #include <complex>
 #include <vector>
 
+#include "common/memory_bounds.h"
 #include "common/rng.h"
 
 namespace menos::engines::dense {
@@ -109,6 +110,19 @@ std::map<BitString, std::uint64_t> sample(
         seed,
         measure_targets,
         bitstring_width);
+}
+
+std::uint64_t sample_bytes(std::uint64_t shots,
+                           std::uint32_t measured_qubits,
+                           std::uint32_t bitstring_width) {
+    if (shots == 0) {
+        return 0;
+    }
+    const std::uint64_t uniforms =
+        common::heap_block_bytes(common::checked_mul(shots, sizeof(double)));
+    const std::uint64_t histogram = common::counts_map_bytes(
+        common::distinct_outcomes_bound(shots, measured_qubits), bitstring_width);
+    return common::checked_add(uniforms, histogram);
 }
 
 }  // namespace menos::engines::dense

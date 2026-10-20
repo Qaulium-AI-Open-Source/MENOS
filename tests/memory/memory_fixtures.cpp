@@ -13,6 +13,7 @@
 #include <variant>
 
 #include "common/rng.h"
+#include "common/svd.h"
 #include "engines/dense/dense_engine.h"
 #include "engines/density_matrix/density_matrix_engine.h"
 #include "engines/mps/mps_engine.h"
@@ -24,6 +25,8 @@
 #include "menos/menos.h"
 #include "menos/mitigation.h"
 #include "menos/simulation_engine.h"
+#include "plan/job_spec.h"
+#include "runtime/runtime.h"
 
 #ifdef MENOS_MEMORY_WITH_CUDA
 #include "engines/dense_cuda/cuda_dense_engine.h"
@@ -588,22 +591,31 @@ std::string digest_complex(const std::vector<Complex>& values) {
 
 // ---- Execution --------------------------------------------------------------
 
-Measurement run_engine_fixture(const Fixture& fixture) {
+RunOptions options_for(const Fixture& fixture);
+
+Measurement run_engine_fixture(const Fixture& fixture,
+                               bool draw_samples,
+                               const std::function<void()>& on_window_start) {
+    prepare(fixture);
     const std::unique_ptr<SimulationEngine> engine = make_engine(fixture.engine);
     const Circuit& circuit = fixture.circuit;
     const bool want_counts = fixture.shots > 0;
     const bool want_expectation = fixture.observable.has_value();
     const Observable* observable = want_expectation ? &*fixture.observable : nullptr;
 
-    const EngineEstimateRequest estimate_request{circuit.num_qubits(),
-                                                 &circuit.operations(),
-                                                 fixture.want_statevector,
-                                                 want_counts,
-                                                 want_expectation,
-                                                 observable,
-                                                 fixture.accuracy_policy,
-                                                 std::numeric_limits<std::uint64_t>::max(),
-                                                 fixture.trajectories};
+    const EngineEstimateRequest estimate_request{
+        .num_qubits = circuit.num_qubits(),
+        .operations = &circuit.operations(),
+        .want_statevector = fixture.want_statevector,
+        .want_counts = want_counts,
+        .want_expectation = want_expectation,
+        .observable = observable,
+        .accuracy_policy = fixture.accuracy_policy,
+        .budget_bytes = std::numeric_limits<std::uint64_t>::max(),
+        .trajectories = fixture.trajectories,
+        .shots = fixture.shots,
+        .bitstring_width = circuit.num_clbits(),
+        .is_sole_region = fixture.sole_region};
     const CostEstimate estimate = engine->estimate(estimate_request);
     if (!estimate.feasible) {
         throw std::runtime_error(fixture.name +
@@ -641,19 +653,25 @@ Measurement run_engine_fixture(const Fixture& fixture) {
     m.estimated_device_bytes = estimate.device.device_bytes;
     m.strategy = fixture.engine;
 
+    if (on_window_start) {
+        on_window_start();
+    }
     const std::uint64_t live_before = heap_tracker::live_bytes();
     heap_tracker::reset_peak();
     {
+        // The engine's own window ends when execute() returns: drawing from a
+        // region's sampler is the runtime's combination step, whose histogram
+        // the Factorized estimate covers (run_factorized_counts).
         const EngineExecutionResult result = engine->execute(request);
+        if (heap_tracker::available()) {
+            m.tracked_peak_bytes = heap_tracker::peak_bytes() - live_before;
+        }
         std::map<BitString, std::uint64_t> drawn;
-        if (result.counts_sampler) {
+        if (result.counts_sampler && draw_samples) {
             common::Rng rng(99);
             for (std::uint64_t i = 0; i < fixture.sampler_draws; ++i) {
                 drawn[result.counts_sampler->sample_one(rng)] += 1;
             }
-        }
-        if (heap_tracker::available()) {
-            m.tracked_peak_bytes = heap_tracker::peak_bytes() - live_before;
         }
         m.reported_actual_bytes = result.actual_bytes;
         if (result.counts.has_value()) {
@@ -737,17 +755,32 @@ void record_result(const Result& result, Measurement& m) {
     }
 }
 
-Measurement run_job_fixture(const Fixture& fixture) {
+Measurement run_job_fixture(const Fixture& fixture, const std::function<void()>& on_window_start) {
     const RunOptions options = options_for(fixture);
     prepare(fixture);
 
     Measurement m;
-    const std::uint64_t live_before = heap_tracker::live_bytes();
-    heap_tracker::reset_peak();
     if (fixture.kind == FixtureKind::Run) {
-        const Result result = run(fixture.circuit, options);
+        // A job's memory is its execution (docs/adr/0025 section 9, the Plan
+        // copy): the plan is made first, outside the window, and then run
+        // by the runtime exactly as menos::run runs a job with no time budget.
+        heap_tracker::reset_peak();
+        Plan plan = preview(fixture.circuit, options);
+        const menos::plan::JobSpec job_spec{.circuit = fixture.circuit,
+                                            .shots = options.shots,
+                                            .want_statevector = options.want_statevector,
+                                            .seed = options.seed,
+                                            .memory_budget_bytes = options.memory_budget_bytes,
+                                            .expectation = options.expectation,
+                                            .accuracy_policy = options.accuracy_policy};
+        if (on_window_start) {
+            on_window_start();
+        }
+        const std::uint64_t plan_live = heap_tracker::live_bytes();
+        heap_tracker::reset_peak();
+        const Result result = runtime::Runtime{}.execute(std::move(plan), job_spec);
         if (heap_tracker::available()) {
-            m.tracked_peak_bytes = heap_tracker::peak_bytes() - live_before;
+            m.tracked_peak_bytes = heap_tracker::peak_bytes() - plan_live;
         }
         m.estimated_peak_bytes = winner_peak_bytes(result.plan());
         m.estimated_device_bytes = winner_device_bytes(result.plan());
@@ -758,6 +791,13 @@ Measurement run_job_fixture(const Fixture& fixture) {
                                      strategy_name(*fixture.expected_strategy));
         }
     } else {
+        // Mitigation plans its three runs inside the call, so its window
+        // includes their planning.
+        if (on_window_start) {
+            on_window_start();
+        }
+        const std::uint64_t live_before = heap_tracker::live_bytes();
+        heap_tracker::reset_peak();
         const MitigatedResult mitigated = run_readout_mitigated(
             fixture.circuit, std::nullopt, options, ReadoutMitigationOptions{20000});
         if (heap_tracker::available()) {
@@ -815,17 +855,111 @@ bool can_run(const Fixture& fixture) {
 }
 
 void prepare(const Fixture& fixture) {
+    // The CPU kernels' thread pool is created on first use and lives for the
+    // process, like the calibration below: a one-time cost, not the job's.
+    static const bool kPoolStarted = [] {
+        const engines::dense::DenseEngine engine;
+        const Circuit warm = layered(18, 1, 0);
+        const EngineExecutionRequest request{.num_qubits = warm.num_qubits(),
+                                             .operations = warm.operations(),
+                                             .want_statevector = true,
+                                             .want_counts = false,
+                                             .want_expectation = false,
+                                             .shots = 0,
+                                             .measure_targets = {},
+                                             .bitstring_width = 0,
+                                             .seed = 1,
+                                             .global_phase = 0.0,
+                                             .budget_bytes = std::uint64_t{1} << 30,
+                                             .is_sole_region = true,
+                                             .observable = nullptr};
+        static_cast<void>(engine.execute(request));
+        return true;
+    }();
+    static_cast<void>(kPoolStarted);
+    // The LAPACK's one-time costs land here too: OpenBLAS allocates its
+    // per-thread buffers on its first large call and keeps them, and every
+    // LAPACK faults in the code pages of each zgesdd path the first time it
+    // runs (measured: about 440 KB of file-backed RSS for the MPS fixtures).
+    // One SVD per path -- square, tall, wide, much taller or wider than the
+    // other side, and below and above the divide-and-conquer size -- runs each
+    // path once before any measurement.
+    static const bool kLapackStarted = [] {
+        const std::array<std::pair<std::size_t, std::size_t>, 11> shapes{{{2, 2},
+                                                                          {4, 2},
+                                                                          {2, 4},
+                                                                          {8, 2},
+                                                                          {2, 8},
+                                                                          {30, 30},
+                                                                          {60, 30},
+                                                                          {30, 60},
+                                                                          {100, 10},
+                                                                          {10, 100},
+                                                                          {256, 256}}};
+        for (const auto& [m, n] : shapes) {
+            std::vector<Complex> a(m * n, Complex{0.0, 0.0});
+            for (std::size_t i = 0; i < m * n; ++i) {
+                a[i] = Complex{std::sin(0.37 * static_cast<double>(i)),
+                               std::cos(0.11 * static_cast<double>(i))};
+            }
+            static_cast<void>(common::svd(a, m, n));
+        }
+        return true;
+    }();
+    static_cast<void>(kLapackStarted);
+#ifdef MENOS_MEMORY_WITH_CUDA
+    // The CUDA runtime loads each kernel's code on its first launch, and its
+    // device-to-host copies go through staging buffers it allocates and keeps:
+    // every kernel the CUDA fixtures use (1-, 2- and 3-qubit gates, the
+    // expectation reduction) and copies of their sizes run once here.
+    if (fixture.engine == "dense_cuda" && engines::dense_cuda::cuda_device_available()) {
+        static const bool kCudaStarted = [] {
+            const engines::dense_cuda::CudaDenseEngine engine;
+            constexpr std::uint32_t kWarmQubits = 18;
+            Circuit warm = layered(kWarmQubits, 1, kWarmQubits);
+            warm.append(Opcode::CCX, {0, 1, 2});
+            measure_all(warm);
+            const std::vector<std::pair<QubitId, ClbitId>> targets = measure_targets(warm);
+            const Observable observable = three_terms(kWarmQubits);
+            const EngineExecutionRequest request{.num_qubits = kWarmQubits,
+                                                 .operations = warm.operations(),
+                                                 .want_statevector = true,
+                                                 .want_counts = true,
+                                                 .want_expectation = true,
+                                                 .shots = 10,
+                                                 .measure_targets = targets,
+                                                 .bitstring_width = kWarmQubits,
+                                                 .seed = 1,
+                                                 .global_phase = 0.0,
+                                                 .budget_bytes = std::uint64_t{1} << 30,
+                                                 .is_sole_region = true,
+                                                 .observable = &observable};
+            static_cast<void>(engine.execute(request));
+            return true;
+        }();
+        static_cast<void>(kCudaStarted);
+    }
+#endif
     if (fixture.kind != FixtureKind::Engine) {
-        // Planning calibrates the machine once per process.
+        // Planning calibrates the machine once per process, and the first job
+        // builds the runtime's engine registry, which also lives for the
+        // process.
+        static const bool kRuntimeStarted = [] {
+            static_cast<void>(run(measured(layered(1, 1, 1)), RunOptions{.shots = 1, .seed = 1}));
+            return true;
+        }();
+        static_cast<void>(kRuntimeStarted);
         static_cast<void>(preview(fixture.circuit, options_for(fixture)));
     }
 }
 
-Measurement run_fixture(const Fixture& fixture) {
+Measurement run_fixture(const Fixture& fixture,
+                        bool draw_samples,
+                        const std::function<void()>& on_window_start) {
     if (fixture.kind == FixtureKind::Engine) {
-        return run_engine_fixture(fixture);
+        return run_engine_fixture(fixture, draw_samples, on_window_start);
     }
-    return run_job_fixture(fixture);
+    return run_job_fixture(fixture, on_window_start);
 }
 
 }  // namespace menos::test::memory

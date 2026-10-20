@@ -11,6 +11,7 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/pauli_row.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -370,7 +371,7 @@ bool is_fully_clifford(const std::vector<Operation>& operations) {
 // original Pauli string, so it is safe to abandon there; `completed` is shared
 // across every term of one execute() call so it counts that whole invocation.
 std::complex<double> propagate_term(const PauliString& start,
-                                    const std::vector<Operation>& operations,
+                                    std::span<const Operation> operations,
                                     std::uint64_t& peak_terms_seen,
                                     const ExecutionMonitor* monitor,
                                     std::uint64_t& completed) {
@@ -463,6 +464,39 @@ std::complex<double> propagate_term(const PauliString& start,
         }
     }
     return total;
+}
+
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4), for a term list of at most max_terms terms of
+// n qubits: one complex per observable term, plus one rotation's split, when
+// the old list (its capacity at most twice its size, from push_back growth)
+// and the new one (at its last reallocation) are both live, with the few
+// terms a split builds and returns in flight. max_terms is the estimate's own
+// term-growth bound, number of terms times the branching product, as before
+// Phase 21 (docs/adr/0025 section 7: its overcount is left as it is).
+// Term counts and a qubit count: distinct roles, named at the one call site.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+std::uint64_t peak_bytes_of(std::uint64_t max_terms,
+                            std::uint32_t num_qubits,
+                            std::uint64_t num_observable_terms) {
+    const std::uint64_t words = (std::uint64_t{num_qubits} + 63) / 64;
+    // A term's x and z words are two allocations.
+    const std::uint64_t term_words =
+        2 * common::heap_block_bytes(checked_mul(words, sizeof(std::uint64_t)));
+    const std::uint64_t term = checked_add(sizeof(WeightedTerm), term_words);
+    // A split's locals, its initializer list and the vector built from it.
+    constexpr std::uint64_t kTermsInFlight = 6;
+    std::uint64_t bytes = common::grown_vector_bytes(max_terms, sizeof(WeightedTerm));
+    bytes = checked_add(bytes,
+                        checked_add(checked_mul(2 * max_terms, sizeof(WeightedTerm)),
+                                    common::kHeapBlockOverheadBytes));
+    bytes = checked_add(bytes, checked_mul(2 * max_terms, term_words));
+    // The terms in flight, and the vector a split returns them in.
+    bytes = checked_add(
+        bytes, checked_add(checked_mul(kTermsInFlight, term), common::kHeapBlockOverheadBytes));
+    return checked_add(
+        bytes,
+        common::heap_block_bytes(checked_mul(num_observable_terms, sizeof(std::complex<double>))));
 }
 
 }  // namespace
@@ -560,10 +594,7 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         }
         const std::uint64_t max_terms = checked_mul(t0, branching);
 
-        const std::uint64_t words = (std::uint64_t{request.num_qubits} + 63) / 64;
-        const std::uint64_t row_bytes = checked_add(
-            checked_mul(std::uint64_t{2}, checked_mul(words, std::uint64_t{8})), std::uint64_t{16});
-        const std::uint64_t peak_bytes = checked_mul(max_terms, row_bytes);
+        const std::uint64_t peak_bytes = peak_bytes_of(max_terms, request.num_qubits, t0);
         const std::uint64_t work = checked_mul(max_terms, num_gates);
         return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
@@ -572,7 +603,9 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
 }
 
 EngineExecutionResult PauliPropagationEngine::execute(const EngineExecutionRequest& request) const {
-    std::vector<Operation> operations(request.operations.begin(), request.operations.end());
+    // Read in place: until Phase 21 every operation was copied first
+    // (docs/adr/0025 section 3.3).
+    const std::span<const Operation> operations = request.operations;
 
     std::vector<std::complex<double>> terms;
     terms.reserve(request.observable->terms.size());

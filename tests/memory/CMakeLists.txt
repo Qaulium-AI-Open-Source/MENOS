@@ -44,4 +44,6 @@ if(MENOS_ENABLE_CUDA)
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(menos_memory_tests DISCOVERY_TIMEOUT 60)
+# Serial: these are measurements of a process's memory, which concurrent test
+# processes would perturb (docs/adr/0025 section 10).
+gtest_discover_tests(menos_memory_tests DISCOVERY_TIMEOUT 60 PROPERTIES RUN_SERIAL TRUE)

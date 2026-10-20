@@ -54,4 +54,12 @@ namespace menos::engines::dense {
     std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
     std::uint32_t bitstring_width);
 
+// The heap bytes either sample() overload allocates for `shots` draws whose
+// outcomes are measured on `measured_qubits` qubits, into bitstring_width-bit
+// keys: the sorted uniforms (8 bytes per shot) and the histogram it returns,
+// which outlives the call (docs/adr/0025 section 3.4).
+[[nodiscard]] std::uint64_t sample_bytes(std::uint64_t shots,
+                                         std::uint32_t measured_qubits,
+                                         std::uint32_t bitstring_width);
+
 }  // namespace menos::engines::dense

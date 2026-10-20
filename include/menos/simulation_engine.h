@@ -240,6 +240,17 @@ struct EngineEstimateRequest {
     // 0 for every other engine, and the trajectory engine reports 0 as
     // infeasible rather than costing an empty run.
     std::uint64_t trajectories = 0;
+    // The counts request's shape, which the peak-byte figure depends on (Phase
+    // 21, docs/adr/0025 section 3.4): shots sizes the sampling buffers and
+    // bounds the histogram, bitstring_width sizes every outcome key, and
+    // is_sole_region says whether the engine returns a histogram (true) or a
+    // RegionCountsSampler that the caller draws from (false, a Factorized
+    // region). They match EngineExecutionRequest's fields of the same names.
+    // The defaults describe a request with no counts; a caller that asks for
+    // counts and leaves shots at 0 is costed for an empty histogram.
+    std::uint64_t shots = 0;
+    std::uint32_t bitstring_width = 0;
+    bool is_sole_region = true;
 };
 
 // A simulation engine: something that can estimate the cost of, and

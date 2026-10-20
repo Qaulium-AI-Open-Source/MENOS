@@ -31,7 +31,9 @@
 #include <string>
 #include <vector>
 
+#include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/tolerance.h"
 
 namespace menos::common {
@@ -65,11 +67,53 @@ lapack_int zgesdd_optimal_lwork(lapack_int m, lapack_int n) {
                   &rwork_dummy,
                   &iwork_dummy,
                   &info);
-    ensure(info == 0, "svd: zgesdd workspace query failed with info=" + std::to_string(info));
+    // The message is built only on failure: an eager concatenation would
+    // allocate on every call (docs/adr/0025 section 3.4).
+    if (info != 0) {
+        throw InternalError("svd: zgesdd workspace query failed with info=" + std::to_string(info));
+    }
     return static_cast<lapack_int>(optimal.real());
 }
 
+// LAPACKE's rwork size for jobz != 'N', which svd() allocates.
+std::size_t rwork_size(std::size_t m, std::size_t n) {
+    const std::size_t k = std::min(m, n);
+    return std::max<std::size_t>(1, k * std::max((5 * k) + 7, (2 * std::max(m, n)) + (2 * k) + 1));
+}
+
 }  // namespace
+
+std::uint64_t svd_result_bytes(std::size_t m, std::size_t n) {
+    constexpr std::uint64_t kComplex = sizeof(std::complex<double>);
+    const std::uint64_t k = std::min(m, n);
+    return checked_add(checked_add(heap_block_bytes(checked_mul(checked_mul(m, k), kComplex)),
+                                   heap_block_bytes(checked_mul(checked_mul(k, n), kComplex))),
+                       heap_block_bytes(checked_mul(k, sizeof(double))));
+}
+
+std::uint64_t svd_peak_bytes(std::size_t m, std::size_t n) {
+    constexpr std::uint64_t kComplex = sizeof(std::complex<double>);
+    const std::uint64_t k = std::min(m, n);
+    const std::uint64_t input = heap_block_bytes(checked_mul(checked_mul(m, n), kComplex));
+    const std::uint64_t u = heap_block_bytes(checked_mul(checked_mul(m, k), kComplex));
+    const std::uint64_t vt = heap_block_bytes(checked_mul(checked_mul(k, n), kComplex));
+    const std::uint64_t s = heap_block_bytes(checked_mul(k, sizeof(double)));
+    const auto lwork = static_cast<std::uint64_t>(std::max<lapack_int>(
+        1, zgesdd_optimal_lwork(static_cast<lapack_int>(m), static_cast<lapack_int>(n))));
+    const std::uint64_t workspace = checked_add(
+        checked_add(heap_block_bytes(checked_mul(lwork, kComplex)),
+                    heap_block_bytes(checked_mul(rwork_size(m, n), sizeof(double)))),
+        heap_block_bytes(checked_mul(std::max<std::uint64_t>(1, 8 * k), sizeof(lapack_int))));
+    // zgesdd's call: the column-major input, U, VT, S and the workspace. Then
+    // the row-major U beside both column-major outputs, then the row-major
+    // VT beside the column-major one and the row-major U. Each buffer is one
+    // allocation.
+    const std::uint64_t call =
+        checked_add(checked_add(input, workspace), checked_add(checked_add(u, vt), s));
+    const std::uint64_t first_transpose = checked_add(checked_add(2 * u, vt), s);
+    const std::uint64_t second_transpose = checked_add(checked_add(u, 2 * vt), s);
+    return std::max({call, first_transpose, second_transpose});
+}
 
 SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_t n) {
     ensure(a.size() == m * n, "svd: matrix size does not match m * n");
@@ -107,10 +151,7 @@ SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_
     const lapack_int lwork = zgesdd_optimal_lwork(lm, ln);
     std::vector<std::complex<double>> work(
         static_cast<std::size_t>(std::max<lapack_int>(1, lwork)));
-    // LAPACKE's size for jobz != 'N'.
-    const std::size_t lrwork =
-        std::max<std::size_t>(1, k * std::max((5 * k) + 7, (2 * std::max(m, n)) + (2 * k) + 1));
-    std::vector<double> rwork(lrwork);
+    std::vector<double> rwork(rwork_size(m, n));
     std::vector<lapack_int> iwork(std::max<std::size_t>(1, 8 * k));
 
     const char jobz = 'S';
@@ -133,13 +174,17 @@ SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_
                   rwork.data(),
                   iwork.data(),
                   &info);
-    ensure(info == 0, "svd: zgesdd failed with info=" + std::to_string(info));
+    if (info != 0) {
+        throw InternalError("svd: zgesdd failed with info=" + std::to_string(info));
+    }
 
     // Release the input and workspace before the row-major outputs exist.
-    a_col = {};
-    work = {};
-    rwork = {};
-    iwork = {};
+    // (Swapping with an empty vector frees the buffer; `v = {}` would assign
+    // an empty initializer list and keep the capacity.)
+    std::vector<std::complex<double>>().swap(a_col);
+    std::vector<std::complex<double>>().swap(work);
+    std::vector<double>().swap(rwork);
+    std::vector<lapack_int>().swap(iwork);
 
     result.u.resize(m * k);
     for (std::size_t i = 0; i < m; ++i) {
@@ -147,7 +192,7 @@ SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_
             result.u[(i * k) + j] = u_col[(j * m) + i];
         }
     }
-    u_col = {};
+    std::vector<std::complex<double>>().swap(u_col);
     result.vt.resize(k * n);
     for (std::size_t i = 0; i < k; ++i) {
         for (std::size_t j = 0; j < n; ++j) {

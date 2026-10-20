@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "analysis/interaction_graph.h"
 #include "plan/available_engines.h"
 #include "plan/planner.h"
@@ -230,17 +232,30 @@ TEST(RuntimeTest, CountsOnlyPeakBytesIsSingleRegionNotSumOfAllRegions) {
                                                          /*want_expectation=*/false,
                                                          /*observable=*/nullptr,
                                                          /*budget_bytes=*/1'000'000'000ULL,
-                                                         {});
+                                                         {},
+                                                         job_spec.shots);
     plan.reduced_circuit = circuit;
     ASSERT_EQ(plan.regions.size(), 3U);
+
+    std::uint64_t largest_region = 0;
+    std::uint64_t all_regions = 0;
+    for (const Region& region : plan.regions) {
+        largest_region = std::max(largest_region, region.estimated_state_bytes);
+        all_regions += region.estimated_state_bytes;
+    }
 
     const Runtime rt;
     const Result result = rt.execute(plan, job_spec);
 
-    constexpr std::uint64_t kOneRegionBytes = 16ULL * 32U;  // 16 * 2^5
-    EXPECT_EQ(result.actual_state_bytes(), kOneRegionBytes)
-        << "peak must be one region's bytes, not the sum across all 3 regions ("
-        << 3 * kOneRegionBytes << ")";
+    // actual_state_bytes() reports the largest single region's figure, not
+    // the sum across all 3. (The memory the job really holds, with every
+    // region's sampler kept until sampling, is Result::peak_host_bytes(),
+    // docs/adr/0025.) Each region's figure is its engine's estimate, 16 * 2^5
+    // for the state plus its buffers and sampler (docs/adr/0025 section 3.4).
+    EXPECT_EQ(result.actual_state_bytes(), largest_region)
+        << "peak must be one region's bytes, not the sum across all 3 regions (" << all_regions
+        << ")";
+    EXPECT_GE(largest_region, 16ULL * 32U);
 }
 
 TEST(RuntimeTest, StatevectorPeakBytesIsOneRegionPlusGlobalNotSumOfAllRegions) {
@@ -257,14 +272,19 @@ TEST(RuntimeTest, StatevectorPeakBytesIsOneRegionPlusGlobalNotSumOfAllRegions) {
     const Plan plan = menos::plan::plan_job(job_spec, hw);
     ASSERT_EQ(plan.strategy, Strategy::Factorized);
 
+    std::uint64_t largest_region = 0;
+    for (const Region& region : plan.regions) {
+        largest_region = std::max(largest_region, region.estimated_state_bytes);
+    }
+
     const Runtime rt;
     const Result result = rt.execute(plan, job_spec);
 
-    constexpr std::uint64_t kOneRegionBytes = 16ULL * 32U;        // 16 * 2^5
     constexpr std::uint64_t kGlobalBytes = 16ULL * (1ULL << 15);  // 16 * 2^15
-    EXPECT_EQ(result.actual_state_bytes(), kOneRegionBytes + kGlobalBytes)
+    EXPECT_EQ(result.actual_state_bytes(), largest_region + kGlobalBytes)
         << "peak must be one region plus the global buffer, not the sum of all 3 regions plus "
            "the global buffer";
+    EXPECT_GE(largest_region, 16ULL * 32U);  // 16 * 2^5, plus the region's buffers
 }
 
 // BitString migration (docs/BUILD_PLAN.md Phase 3, 3.8/3.11 item 10):

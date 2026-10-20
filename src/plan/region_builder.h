@@ -64,6 +64,7 @@ namespace menos::plan {
     bool want_expectation,
     const Observable* observable,
     std::uint64_t budget_bytes,
-    const AccuracyPolicy& accuracy_policy);
+    const AccuracyPolicy& accuracy_policy,
+    std::uint64_t shots);
 
 }  // namespace menos::plan

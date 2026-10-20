@@ -1,5 +1,7 @@
 #include "cost/cost_model.h"
 
+#include "common/memory_bounds.h"
+
 #include <gtest/gtest.h>
 
 #include "engines/dense/dense_engine.h"
@@ -10,6 +12,17 @@ namespace {
 
 using engines::dense::DenseEngine;
 using engines::stabilizer::StabilizerEngine;
+
+// The runtime's bookkeeping, as cost::estimate_factorized and estimate_direct
+// charge it (docs/adr/0025 section 3.4): the clbit map's sentinel node, and one
+// per-region target list -- its header and, while it grows, two allocations.
+const std::uint64_t kClbitMapSentinel =
+    common::tree_node_bytes(sizeof(std::pair<const ClbitId, QubitId>));
+// The dense engine on 2 qubits with a CX: the state 64 and the CX's matrix
+// 256, one allocation each (tests/engines/dense/dense_engine_test.cpp).
+const std::uint64_t kDenseBell = common::heap_block_bytes(64) + common::heap_block_bytes(256);
+const std::uint64_t kRegionList =
+    sizeof(std::vector<std::pair<QubitId, ClbitId>>) + (2 * common::kHeapBlockOverheadBytes);
 
 TEST(EstimateDirectTest, FeasibleWithinBudget) {
     Circuit circuit(2, 0);
@@ -23,17 +36,30 @@ TEST(EstimateDirectTest, FeasibleWithinBudget) {
                                                   /*want_expectation=*/false,
                                                   /*observable=*/nullptr,
                                                   /*budget_bytes=*/1'000'000,
-                                                  /*accuracy_policy=*/{});
+                                                  /*accuracy_policy=*/{},
+                                                  /*trajectories=*/0,
+                                                  /*shots=*/0);
     ASSERT_TRUE(estimate.feasible);
     EXPECT_EQ(estimate.estimated_work_units, 32U);
-    EXPECT_EQ(estimate.estimated_peak_bytes, 64U);
+    // The dense engine's figure (tests/engines/dense/dense_engine_test.cpp)
+    // plus the runtime's measurement bookkeeping, which for a circuit with no
+    // clbits is the clbit map's one sentinel node (docs/adr/0025 section 3.4).
+    EXPECT_EQ(estimate.estimated_peak_bytes, kDenseBell + kClbitMapSentinel);
 }
 
 TEST(EstimateDirectTest, InfeasibleOverBudgetNamesBothQuantities) {
     Circuit circuit(2, 0);
     const DenseEngine dense;
-    const CostEstimate estimate =
-        estimate_direct(circuit, dense, true, false, false, nullptr, /*budget_bytes=*/10, {});
+    const CostEstimate estimate = estimate_direct(circuit,
+                                                  dense,
+                                                  true,
+                                                  false,
+                                                  false,
+                                                  nullptr,
+                                                  /*budget_bytes=*/10,
+                                                  {},
+                                                  /*trajectories=*/0,
+                                                  /*shots=*/0);
     EXPECT_FALSE(estimate.feasible);
     EXPECT_NE(estimate.infeasible_reason.find("bytes"), std::string::npos);
 }
@@ -50,7 +76,9 @@ TEST(EstimateDirectTest, StabilizerEngineOnAllCliffordCircuitIsFeasible) {
                                                   /*want_expectation=*/false,
                                                   /*observable=*/nullptr,
                                                   1'000'000,
-                                                  {});
+                                                  {},
+                                                  /*trajectories=*/0,
+                                                  /*shots=*/0);
     EXPECT_TRUE(estimate.feasible);
 }
 
@@ -58,8 +86,16 @@ TEST(EstimateDirectTest, StabilizerEngineRequestingStatevectorIsInfeasible) {
     Circuit circuit(2, 0);
     circuit.append(Opcode::H, {0});
     const StabilizerEngine stabilizer;
-    const CostEstimate estimate = estimate_direct(
-        circuit, stabilizer, /*want_statevector=*/true, false, false, nullptr, 1'000'000, {});
+    const CostEstimate estimate = estimate_direct(circuit,
+                                                  stabilizer,
+                                                  /*want_statevector=*/true,
+                                                  false,
+                                                  false,
+                                                  nullptr,
+                                                  1'000'000,
+                                                  {},
+                                                  /*trajectories=*/0,
+                                                  /*shots=*/0);
     EXPECT_FALSE(estimate.feasible);
     EXPECT_NE(estimate.infeasible_reason.find("dense"), std::string::npos);
 }
@@ -68,8 +104,16 @@ TEST(EstimateDirectTest, StabilizerEngineOnNonCliffordCircuitIsInfeasible) {
     Circuit circuit(1, 0);
     circuit.append(Opcode::T, {0});
     const StabilizerEngine stabilizer;
-    const CostEstimate estimate =
-        estimate_direct(circuit, stabilizer, false, true, false, nullptr, 1'000'000, {});
+    const CostEstimate estimate = estimate_direct(circuit,
+                                                  stabilizer,
+                                                  false,
+                                                  true,
+                                                  false,
+                                                  nullptr,
+                                                  1'000'000,
+                                                  {},
+                                                  /*trajectories=*/0,
+                                                  /*shots=*/0);
     EXPECT_FALSE(estimate.feasible);
     EXPECT_NE(estimate.infeasible_reason.find('t'), std::string::npos);
 }
@@ -78,7 +122,11 @@ TEST(EstimateDirectTest, StabilizerEngineOnNonCliffordCircuitIsInfeasible) {
 // one CX) and {2} (m=1, idle), want_statevector=true.
 // Component {0,1}: work = 2^2 (init) + 2^(2+2) (CX) + 2^2 (statevector) = 4+16+4 = 24, peak=64
 // Component {2}:   idle (no gate operations) -- free: work=0, peak=0
-// peak_bytes = max(64,0) + 16*2^3 (global) = 64 + 128 = 192
+// peak_bytes (docs/adr/0025 section 3.4) = the regions' sum (the dense
+// region's state 64 and CX matrix 256; the idle one 0), + 16*2^3 (global) =
+// 128, each one allocation, + the
+// runtime's bookkeeping: the clbit map's sentinel node and one per-region
+// target list per component (its header and, while it grows, two allocations)
 // total_work = 24 + 0 + 2^3 * 2 components (recombination, idle regions
 //              still participate in the multiply-into-global pass) = 24 + 16 = 40
 TEST(EstimateFactorizedTest, ExactHandComputableValue) {
@@ -98,9 +146,11 @@ TEST(EstimateFactorizedTest, ExactHandComputableValue) {
                                                       /*want_expectation=*/false,
                                                       /*observable=*/nullptr,
                                                       /*budget_bytes=*/1'000'000,
-                                                      /*accuracy_policy=*/{});
+                                                      /*accuracy_policy=*/{},
+                                                      /*shots=*/0);
     ASSERT_TRUE(estimate.feasible);
-    EXPECT_EQ(estimate.estimated_peak_bytes, 192U);
+    EXPECT_EQ(estimate.estimated_peak_bytes,
+              kDenseBell + common::heap_block_bytes(128) + kClbitMapSentinel + (2 * kRegionList));
     EXPECT_EQ(estimate.estimated_work_units, 40U);
 }
 
@@ -125,15 +175,33 @@ TEST(EstimateFactorizedTest, IdleComponentsAreFree) {
                                                       /*want_expectation=*/false,
                                                       /*observable=*/nullptr,
                                                       /*budget_bytes=*/1'000'000,
-                                                      /*accuracy_policy=*/{});
+                                                      /*accuracy_policy=*/{},
+                                                      /*shots=*/0);
     ASSERT_TRUE(estimate.feasible);
     // The {0,1} component is 1 CX, all-Clifford -- the stabilizer engine
     // wins it (cheaper than dense's exponential formula even at m=2):
     // stabilizer work = m (init) + 1 gate * m + elimination (2*m^2*words)
     // + sampling (m*words), words=1: 2 + 1*2 + 2*4*1 + 2*1 = 2+2+8+2=14.
     EXPECT_EQ(estimate.estimated_work_units, 14U);
-    EXPECT_LT(estimate.estimated_peak_bytes, 64U)
-        << "the stabilizer engine's tableau is smaller than dense's 16*2^2=64 bytes here";
+
+    // Memory, too: the 18 idle components add only their (empty) per-region
+    // target lists to what the one real component costs on its own.
+    Circuit alone(2, 0);
+    alone.append(Opcode::CX, {0, 1});
+    const CostEstimate alone_estimate =
+        estimate_factorized(alone,
+                            analysis::build_interaction_graph(alone),
+                            engines,
+                            /*want_statevector=*/false,
+                            /*want_counts=*/true,
+                            /*want_expectation=*/false,
+                            /*observable=*/nullptr,
+                            /*budget_bytes=*/1'000'000,
+                            /*accuracy_policy=*/{},
+                            /*shots=*/0);
+    ASSERT_TRUE(alone_estimate.feasible);
+    EXPECT_EQ(estimate.estimated_peak_bytes,
+              alone_estimate.estimated_peak_bytes + (18 * kRegionList));
 }
 
 TEST(EstimateFactorizedTest, InfeasibleOverBudgetNamesBothQuantities) {
@@ -144,7 +212,7 @@ TEST(EstimateFactorizedTest, InfeasibleOverBudgetNamesBothQuantities) {
     const StabilizerEngine stabilizer;
     const std::vector<const SimulationEngine*> engines{&dense, &stabilizer};
     const CostEstimate estimate = estimate_factorized(
-        circuit, graph, engines, true, false, false, nullptr, /*budget_bytes=*/10, {});
+        circuit, graph, engines, true, false, false, nullptr, /*budget_bytes=*/10, {}, /*shots=*/0);
     EXPECT_FALSE(estimate.feasible);
     EXPECT_NE(estimate.infeasible_reason.find("bytes"), std::string::npos);
 }

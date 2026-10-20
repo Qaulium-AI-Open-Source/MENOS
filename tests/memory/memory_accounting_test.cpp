@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -15,12 +16,18 @@
 #include "heap_tracker.h"
 #include "memory_fixtures.h"
 
-// Phase 21 memory accounting (docs/adr/0025). Step 1 measures and reports; it
-// changes no behaviour. For every fixture of section 4:
-//   * the outputs are bitwise identical to the committed baseline;
-//   * the heap-tracker peak and the RSS high-water delta are printed beside the
-//     estimate, as a "MEMORY" line, for section 10.1.
-// The estimate >= measured assertions are added per engine in step 3.
+// Phase 21 memory accounting (docs/adr/0025, the gate of section 9 Q4). For
+// every fixture of section 4:
+//   * the outputs are bitwise identical to the committed baseline taken before
+//     any Phase 21 change;
+//   * the estimate is at least the heap-tracker peak, with no slack;
+//   * the estimate plus B is at least the rise in peak RSS, measured in a fresh
+//     process, where B is the same figure for the smallest run of the same
+//     engine in the same session.
+// Under AddressSanitizer (the dev and windows-dev presets) the sanitizer owns
+// operator new and the process's memory, so both memory checks are skipped
+// there, by name; the bitwise check runs everywhere. Each figure is also
+// printed ("MEMORY", "RSS") for docs/adr/0025 section 10.
 
 namespace menos::test::memory {
 namespace {
@@ -76,6 +83,11 @@ TEST_P(MemoryFixtureTest, OutputsMatchTheBaselineAndMemoryIsReported) {
               << "\n";
     RecordProperty("estimate", std::to_string(m.estimated_peak_bytes));
     RecordProperty("tracked_peak", std::to_string(m.tracked_peak_bytes));
+
+    if (heap_tracker::available()) {
+        EXPECT_LE(m.tracked_peak_bytes, m.estimated_peak_bytes)
+            << fixture->name << ": the estimate is below the heap the run really used";
+    }
 
     const nlohmann::json& all = baseline();
     ASSERT_TRUE(all.is_object()) << "missing baseline " << kBaselineFile;
@@ -136,29 +148,72 @@ std::uint64_t field(const std::map<std::string, std::string>& fields, const std:
 
 class MemoryRssTest : public testing::TestWithParam<std::string> {};
 
+// A fresh process's peak RSS moves between identical runs, in steps of the
+// allocator's and the kernel's granularity, independently of the job
+// (measured, docs/adr/0025 section 10: one or two 64 KiB steps on CPU runs,
+// and on CUDA runs of 2 to 20 qubits alike). So the fixture's figure is the
+// median of kRssRuns runs, and B -- the part of a run that does not depend on
+// the job -- is the largest of kRssRuns baseline runs, noise included.
+constexpr std::size_t kRssRuns = 5;
+
+struct RssFigure {
+    std::uint64_t median = 0;
+    std::uint64_t largest = 0;
+    std::map<std::string, std::string> fields;  // the last run's report
+};
+
+// The median and largest peak-RSS rise of kRssRuns fresh runs of one fixture;
+// the fields are empty if any run fails.
+RssFigure rss_of(const std::string& name) {
+    RssFigure figure;
+    std::vector<std::uint64_t> deltas;
+    for (std::size_t i = 0; i < kRssRuns; ++i) {
+        figure.fields = run_probe(name);
+        if (!figure.fields.contains("rss_peak")) {
+            figure.fields.clear();
+            return figure;
+        }
+        deltas.push_back(field(figure.fields, "rss_peak") - field(figure.fields, "rss_before"));
+    }
+    std::sort(deltas.begin(), deltas.end());
+    figure.median = deltas[kRssRuns / 2];
+    figure.largest = deltas.back();
+    return figure;
+}
+
 TEST_P(MemoryRssTest, PeakResidentMemoryIsReported) {
     const Fixture* fixture = find_fixture(GetParam());
     ASSERT_NE(fixture, nullptr);
     if (!can_run(*fixture)) {
         GTEST_SKIP() << "no CUDA device";
     }
-    const std::map<std::string, std::string> run = run_probe(fixture->name);
-    ASSERT_TRUE(run.contains("rss_peak")) << "menos_memory_probe " << fixture->name << " failed";
-    const std::map<std::string, std::string> base = run_probe(rss_baseline_for(*fixture).name);
-    ASSERT_TRUE(base.contains("rss_peak")) << "baseline probe failed";
-
-    if (field(run, "masked") != 0) {
-        std::cout << "RSS fixture=" << fixture->name
-                  << " masked=1 (the high-water mark cannot be reset here)\n";
-        return;
+    if (!heap_tracker::available()) {
+        GTEST_SKIP() << "AddressSanitizer build: the sanitizer's shadow memory makes RSS "
+                        "meaningless here";
     }
-    const std::uint64_t delta = field(run, "rss_peak") - field(run, "rss_before");
-    const std::uint64_t b = field(base, "rss_peak") - field(base, "rss_before");
-    std::cout << "RSS fixture=" << fixture->name << " estimate=" << field(run, "estimate")
-              << " rss_delta=" << delta << " b=" << b << " rss_before=" << field(run, "rss_before")
-              << " hwm_reset=" << field(run, "hwm_reset") << "\n";
-    RecordProperty("rss_delta", std::to_string(delta));
-    RecordProperty("b", std::to_string(b));
+    const RssFigure run = rss_of(fixture->name);
+    ASSERT_FALSE(run.fields.empty()) << "menos_memory_probe " << fixture->name << " failed";
+    const RssFigure base = rss_of(rss_baseline_for(*fixture).name);
+    ASSERT_FALSE(base.fields.empty()) << "baseline probe failed";
+
+    const std::uint64_t estimate = field(run.fields, "estimate");
+    std::cout << "RSS fixture=" << fixture->name << " estimate=" << estimate
+              << " rss_delta=" << run.median << " b=" << base.largest
+              << " method=" << run.fields.at("method") << "\n";
+    RecordProperty("rss_delta", std::to_string(run.median));
+    RecordProperty("b", std::to_string(base.largest));
+#ifdef _WIN32
+    // Measured and reported, not asserted (the owner's decision, docs/adr/0025
+    // section 9, Q4 revisited): on Windows the working set also holds the heap's
+    // fragmentation under the MPS engine's growing buffers and the kernel's page
+    // tables for large allocations, which no estimate of MENOS's own allocations
+    // can bound. The heap-tracker check, with no slack, is asserted on Windows.
+    GTEST_SKIP() << fixture->name << ": reported, not asserted, on Windows (rise " << run.median
+                 << ", estimate " << estimate << ", B " << base.largest << ")";
+#else
+    EXPECT_LE(run.median, estimate + base.largest)
+        << fixture->name << ": the process grew by more than the estimate plus B";
+#endif
 }
 
 INSTANTIATE_TEST_SUITE_P(Fixtures,

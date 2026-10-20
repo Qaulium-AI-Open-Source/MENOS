@@ -344,18 +344,34 @@ Complex exact_value(const Fixture& f) {
 // fit. This is the "memory budget below 16 * 4^n" route of docs/adr/0017
 // section 5, used to validate the engine on circuits where it would lose on
 // cost.
-Result run_on_trajectories(const Circuit& circuit, RunOptions options) {
-    options.memory_budget_bytes = std::uint64_t{1} << 34;
-    const Plan preview_plan = preview(circuit, options);
-    const CandidateSummary* trajectory = candidate(preview_plan, Strategy::DirectTrajectory);
-    if (trajectory == nullptr || !trajectory->feasible) {
-        ADD_FAILURE() << "no feasible trajectory candidate:\n" << preview_plan.explain();
-        return run(circuit, options);
-    }
-    options.memory_budget_bytes = trajectory->estimated_peak_bytes;
-    Result result = run(circuit, options);
-    EXPECT_EQ(result.plan().strategy, Strategy::DirectTrajectory) << result.explain();
-    return result;
+// Runs the job on trajectories, with the density matrix excluded by an observed
+// runtime floor above a generous time budget -- the planner's own mechanism,
+// as after a replan -- and otherwise exactly as menos::run would: the same job,
+// planned by plan_job and run by run_with_replanning, with a clock that never
+// crosses. Until Phase 21 this excluded the density matrix with a memory budget
+// at the trajectory plan's figure, which only the old figures allowed: with
+// the real ones, a small density matrix is below the trajectory engine's own
+// buffers (docs/adr/0025 section 3.4).
+Result run_on_trajectories(const Circuit& circuit, const RunOptions& options) {
+    const plan::JobSpec job{
+        .circuit = circuit,
+        .shots = options.shots,
+        .want_statevector = options.want_statevector,
+        .seed = options.seed,
+        .memory_budget_bytes = std::uint64_t{1} << 34,
+        .expectation = options.expectation,
+        .accuracy_policy = options.accuracy_policy,
+        .time_budget_seconds = 1.0e18,
+        .noise_method = options.noise_method,
+        .expectation_precision = options.expectation_precision,
+    };
+    const plan::HardwareProfile& profile = plan::calibrated_hardware_profile();
+    plan::RuntimeObservations observations;
+    observations.observe(Engine::DensityMatrix, Backend::Cpu, 2.0e18);
+    const Plan trajectory_plan = plan::plan_job(job, profile, observations);
+    EXPECT_EQ(trajectory_plan.strategy, Strategy::DirectTrajectory) << trajectory_plan.explain();
+    return api::run_with_replanning(
+        job, profile, trajectory_plan, []() -> api::ElapsedSource { return []() { return 0.0; }; });
 }
 
 Circuit noisy_one_qubit() {
@@ -823,12 +839,16 @@ TEST(TrajectoryRunTest, AReplanFromTheDensityMatrixToTrajectoriesIsDeterministic
     EXPECT_EQ(replanned.replans()[0].superseded_plan.strategy, Strategy::DirectDensityMatrix);
     ASSERT_EQ(replanned.plan().strategy, Strategy::DirectTrajectory) << replanned.explain();
 
-    // The same job planned straight onto trajectories (the density matrix does
-    // not fit the budget) gives the identical result.
-    plan::JobSpec direct_job = job;
-    direct_job.time_budget_seconds = std::nullopt;
-    direct_job.memory_budget_bytes = replanned.plan().estimated_state_bytes;
-    const Plan direct_plan = plan::plan_job(direct_job, kUnitRateProfile);
+    // The same job planned straight onto trajectories -- with the density
+    // matrix excluded by the same observed floor the replan recorded -- gives
+    // the identical result. (Until Phase 21 the density matrix was excluded
+    // with a memory budget at the trajectory plan's figure; with the real
+    // figures, a 2-qubit density matrix is smaller than the trajectory
+    // engine's own buffers, docs/adr/0025 section 3.4.)
+    plan::RuntimeObservations observations;
+    observations.observe(Engine::DensityMatrix, Backend::Cpu, 2.0e9);
+    const plan::JobSpec& direct_job = job;
+    const Plan direct_plan = plan::plan_job(direct_job, kUnitRateProfile, observations);
     ASSERT_EQ(direct_plan.strategy, Strategy::DirectTrajectory);
     const Result direct = api::run_with_replanning(
         direct_job, kUnitRateProfile, direct_plan, []() -> api::ElapsedSource {

@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <complex>
+#include <utility>
 
+#include "common/checked_math.h"
+#include "common/memory_bounds.h"
 #include "common/rng.h"
 
 namespace menos::engines::dense {
@@ -41,6 +44,20 @@ CumulativeDistribution::CumulativeDistribution(
       bitstring_width_(bitstring_width) {
     build(probabilities.size(),
           [probabilities](std::size_t basis) { return probabilities[basis]; });
+}
+
+CumulativeDistribution::CumulativeDistribution(
+    std::vector<double>&& probabilities,
+    std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+    std::uint32_t bitstring_width)
+    : cumulative_(std::move(probabilities)),
+      measure_targets_(measure_targets.begin(), measure_targets.end()),
+      bitstring_width_(bitstring_width) {
+    double cumulative = 0.0;
+    for (double& entry : cumulative_) {
+        cumulative += entry;
+        entry = cumulative;
+    }
 }
 
 namespace {
@@ -86,6 +103,14 @@ BitString CumulativeDistribution::sample_once(
         }
     }
     return outcome_of(index, measure_targets, bitstring_width);
+}
+
+std::uint64_t CumulativeDistribution::heap_bytes(std::uint64_t size, std::uint64_t num_targets) {
+    return common::checked_add(
+        common::checked_add(common::heap_block_bytes(sizeof(CumulativeDistribution)),
+                            common::heap_block_bytes(common::checked_mul(size, sizeof(double)))),
+        common::heap_block_bytes(
+            common::checked_mul(num_targets, sizeof(std::pair<std::uint32_t, std::uint32_t>))));
 }
 
 BitString CumulativeDistribution::sample_one(common::Rng& rng) const {

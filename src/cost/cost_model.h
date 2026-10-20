@@ -40,7 +40,9 @@ struct EngineChoice {
 // forwarded to engine.estimate() unchanged (Phase 6); every engine
 // before DirectMPS ignores it. trajectories is the count N the
 // DirectTrajectory candidate costs (Phase 13, cost::trajectory_count);
-// every other engine ignores it.
+// every other engine ignores it (0). shots is the job's shot count, which
+// sizes the counts histogram and sampling buffers the peak-byte figure
+// includes (Phase 21, docs/adr/0025 section 3.4); 0 without counts.
 [[nodiscard]] CostEstimate estimate_direct(const Circuit& circuit,
                                            const SimulationEngine& engine,
                                            bool want_statevector,
@@ -49,17 +51,19 @@ struct EngineChoice {
                                            const Observable* observable,
                                            std::uint64_t budget_bytes,
                                            const AccuracyPolicy& accuracy_policy,
-                                           std::uint64_t trajectories = 0);
+                                           std::uint64_t trajectories,
+                                           std::uint64_t shots);
 
 // The Factorized candidate: one region per interaction-graph component,
 // executed sequentially, each independently costed via
 // pick_cheapest_engine on its own restricted observable
 // (common::restrict_observable, docs/BUILD_PLAN.md Phase 5 decision 4 --
 // a term outside a component's qubits costs that component nothing
-// extra, since its restriction is the identity). Peak bytes is the
-// maximum single region's peak (regions are not all simultaneously
-// live), plus the global 16 * 2^n output allocation when a statevector
-// is requested. Work is the sum of each region's own cost, plus 2^n
+// extra, since its restriction is the identity). Peak bytes is the sum
+// of the regions' peaks (each region's outputs are held until all have
+// run), plus the global 16 * 2^n output allocation when a statevector is
+// requested, plus the runtime's bookkeeping and combined counts histogram
+// (Phase 21, docs/adr/0025 section 3.4). Work is the sum of each region's own cost, plus 2^n
 // work units per region for the incremental statevector-recombination
 // multiply pass when a statevector is requested (one full pass over the
 // global amplitude space per region, see
@@ -78,11 +82,26 @@ struct EngineChoice {
 // signed terms, and no consulted source bounds how a per-fragment error
 // composes across them (docs/adr/0013 section 5.2), so an approximate fragment
 // is refused rather than handed an invented error bound.
-[[nodiscard]] CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
-                                        const Observable& observable,
-                                        std::span<const SimulationEngine* const> engines,
-                                        std::uint64_t budget_bytes,
-                                        const AccuracyPolicy& accuracy_policy);
+//
+// It also chooses, for every fragment evaluation, the engine the runtime runs
+// it on (Phase 21, docs/adr/0025): pick_cheapest_engine over exactly the
+// request execute_cut builds -- the fragment circuit for that assignment and
+// its whole observable -- with the job's budget. The runtime then does no
+// planning of its own. Peak bytes is what execute_cut holds at once: the
+// cut-plan search it repeats (on `circuit`, the reduced circuit it runs), or,
+// with that plan, its assignment lists and the values computed so far held,
+// one evaluation's fragment circuit, observable and engine peak, or the
+// reconstruction's per-term lists.
+struct CutEstimate {
+    CostEstimate estimate;
+    std::vector<std::vector<CutEvaluation>> evaluations;
+};
+[[nodiscard]] CutEstimate estimate_cut(const Circuit& circuit,
+                                       const analysis::CutPlan& cut_plan,
+                                       const Observable& observable,
+                                       std::span<const SimulationEngine* const> engines,
+                                       std::uint64_t budget_bytes,
+                                       const AccuracyPolicy& accuracy_policy);
 
 [[nodiscard]] CostEstimate estimate_factorized(const Circuit& circuit,
                                                const analysis::InteractionGraph& graph,
@@ -92,6 +111,7 @@ struct EngineChoice {
                                                bool want_expectation,
                                                const Observable* observable,
                                                std::uint64_t budget_bytes,
-                                               const AccuracyPolicy& accuracy_policy);
+                                               const AccuracyPolicy& accuracy_policy,
+                                               std::uint64_t shots);
 
 }  // namespace menos::cost

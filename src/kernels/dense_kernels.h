@@ -201,6 +201,14 @@ void apply_matrix_generic(DeviceState state,
                                                        std::uint64_t x_mask,
                                                        std::uint64_t z_mask);
 
+// The partial sums one expectation_of_term call holds, on the device and again
+// on the host while it adds them up: at most kExpectationMaxBlocks complex
+// values each (docs/adr/0025 section 3.4).
+inline constexpr std::size_t kExpectationMaxBlocks = 1024;
+[[nodiscard]] constexpr std::uint64_t expectation_scratch_bytes() {
+    return kExpectationMaxBlocks * sizeof(std::complex<double>);
+}
+
 }  // namespace cuda
 
 #endif  // MENOS_ENABLE_CUDA

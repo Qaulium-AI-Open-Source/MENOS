@@ -195,6 +195,14 @@ struct Region {
 // fragment runs actually performed (4^m * 6^p summed over fragments) -- the
 // gap between them is what makes cutting affordable, so explain() shows both
 // rather than leaving the reader to assume they are equal.
+// The engine one fragment evaluation runs on, and the peak it was costed at,
+// chosen by plan_job (Phase 21, docs/adr/0025): the runtime runs each
+// evaluation on exactly this engine and does no planning of its own.
+struct CutEvaluation {
+    Engine engine;
+    std::uint64_t estimated_peak_bytes;
+};
+
 struct CutSummary {
     std::size_t cut_count;
     std::size_t fragment_count;
@@ -203,6 +211,9 @@ struct CutSummary {
     // Measured after execution: the largest peak any single fragment actually
     // reached. nullopt on a plan-only preview.
     std::optional<std::uint64_t> actual_peak_bytes = std::nullopt;
+    // evaluations[f][a]: fragment f's a-th distinct assignment, in
+    // analysis::enumerate_assignments order.
+    std::vector<std::vector<CutEvaluation>> evaluations = {};
 };
 
 // What a DirectTrajectory plan samples, for explain() and for the runtime

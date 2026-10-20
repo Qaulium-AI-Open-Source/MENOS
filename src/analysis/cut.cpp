@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <complex>
 #include <map>
 #include <numeric>
 #include <set>
@@ -11,6 +12,7 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/pauli_row.h"
 
 namespace menos::analysis {
@@ -405,6 +407,111 @@ std::vector<FragmentAssignment> enumerate_assignments(const CutFragment& fragmen
         out.push_back(std::move(assignment));
     }
     return out;
+}
+
+namespace {
+
+// An operation's own heap: its operand list, and its parameters or matrix.
+std::uint64_t operation_heap_bytes(const Operation& op) {
+    return std::visit(
+        [](const auto& o) -> std::uint64_t {
+            using T = std::decay_t<decltype(o)>;
+            if constexpr (std::is_same_v<T, GateOp>) {
+                return common::heap_block_bytes(o.qubits.size() * sizeof(QubitId)) +
+                       common::heap_block_bytes(o.params.size() * sizeof(double));
+            } else if constexpr (std::is_same_v<T, UnitaryOp>) {
+                return common::heap_block_bytes(o.qubits.size() * sizeof(QubitId)) +
+                       common::heap_block_bytes(o.matrix.size() * sizeof(std::complex<double>));
+            } else {
+                static_assert(std::is_same_v<T, MeasureOp> || std::is_same_v<T, ChannelOp>);
+                return 0;  // never in a cut circuit: find_cut_plan refuses both
+            }
+        },
+        op);
+}
+
+}  // namespace
+
+std::uint64_t find_cut_plan_peak_bytes(const Circuit& circuit) {
+    using common::checked_add;
+    using common::grown_vector_bytes;
+    const std::uint64_t n = circuit.num_qubits();
+    const std::uint64_t ops = circuit.operations().size();
+    const std::uint64_t nodes = n + kMaxCuts;  // (qubit, segment) nodes
+    // Each array below is one allocation, charged this overhead; every list
+    // grown one element at a time is charged two by grown_vector_bytes.
+    const std::uint64_t block = common::kHeapBlockOverheadBytes;
+    std::uint64_t op_heap = 0;
+    for (const Operation& op : circuit.operations()) {
+        op_heap = checked_add(op_heap, operation_heap_bytes(op));
+    }
+
+    // One CutPlan for this circuit: its cuts, at most `nodes` fragments, and
+    // across them every (qubit, segment) node once, every cut endpoint once on
+    // each side, every qubit's final local once and every operation once,
+    // each list grown one element at a time.
+    std::uint64_t plan = (kMaxCuts * sizeof(WireCut)) + block;
+    plan = checked_add(plan, (nodes * sizeof(CutFragment)) + block);
+    plan = checked_add(plan, grown_vector_bytes(nodes, sizeof(QubitId)));
+    plan = checked_add(plan, 2 * grown_vector_bytes(kMaxCuts, sizeof(CutEndpoint)));
+    plan = checked_add(plan, grown_vector_bytes(n, sizeof(QubitId)));
+    plan = checked_add(plan, grown_vector_bytes(ops, sizeof(Operation)));
+    plan = checked_add(plan, op_heap);
+    // Each fragment's five lists are separate allocations, two while growing.
+    plan = checked_add(plan, nodes * 10 * block);
+
+    // build_cut_plan_for()'s own arrays while it builds one.
+    std::uint64_t build = (n * sizeof(std::vector<std::size_t>)) + block +
+                          grown_vector_bytes(kMaxCuts, sizeof(std::size_t));  // per_qubit
+    build = checked_add(build, ((n + 1) * sizeof(std::size_t)) + block);      // offsets
+    build = checked_add(build, (nodes * sizeof(std::size_t)) + block);        // DisjointSet
+    build = checked_add(build, (ops * sizeof(std::size_t)) + block);          // op_node
+    build = checked_add(
+        build,
+        (nodes + 1) * common::tree_node_bytes(sizeof(std::pair<const std::size_t, std::size_t>)));
+    build = checked_add(build, (n + nodes) * 2 * block);  // per-qubit and per-fragment lists
+    build = checked_add(build,
+                        grown_vector_bytes(nodes, sizeof(std::vector<std::size_t>)) +
+                            grown_vector_bytes(nodes, sizeof(std::size_t)));  // fragment_nodes
+    build = checked_add(build, (nodes * (sizeof(std::size_t) + sizeof(QubitId))) + (2 * block));
+    build =
+        checked_add(build, (2 * nodes) * common::tree_node_bytes(sizeof(QubitId)));  // seen_qubits
+    build = checked_add(build, (5 * sizeof(QubitId)) + block);  // one op's local list
+
+    // find_cut_plan(): the candidate positions, the per-qubit flags, the
+    // cut list being considered, and the best plan beside the one built.
+    std::uint64_t search = grown_vector_bytes(kMaxCandidatePositions, sizeof(WireCut));
+    search = checked_add(search, ((n + 63) / 64 * sizeof(std::uint64_t)) + block);
+    search = checked_add(search, (kMaxCuts * sizeof(WireCut)) + block);
+    return checked_add(search, checked_add(build, 2 * plan));
+}
+
+std::uint64_t cut_plan_heap_bytes(const CutPlan& plan) {
+    std::uint64_t bytes = common::heap_block_bytes(plan.cuts.capacity() * sizeof(WireCut)) +
+                          common::heap_block_bytes(plan.fragments.capacity() * sizeof(CutFragment));
+    for (const CutFragment& fragment : plan.fragments) {
+        bytes += common::heap_block_bytes(fragment.local_to_global.capacity() * sizeof(QubitId));
+        bytes += common::heap_block_bytes(fragment.operations.capacity() * sizeof(Operation));
+        for (const Operation& op : fragment.operations) {
+            bytes += operation_heap_bytes(op);
+        }
+        bytes += common::heap_block_bytes(fragment.measured.capacity() * sizeof(CutEndpoint));
+        bytes += common::heap_block_bytes(fragment.prepared.capacity() * sizeof(CutEndpoint));
+        bytes += common::heap_block_bytes(fragment.final_locals.capacity() * sizeof(QubitId));
+    }
+    return bytes;
+}
+
+std::uint64_t assignments_heap_bytes(const std::vector<FragmentAssignment>& assignments) {
+    std::uint64_t bytes =
+        common::heap_block_bytes(assignments.capacity() * sizeof(FragmentAssignment));
+    for (const FragmentAssignment& assignment : assignments) {
+        bytes += common::heap_block_bytes(assignment.measured_observables.capacity() *
+                                          sizeof(ir::CutObservable)) +
+                 common::heap_block_bytes(assignment.prepared_states.capacity() *
+                                          sizeof(ir::CutPrepState));
+    }
+    return bytes;
 }
 
 std::size_t assignment_index_for_branch(const CutFragment& fragment,

@@ -211,13 +211,17 @@ TEST(NoiseRunTest, TheMemoryBudgetIsEnforcedAtTheDensityMatrixSize) {
     for (QubitId q = 0; q < 3; ++q) {
         circuit.append_measure(q, q);
     }
-    // rho 16 * 4^3 = 1024, the one-qubit superoperator 256, the diagonal 8 * 8 = 64.
-    constexpr std::uint64_t kPeak = 1024 + 256 + 64;
-
+    // The plan's own figure (docs/adr/0025 section 3.4): at least rho
+    // 16 * 4^3 = 1024 and the one-qubit superoperator 256, plus the gates'
+    // buffers, the sampler and the runtime's bookkeeping, whose exact sizes
+    // depend on the standard library.
     RunOptions options{.shots = 10, .seed = 1};
-    options.memory_budget_bytes = kPeak - 1;
+    const std::uint64_t peak = preview(circuit, options).estimated_state_bytes;
+    ASSERT_GE(peak, 1024U + 256U);
+
+    options.memory_budget_bytes = peak - 1;
     EXPECT_THROW(static_cast<void>(run(circuit, options)), common::ResourceExceeded);
-    options.memory_budget_bytes = kPeak;
+    options.memory_budget_bytes = peak;
     EXPECT_EQ(run(circuit, options).plan().strategy, Strategy::DirectDensityMatrix);
 }
 

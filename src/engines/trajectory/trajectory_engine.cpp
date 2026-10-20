@@ -16,8 +16,10 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/rng.h"
 #include "common/splitmix64.h"
+#include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/state_vector.h"
@@ -243,6 +245,80 @@ struct RunningMoments {
     }
 };
 
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4). Held for the whole run: psi, every channel's
+// K^dagger K products and their per-operation index, the readout targets, the
+// per-term sums and the counts histogram. On top of that, the largest single
+// operation's transient: a gate's generated matrix and kernel scratch, or a
+// channel's reduced density matrix (with its index and slice buffers while it
+// is built, then beside the kernel scratch of the chosen branch). Each shot is
+// drawn by one cumulative pass and allocates only its outcome.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    using common::heap_block_bytes;
+    const std::uint32_t n = request.num_qubits;
+    const std::uint32_t threads = common::default_thread_count();
+    std::uint64_t held = checked_add(
+        heap_block_bytes(checked_mul(checked_pow2(n), sizeof(Complex))),
+        heap_block_bytes(checked_mul(static_cast<std::uint64_t>(request.operations->size()),
+                                     sizeof(std::vector<Matrix>))));
+    std::uint64_t operation = 0;
+    for (const Operation& op : *request.operations) {
+        std::visit(
+            [&](const auto& o) {
+                using T = std::decay_t<decltype(o)>;
+                if constexpr (std::is_same_v<T, MeasureOp>) {
+                    return;
+                } else {
+                    const std::size_t k = o.qubits.size();
+                    const std::uint64_t entries = checked_pow2(static_cast<unsigned>(2 * k));
+                    const std::uint64_t matrix =
+                        heap_block_bytes(checked_mul(entries, sizeof(Complex)));
+                    const std::uint64_t scratch = dense::apply_matrix_scratch_bytes(k, threads);
+                    if constexpr (std::is_same_v<T, GateOp>) {
+                        operation = std::max(operation, checked_add(matrix, scratch));
+                    } else if constexpr (std::is_same_v<T, UnitaryOp>) {
+                        operation = std::max(operation, scratch);
+                    } else {
+                        static_assert(std::is_same_v<T, ChannelOp>);
+                        const std::uint64_t dim = checked_pow2(static_cast<unsigned>(k));
+                        // This channel's K^dagger K products, held for the run.
+                        const std::uint64_t products = checked_add(
+                            heap_block_bytes(checked_mul(o.kraus.size(), sizeof(Matrix))),
+                            checked_mul(static_cast<std::uint64_t>(o.kraus.size()), matrix));
+                        held = checked_add(held, products);
+                        // The reduced density matrix, built beside its index
+                        // and slice buffers, then held beside the branch's
+                        // kernel scratch.
+                        const std::uint64_t building = checked_add(
+                            matrix,
+                            checked_add(heap_block_bytes(checked_mul(dim, sizeof(std::uint64_t))),
+                                        heap_block_bytes(checked_mul(dim, sizeof(Complex)))));
+                        operation =
+                            std::max(operation, std::max(building, checked_add(matrix, scratch)));
+                    }
+                }
+            },
+            op);
+    }
+    held = checked_add(held, noise::readout_targets_bytes(request.bitstring_width));
+    if (request.want_expectation) {
+        held = checked_add(
+            held,
+            heap_block_bytes(checked_mul(
+                static_cast<std::uint64_t>(request.observable->terms.size()), sizeof(Complex))));
+    }
+    std::uint64_t shot = 0;
+    if (request.want_counts) {
+        held = checked_add(
+            held,
+            common::counts_map_bytes(common::distinct_outcomes_bound(
+                                         request.shots, std::min(n, request.bitstring_width)),
+                                     request.bitstring_width));
+        shot = common::bitstring_heap_bytes(request.bitstring_width);
+    }
+    return checked_add(held, std::max(operation, shot));
+}
+
 }  // namespace
 
 std::uint64_t trajectory_seed(std::uint64_t base_seed, std::uint64_t t) {
@@ -273,10 +349,8 @@ EngineCapabilities TrajectoryEngine::capabilities() const {
 // qubits at 2^(n+k) for the reduced density matrix, plus one 2^(n+k)
 // apply_matrix pass, plus 2^n to renormalize; and 2^n per observable term when
 // an expectation is requested. Each of the first `shots` trajectories also
-// builds its 2^n outcome distribution. Peak bytes: 16 * 2^n for psi, the
-// 8 * 2^n distribution when counts are requested, and every channel's
-// precomputed K^dagger K products (16 * 4^k each), which live for the whole
-// run.
+// draws its outcome in one 2^n cumulative pass. Peak bytes: peak_bytes_of
+// above.
 CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) const {
     if (request.want_statevector) {
         return CostEstimate{/*feasible=*/false,
@@ -294,7 +368,6 @@ CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) co
         const std::uint32_t n = request.num_qubits;
         const std::uint64_t states = checked_pow2(n);
         std::uint64_t per_trajectory = states;  // reset
-        std::uint64_t product_bytes = 0;
         for (const Operation& op : *request.operations) {
             const std::size_t k = operand_count(op);
             if (k == 0) {
@@ -302,12 +375,8 @@ CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) co
             }
             const std::uint64_t pass = checked_pow2(n + static_cast<std::uint32_t>(k));
             per_trajectory = checked_add(per_trajectory, pass);
-            if (const auto* channel = std::get_if<ChannelOp>(&op)) {
+            if (std::holds_alternative<ChannelOp>(op)) {
                 per_trajectory = checked_add(per_trajectory, checked_add(pass, states));
-                const std::uint64_t matrix_bytes =
-                    checked_mul(checked_pow2(2 * static_cast<std::uint32_t>(k)), sizeof(Complex));
-                product_bytes =
-                    checked_add(product_bytes, checked_mul(channel->kraus.size(), matrix_bytes));
             }
         }
         if (request.want_expectation) {
@@ -315,13 +384,12 @@ CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) co
             per_trajectory = checked_add(per_trajectory, checked_mul(num_terms, states));
         }
         std::uint64_t work = checked_mul(request.trajectories, per_trajectory);
-        std::uint64_t peak_bytes = checked_add(checked_mul(states, sizeof(Complex)), product_bytes);
         if (request.want_counts) {
-            // One distribution per shot-producing trajectory; shots <= N.
+            // One cumulative pass per shot-producing trajectory; shots <= N.
             work = checked_add(work, checked_mul(request.trajectories, states));
-            peak_bytes = checked_add(peak_bytes, checked_mul(states, sizeof(double)));
         }
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        return CostEstimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

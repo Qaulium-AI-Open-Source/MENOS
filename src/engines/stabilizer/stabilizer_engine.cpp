@@ -1,5 +1,6 @@
 #include "engines/stabilizer/stabilizer_engine.h"
 
+#include <algorithm>
 #include <complex>
 #include <map>
 #include <optional>
@@ -9,6 +10,7 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "engines/stabilizer/tableau.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -149,6 +151,49 @@ private:
     std::vector<BitString> generators_;
 };
 
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4): the tableau, plus the largest of
+//   * reduce(), with its working copies and the subspace it returns;
+//   * sampling: the subspace, its projection to the measured clbits, the
+//     sampler, each shot's outcome and (a sole region) the histogram;
+//   * expectation: what sampling left behind (the histogram, or the sampler
+//     a Factorized region returns), one complex per term, and
+//     expectation_sign()'s working state for one term.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    const std::uint32_t n = request.num_qubits;
+    const std::uint32_t width = request.bitstring_width;
+    std::uint64_t transient = 0;
+    std::uint64_t left_by_counts = 0;
+    if (request.want_counts) {
+        // The projected base and up to n generators (one reserved list), each
+        // with its own words, held by the sampler.
+        const std::uint64_t projected =
+            checked_add(common::heap_block_bytes(checked_mul(n, sizeof(BitString))),
+                        checked_mul(std::uint64_t{n} + 1, common::bitstring_heap_bytes(width)));
+        const std::uint64_t sampler =
+            checked_add(projected, common::heap_block_bytes(sizeof(StabilizerCountsSampler)));
+        const std::uint64_t histogram =
+            request.is_sole_region
+                ? common::counts_map_bytes(
+                      common::distinct_outcomes_bound(request.shots, std::min(n, width)), width)
+                : 0;
+        const std::uint64_t sampling =
+            checked_add(checked_add(Tableau::subspace_bytes(n), sampler),
+                        checked_add(histogram, common::bitstring_heap_bytes(width)));
+        transient = std::max(Tableau::reduce_peak_bytes(n), sampling);
+        left_by_counts = request.is_sole_region ? histogram : sampler;
+    }
+    if (request.want_expectation) {
+        const std::uint64_t terms = common::heap_block_bytes(
+            checked_mul(static_cast<std::uint64_t>(request.observable->terms.size()),
+                        sizeof(std::complex<double>)));
+        transient = std::max(
+            transient,
+            checked_add(checked_add(left_by_counts, terms), Tableau::expectation_peak_bytes(n)));
+    }
+    return checked_add(Tableau::rows_bytes(n), transient);
+}
+
 }  // namespace
 
 std::string_view StabilizerEngine::name() const {
@@ -212,11 +257,8 @@ CostEstimate StabilizerEngine::estimate(const EngineEstimateRequest& request) co
                 static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, elimination));
         }
-        const std::uint64_t row_bytes =
-            checked_mul(std::uint64_t{2}, checked_mul(words, std::uint64_t{8}));
-        const std::uint64_t peak_bytes =
-            checked_add(checked_mul(num_qubits, row_bytes), checked_mul(words, std::uint64_t{8}));
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        return CostEstimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

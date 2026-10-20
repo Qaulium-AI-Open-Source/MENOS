@@ -2,6 +2,7 @@
 
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -26,6 +27,14 @@ struct SvdResult {
 // a NaN/Inf entry is a caller bug, not a runtime condition to recover
 // from).
 [[nodiscard]] SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_t n);
+
+// The heap bytes svd(a, m, n) allocates, at the most it holds at once, and
+// the bytes of the SvdResult it returns (Phase 21, docs/adr/0025 section 3.4).
+// The peak includes the workspace zgesdd's own query asks for, so it is exact
+// for the LAPACK this build links. svd_peak_bytes includes the result being
+// built; svd_result_bytes is what the caller holds afterwards.
+[[nodiscard]] std::uint64_t svd_peak_bytes(std::size_t m, std::size_t n);
+[[nodiscard]] std::uint64_t svd_result_bytes(std::size_t m, std::size_t n);
 
 // The numerical rank of a matrix given its singular values (as returned
 // by svd() above) and the matrix's original dimensions m, n: the count

@@ -47,6 +47,14 @@ public:
                            std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
                            std::uint32_t bitstring_width);
 
+    // As above, taking the probabilities over and accumulating them in place,
+    // so the distribution costs no second 8 * 2^m buffer (docs/adr/0025). The
+    // same doubles are added in the same order, so it is bitwise identical to
+    // the copying constructor.
+    CumulativeDistribution(std::vector<double>&& probabilities,
+                           std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+                           std::uint32_t bitstring_width);
+
     // uniform must be in [0, 1). Returns the outcome whose cumulative
     // probability interval contains it.
     [[nodiscard]] BitString sample_one(double uniform) const;
@@ -69,6 +77,11 @@ public:
         std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
         std::uint32_t bitstring_width,
         common::Rng& rng);
+
+    // The heap bytes a CumulativeDistribution over `size` basis states and
+    // `num_targets` measure targets holds, including the object itself when it
+    // is heap-allocated as a RegionCountsSampler (docs/adr/0025 section 3.4).
+    [[nodiscard]] static std::uint64_t heap_bytes(std::uint64_t size, std::uint64_t num_targets);
 
 private:
     template <typename ProbabilityOf>

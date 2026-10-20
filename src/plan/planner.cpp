@@ -363,7 +363,9 @@ Plan plan_job(const JobSpec& job_spec,
                               want_expectation,
                               reduced_observable,
                               budget,
-                              job_spec.accuracy_policy);
+                              job_spec.accuracy_policy,
+                              /*trajectories=*/0,
+                              job_spec.shots);
     const std::size_t dense_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectDense,
@@ -387,7 +389,9 @@ Plan plan_job(const JobSpec& job_spec,
                               want_expectation,
                               reduced_observable,
                               budget,
-                              job_spec.accuracy_policy);
+                              job_spec.accuracy_policy,
+                              /*trajectories=*/0,
+                              job_spec.shots);
     const std::size_t stabilizer_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectStabilizer,
@@ -414,7 +418,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                       want_expectation,
                                                       reduced_observable,
                                                       budget,
-                                                      job_spec.accuracy_policy);
+                                                      job_spec.accuracy_policy,
+                                                      /*trajectories=*/0,
+                                                      job_spec.shots);
         pauli_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectPauli,
@@ -438,7 +444,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                                          want_expectation,
                                                                          reduced_observable,
                                                                          budget,
-                                                                         job_spec.accuracy_policy);
+                                                                         job_spec.accuracy_policy,
+                                                                         /*trajectories=*/0,
+                                                                         job_spec.shots);
     const std::size_t mps_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectMPS,
@@ -471,7 +479,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                                want_expectation,
                                                                reduced_observable,
                                                                budget,
-                                                               job_spec.accuracy_policy);
+                                                               job_spec.accuracy_policy,
+                                                               /*trajectories=*/0,
+                                                               job_spec.shots);
         tensor_network_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectTensorNetwork,
@@ -497,7 +507,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                                want_expectation,
                                                                reduced_observable,
                                                                budget,
-                                                               job_spec.accuracy_policy);
+                                                               job_spec.accuracy_policy,
+                                                               /*trajectories=*/0,
+                                                               job_spec.shots);
         density_matrix_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectDensityMatrix,
@@ -550,7 +562,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                reduced_observable,
                                                                budget,
                                                                job_spec.accuracy_policy,
-                                                               trajectories);
+                                                               trajectories,
+                                                               job_spec.shots);
         } else {
             direct_trajectory_estimate = cost::CostEstimate{/*feasible=*/false, 0, 0, refusal, {}};
         }
@@ -579,7 +592,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                         want_expectation,
                                                         reduced_observable,
                                                         budget,
-                                                        job_spec.accuracy_policy);
+                                                        job_spec.accuracy_policy,
+                                                        job_spec.shots);
         factorized_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::Factorized,
@@ -600,13 +614,20 @@ Plan plan_job(const JobSpec& job_spec,
     // is the Phase 8 lesson applied -- a candidate whose estimate() runs an
     // unbounded search slows every job that will never choose it.
     std::optional<cost::CostEstimate> cut_estimate;
+    std::vector<std::vector<CutEvaluation>> cut_evaluations;
     std::optional<std::size_t> cut_index;
     std::optional<analysis::CutPlan> cut_plan;
     if (want_expectation) {
         cut_plan = analysis::find_cut_plan(circuit, analysis::kMaxCuts);
         if (cut_plan.has_value()) {
-            cut_estimate = cost::estimate_cut(
-                *cut_plan, *remapped_expectation, engines, budget, job_spec.accuracy_policy);
+            cost::CutEstimate cut = cost::estimate_cut(circuit,
+                                                       *cut_plan,
+                                                       *remapped_expectation,
+                                                       engines,
+                                                       budget,
+                                                       job_spec.accuracy_policy);
+            cut_estimate = std::move(cut.estimate);
+            cut_evaluations = std::move(cut.evaluations);
             cut_index = candidates.size();
             candidates.push_back(CandidateSummary{
                 .strategy = Strategy::CutAndRecombine,
@@ -649,7 +670,9 @@ Plan plan_job(const JobSpec& job_spec,
                                                                        want_expectation,
                                                                        reduced_observable,
                                                                        budget,
-                                                                       job_spec.accuracy_policy);
+                                                                       job_spec.accuracy_policy,
+                                                                       /*trajectories=*/0,
+                                                                       job_spec.shots);
         for (std::size_t i = 0; i < candidates.size(); ++i) {
             // Factorized is decided region by region below (item 4b).
             if (i != dense_index && candidates[i].feasible &&
@@ -693,7 +716,9 @@ Plan plan_job(const JobSpec& job_spec,
                                       want_expectation,
                                       reduced_observable,
                                       budget,
-                                      job_spec.accuracy_policy);
+                                      job_spec.accuracy_policy,
+                                      /*trajectories=*/0,
+                                      job_spec.shots);
             CandidateSummary& dense_candidate = candidates[dense_index];
             // The device budget is enforced HERE, against the profile, exactly
             // as the host budget is enforced in cost::estimate_direct against
@@ -765,7 +790,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                          want_expectation,
                                                                          reduced_observable,
                                                                          budget,
-                                                                         job_spec.accuracy_policy);
+                                                                         job_spec.accuracy_policy,
+                                                                         job_spec.shots);
             std::vector<Backend> backends(regions.size(), Backend::Cpu);
             double mixed_seconds = 0.0;
             bool any_cuda = false;
@@ -796,6 +822,9 @@ Plan plan_job(const JobSpec& job_spec,
                     .observable = region.observable.has_value() ? &*region.observable : nullptr,
                     .accuracy_policy = job_spec.accuracy_policy,
                     .budget_bytes = budget,
+                    .shots = want_counts ? job_spec.shots : 0,
+                    .bitstring_width = circuit.num_clbits(),
+                    .is_sole_region = false,
                 };
                 const CostEstimate on_device = cuda_engine->estimate(request);
                 const bool fits =
@@ -1001,7 +1030,7 @@ Plan plan_job(const JobSpec& job_spec,
                     static_cast<QubitId>(local);
             }
             region.operations = fragment.operations;
-            region.engine = Engine::Dense;  // refined per assignment at execution time
+            region.engine = Engine::Dense;  // per assignment: cut_summary->evaluations
             region.backend = Backend::Cpu;
             region.observable = *remapped_expectation;
             region.estimated_state_bytes = cut_estimate->estimated_peak_bytes;
@@ -1016,8 +1045,12 @@ Plan plan_job(const JobSpec& job_spec,
         for (const analysis::CutFragment& fragment : cut_plan->fragments) {
             distinct += analysis::distinct_evaluation_count(fragment);
         }
-        plan.cut_summary = CutSummary{
-            cut_plan->cuts.size(), cut_plan->fragments.size(), branches, distinct, std::nullopt};
+        plan.cut_summary = CutSummary{cut_plan->cuts.size(),
+                                      cut_plan->fragments.size(),
+                                      branches,
+                                      distinct,
+                                      std::nullopt,
+                                      std::move(cut_evaluations)};
         plan.estimated_state_bytes = cut_estimate->estimated_peak_bytes;
         plan.estimated_work_units = cut_estimate->estimated_work_units;
         // NOLINTEND(bugprone-unchecked-optional-access)
@@ -1033,7 +1066,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                 want_expectation,
                                                 reduced_observable,
                                                 budget,
-                                                job_spec.accuracy_policy);
+                                                job_spec.accuracy_policy,
+                                                job_spec.shots);
         if (!factorized_backends.empty()) {
             // Same deterministic build as the decision above, so the indices
             // match; checked rather than assumed.

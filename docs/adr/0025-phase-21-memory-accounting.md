@@ -218,6 +218,8 @@ The owner took the recommended option, (a), for every question:
 - **Q8:** an infeasibility change is allowed only after that path's copy removal, and each is listed in section 10.
 - **Q9:** the gate as written in Q9, with the proposed figures: 1 MiB and 1 KiB allowances, a 2% dense and a 5% MPS benchmark ratio.
 
+Three further decisions were taken during step 3, recorded in section 10.3: the runtime's Plan copy is removed; the cut runtime's engine choices are made at plan time; on Windows the RSS check is reported, not asserted.
+
 **Q7 revisited (2026-10-20), after step 1 measured the bond growth (section 10.1).** The owner was shown that Exact bonds reach 16–32 where the bound is 4–8, which makes both the MPS memory and time estimates low. The owner kept (a): results stay bitwise identical, and the MPS estimates (memory and work units) follow the bond the code actually builds.
 
 ## 10. Gate evidence
@@ -310,3 +312,108 @@ As built, differing from section 3.3:
 - **MPS order.** The MPS engine now computes the expectation before sampling, because sampling consumes the state. The expectation reads the same state in the same gauge as before. The Phase 11 boundaries are unchanged in kind and number: the expectation loop has none.
 - **SVD.** The direct call releases its input and workspace before building the row-major outputs, so `a_copy` and LAPACKE's internal copies are gone. This is reflected in `mps_*` as part of the "after" figures.
 - **Trajectory `actual_bytes`.** It no longer adds the 8·2^n per-shot table, which is no longer allocated. Its estimate is corrected in step 3.
+
+### 10.3 Step 3: accounting — [MEASURED], 2026-10-20
+
+Every engine's `estimated_peak_bytes` now counts every allocation its `execute()` holds at once, and the runtime's estimates count its own bookkeeping. The gate's two checks (Q4) run on every fixture:
+
+- **Heap tracker:** estimate ≥ tracked peak, with no slack. Asserted on Linux and Windows release builds; skipped by name under ASan.
+- **RSS:** the median rise of five fresh-process runs ≤ estimate + B, where B is the largest of five runs of the engine's 1-qubit baseline. Asserted on Linux; on Windows measured and reported (owner decision below).
+
+Final figures, Linux `release`, bytes:
+
+| Fixture | Estimate | Tracked | RSS median rise | B |
+|---|---|---|---|---|
+| dense_statevector | 4 194 720 | 4 194 560 | 4 124 672 | 200 704 |
+| dense_counts | 9 154 704 | 4 712 304 | 4 534 272 | 131 072 |
+| dense_expectation | 4 194 720 | 4 194 560 | 3 993 600 | 196 608 |
+| dense_all | 9 154 832 | 4 712 304 | 4 595 712 | 131 072 |
+| dense_region_counts | 1 573 376 | 1 573 056 | 1 290 240 | 196 608 |
+| dense_statevector_24 (probe only) | 268 435 872 | — | 268 251 136 | 131 072 |
+| density_matrix_counts | 1 274 128 | 1 228 064 | 929 792 | 200 704 |
+| density_matrix_counts_readout | 1 274 128 | 1 071 176 | 749 568 | 135 168 |
+| density_matrix_expectation | 1 049 416 | 1 049 096 | 749 568 | 135 168 |
+| density_matrix_region_counts | 1 052 368 | 1 050 784 | 745 472 | 135 168 |
+| trajectory_counts | 349 496 | 288 200 | 131 072 | 135 168 |
+| trajectory_expectation | 275 208 | 269 272 | 131 072 | 135 168 |
+| stabilizer_counts | 5 428 440 | 2 145 464 | 2 703 360 | 196 608 |
+| stabilizer_expectation | 181 232 | 78 032 | 131 072 | 131 072 |
+| stabilizer_region_counts | 258 832 | 81 012 | 131 072 | 196 608 |
+| pauli_expectation | 548 752 | 544 | 131 072 | 196 608 |
+| mps_counts | 1 023 232 | 698 728 | 786 432 | 196 608 |
+| mps_expectation | 678 008 | 672 984 | 323 584 | 135 168 |
+| mps_counts_controlled | 763 968 | 417 592 | 520 192 | 135 168 |
+| mps_region_counts | 678 008 | 672 984 | 389 120 | 131 072 |
+| tensor_network_expectation | 335 160 | 117 584 | 131 072 | 131 072 |
+| run_dense_statevector | 4 194 840 | 4 194 560 | 4 055 040 | 131 072 |
+| run_factorized_statevector | 4 212 088 | 4 202 864 | 4 026 368 | 131 072 |
+| run_factorized_counts | 4 844 776 | 834 520 | 950 272 | 131 072 |
+| run_factorized_expectation | 18 088 | 8 656 | 131 072 | 131 072 |
+| run_cut_expectation | 48 540 | 8 280 | 131 072 | 131 072 |
+| run_mitigated | 17 887 960 | 16 866 399 | 16 605 184 | 131 072 |
+
+The CUDA fixtures pass both checks on `cuda12-release` (RTX 4060 Laptop GPU, driver 566.14), stable over three repetitions. Every fixture's outputs still match its platform's step-1 baseline bit for bit, on Linux (`release`, `dev`, `cuda12-release`) and Windows (`windows-release`, `windows-dev`).
+
+The estimate is an upper bound, not a prediction. Where a figure is far above the tracked peak, the bound charges the worst case the code permits. For example, the counts histogram is charged min(S, 2^m) distinct outcomes, and the Pauli term list keeps the pre-Phase-21 term-growth bound (section 7).
+
+#### Owner decisions taken during step 3 (2026-10-20)
+
+- **The Plan copy.** The runtime copied the whole Plan, whose size scales with the circuit, not the state. Decision: remove the copy.
+  - `Runtime::execute(Plan&&)` moves the plan into the Result on success and leaves it untouched if the attempt throws, so the replan loop still has the plan it replaces.
+  - A job's measured memory is its execution; planning is outside it.
+- **The cut runtime.** `execute_cut` re-ran planning, calling every engine's `estimate()` per fragment evaluation. That also conflicted with the Phase 11 invariant "the runtime never plans". Decision: choose engines at plan time.
+  - `cost::estimate_cut` picks the engine for every evaluation with exactly the request the runtime used to build, records it in `CutSummary::evaluations`, and bounds the cut path's memory from the fragment circuits it builds.
+  - The runtime no longer calls `estimate()`.
+  - The planner's choice uses the job's budget. The runtime's used the cut estimate as its budget, a figure only the tensor network's search reads. On the fixture set the choices, and every output, are unchanged.
+- **The Windows RSS check.** On Windows the working set also holds two things no estimate of MENOS's own allocations can bound:
+  - the heap's fragmentation under the MPS engine's growing buffers: `mps_expectation` rises about 970 KiB against a 678 KB estimate, where Linux rises 323 KiB;
+  - the kernel's page tables for large allocations: about 49 KB on the 256 MB statevector, against a B of 45–78 KB.
+
+  Decision: the RSS check is asserted on Linux, and measured and reported on Windows. The no-slack heap-tracker check is asserted on both.
+
+#### As built
+
+- **Per-allocation overhead.** Every allocation an estimate counts is charged `common::kHeapBlockOverheadBytes` = 80. It is derived, not tuned, as the sum of two parts:
+  - the MSVC STL requests up to 47 bytes beyond the size for an allocation of 4096 bytes or more (measured: 39 on a 4 MiB statevector, Release);
+  - the heap adds up to 31 (header and 16-byte padding).
+
+  The tracker found the first part; the RSS check found the second.
+- **Containers.** `std::map` and `std::set` nodes are charged their value plus four pointer-sized words, as one allocation, with one sentinel node per container (MSVC). Vectors grown one element at a time are charged three times their final size, in two allocations (`common::grown_vector_bytes`).
+- **New figures available to `estimate()`.** `EngineEstimateRequest` gained `shots`, `bitstring_width` and `is_sole_region`. `cost::estimate_direct` and `estimate_factorized` take the shot count.
+- **Each engine's bound** (`peak_bytes_of`, beside its code):
+  - MPS replays bond dimensions (`src/engines/mps/memory_model.cpp`). Under Exact, the replayed bonds match the real ones exactly on the fixture set.
+  - The tensor network replays the contraction on leg lists (`contraction_peak_bytes`) and charges the analysis structures from the objects its estimate builds. The min-fill search reports its own peak (`EliminationOrder::search_peak_bytes`).
+  - The SVD's peak comes from zgesdd's own workspace query (`common::svd_peak_bytes`).
+- **A Factorized plan** is charged the sum of its regions' peaks, not the largest, because each region's sampler or terms are held until all regions have run. It is also charged the runtime's combination: the sampler and RNG lists and the combined histogram.
+- **Two further copies removed**, bitwise identical:
+  - the Pauli engine read a full copy of the operations;
+  - the density-matrix sampler copied its probability vector. It now takes the vector over and accumulates in place.
+- **A step-2 defect, found and fixed.** `svd()` released its buffers with `v = {}`. That assigns an empty initializer list and keeps the capacity, so nothing was freed. They are now released with `std::vector<T>().swap(v)`. The SVD's eagerly built error message (31 bytes on every call) is now built only on failure.
+- **Measurement method** (`tests/memory`):
+  - One-time, per-process work is done before measuring: the CPU thread pool, the planner's calibration, the runtime's engine registry, one SVD per zgesdd code path (on Linux, about 440 KB of RSS was LAPACK code pages faulting in), and on CUDA one run of every kernel at the fixtures' scale.
+  - The probe pins glibc's mmap threshold at its 128 KiB default, so a run's large buffers do not depend on what was freed before it.
+  - A job's window starts after its planning.
+  - Windows samples the working set from a thread during the run, since its high-water mark cannot be reset.
+  - The memory tests run serially.
+- **Remaining gaps**, recorded rather than bounded:
+  - MSVC Debug's checked-iterator builds allocate a container proxy per container that no estimate charges. This affects only the ASan builds, where both memory checks are skipped.
+  - The CUDA driver's own host memory, which measurement showed does not vary with the job (CUDA RSS runs of 2 to 20 qubits all rose by the same 64–196 KiB).
+
+#### Q8: tests whose figures or plans changed
+
+No tolerance was changed. Each expectation was restated from the new formula, either as a derivation in the test or computed from the shared helpers.
+
+| Test | Was | Now |
+|---|---|---|
+| `DenseEngineTest.ExactHandComputableValueWithStatevector`, `EmptyRegionIsJustInitialization` | the state only (64, 128) | the state and the CX's matrix, each one allocation |
+| `DensityMatrixEngineTest.EstimateFollowsTheDocumentedFormulas` | 544 | rho plus the CX's generated and conjugated matrices and column list |
+| `EstimateDirectTest.FeasibleWithinBudget`, `EstimateFactorizedTest.ExactHandComputableValue`, `PlanJobTest.DirectDenseCoversAllQubitsWithinBudget` | the state only | plus the runtime's bookkeeping, computed from `common::tree_node_bytes` |
+| `EstimateFactorizedTest.IdleComponentsAreFree` | peak < 64 | idle components add only their empty per-region lists, compared with the one component alone |
+| `PlanJobTwoCandidateTest.FactorizedMemoryInfeasibleWhileDirectFeasibleStillPicksDirect`, `ExplainTest.InfeasibleCandidateShowsItsRejectionReason` | budget 16400 | budget 17000, between the new Direct (16 920) and Factorized (at least 18 720) figures |
+| `MPSRejectionTest.GloballyEntangledCircuitStaysOnDenseAndExplainShowsMPSRejectionAndBound` | budget 20000 | budget 30000, between dense (about 21 KB) and MPS (about 209 KB) |
+| `NoiseRunTest.TheMemoryBudgetIsEnforcedAtTheDensityMatrixSize` | 1024 + 256 + 64 | the plan's own figure, checked against rho + superoperator |
+| `PlanJobExpectationTest.TightBudgetLeavesDirectTensorNetworkTheOnlyFeasibleCandidate` (the fast guard for Phase 8 criterion 4) | 20-qubit brickwork, 1000-byte budget | 24-qubit tree, 3 layers, budget = the contraction's own figure. With real figures MPS is smaller than the contraction on the old circuit |
+| `RuntimeObservationTest.AnObservedFloorAboveTheBudgetMovesTheWinnerToAnotherEngine` | expected DirectMPS | the cheapest surviving candidate by work units, now dense: MPS's cost uses the bond it builds (Q7) |
+| `TrajectoryRunTest` (`run_on_trajectories`, `AReplanFromTheDensityMatrixToTrajectoriesIsDeterministic`) | density matrix excluded by a memory budget | excluded by an observed time floor, as after a replan. With real figures a small density matrix is below the trajectory engine's own buffers |
+| `RuntimeTest.CountsOnlyPeakBytesIsSingleRegionNotSumOfAllRegions`, `StatevectorPeakBytesIsOneRegionPlusGlobalNotSumOfAllRegions` | 16·2^5 | the largest region's own figure |
+| `CliGoldenTest` explain and run, `BackendRequestTest` (Phase 17) | literal byte figures | byte figures blanked, since they now depend on the standard library and the LAPACK. The forced-CPU report is compared exactly with the unforced report of the same build |

@@ -1,5 +1,6 @@
 #include "engines/dense/dense_engine.h"
 
+#include <algorithm>
 #include <bit>
 #include <complex>
 #include <optional>
@@ -9,6 +10,8 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
@@ -88,6 +91,58 @@ void apply_operations(StateVector& state,
     }
 }
 
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4): the state, plus the larger of
+//   * one gate's transient: its generated matrix (a GateOp; a UnitaryOp's is
+//     borrowed) and the generic kernel's per-chunk scratch, and
+//   * the outputs, built after the sweep and returned: the sampling buffers and
+//     histogram (a sole region) or the region's cumulative distribution, and
+//     one complex per observable term.
+// The statevector output costs nothing extra: the state is moved into it.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    const std::uint32_t n = request.num_qubits;
+    const std::uint64_t state =
+        common::heap_block_bytes(checked_mul(checked_pow2(n), sizeof(std::complex<double>)));
+    const std::uint32_t threads = common::default_thread_count();
+
+    std::uint64_t gate = 0;
+    for (const Operation& op : *request.operations) {
+        std::visit(
+            [&](const auto& o) {
+                using T = std::decay_t<decltype(o)>;
+                if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
+                    const std::size_t k = o.qubits.size();
+                    std::uint64_t bytes = apply_matrix_scratch_bytes(k, threads);
+                    if constexpr (std::is_same_v<T, GateOp>) {
+                        bytes = checked_add(bytes,
+                                            common::heap_block_bytes(checked_mul(
+                                                checked_pow2(static_cast<unsigned>(2 * k)),
+                                                sizeof(std::complex<double>))));
+                    }
+                    gate = std::max(gate, bytes);
+                }
+            },
+            op);
+    }
+
+    std::uint64_t outputs = 0;
+    if (request.want_counts) {
+        if (request.is_sole_region) {
+            outputs = sample_bytes(
+                request.shots, std::min(n, request.bitstring_width), request.bitstring_width);
+        } else {
+            outputs = CumulativeDistribution::heap_bytes(checked_pow2(n), request.bitstring_width);
+        }
+    }
+    if (request.want_expectation) {
+        outputs = checked_add(outputs,
+                              common::heap_block_bytes(checked_mul(
+                                  static_cast<std::uint64_t>(request.observable->terms.size()),
+                                  sizeof(std::complex<double>))));
+    }
+    return checked_add(state, std::max(gate, outputs));
+}
+
 }  // namespace
 
 std::string_view DenseEngine::name() const {
@@ -113,8 +168,7 @@ EngineCapabilities DenseEngine::capabilities() const {
 // count) + [2^m if want_statevector] + [2^m if want_counts] +
 // [num_terms * 2^m if want_expectation, one pass per term]
 // (docs/BUILD_PLAN.md Phase 3, 3.5 / Phase 5's expectation extension).
-// Peak bytes is 16 * 2^m (complex128 state, no speculative multiplier,
-// unaffected by want_expectation -- no extra allocation).
+// Peak bytes: peak_bytes_of above.
 CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
     if (const std::optional<std::string> reason = ir::first_noise_reason(*request.operations);
         reason.has_value()) {
@@ -141,9 +195,8 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
                 static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, checked_pow2(request.num_qubits)));
         }
-        const std::uint64_t peak_bytes =
-            checked_mul(checked_pow2(request.num_qubits), sizeof(std::complex<double>));
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        return CostEstimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

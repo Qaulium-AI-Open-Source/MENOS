@@ -38,6 +38,16 @@ std::string normalize_timings(const std::string& text) {
     return std::regex_replace(text, kTimingPattern, "execute_s=<t> sample_s=<t>");
 }
 
+// Byte figures are deterministic on one build but not across builds: since
+// Phase 21 they count the standard library's own container sizes (which
+// differ between libstdc++, the MSVC STL and MSVC's checked-iterator Debug
+// mode) and the LAPACK's SVD workspace (docs/adr/0025 section 3.4). They are
+// pinned by each engine's estimate tests instead; here they are blanked.
+std::string normalize_bytes(const std::string& text) {
+    static const std::regex kBytesPattern(R"(([a-z_]*bytes)=[0-9]+)");
+    return std::regex_replace(text, kBytesPattern, "$1=<b>");
+}
+
 constexpr const char* kBellQasm = R"(OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2];
@@ -63,17 +73,17 @@ TEST(CliGoldenTest, ExplainProducesExactDeterministicOutput) {
         "MENOS EXECUTION REPORT\n"
         "circuit    qubits=2 clbits=2 operations=4 depth=3 global_phase=0\n"
         "light_cone qubits 2->2 operations 4->4\n"
-        "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=64 "
+        "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=<b> "
         "work_units=32\n"
-        "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=40 "
+        "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=<b> "
         "work_units=16\n"
-        "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=128 "
+        "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=<b> "
         "work_units=34\n"
         "strategy   direct_stabilizer (exact)\n"
         "region 0   qubits=[0,1] engine=stabilizer backend=cpu\n"
-        "estimated  state_bytes=40 work_units=16\n"
+        "estimated  state_bytes=<b> work_units=16\n"
         "\n";
-    EXPECT_EQ(out.str(), expected);
+    EXPECT_EQ(normalize_bytes(out.str()), expected);
 }
 
 TEST(CliGoldenTest, ExplainWithoutFlagsUsesTheDefaultsAndStillProducesAPlan) {
@@ -100,19 +110,19 @@ TEST(CliGoldenTest, RunProducesExactOutputAfterNormalizingTimings) {
         "MENOS EXECUTION REPORT\n"
         "circuit    qubits=2 clbits=2 operations=4 depth=3 global_phase=0\n"
         "light_cone qubits 2->2 operations 4->4\n"
-        "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=64 "
+        "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=<b> "
         "work_units=32\n"
-        "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=40 "
+        "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=<b> "
         "work_units=16\n"
-        "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=128 "
+        "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=<b> "
         "work_units=34\n"
         "strategy   direct_stabilizer (exact)\n"
         "region 0   qubits=[0,1] engine=stabilizer backend=cpu\n"
-        "estimated  state_bytes=40 work_units=16\n"
-        "actual     state_bytes=40 execute_s=<t> sample_s=<t>\n"
+        "estimated  state_bytes=<b> work_units=16\n"
+        "actual     state_bytes=<b> execute_s=<t> sample_s=<t>\n"
         "00: 50\n"
         "11: 50\n";
-    EXPECT_EQ(normalize_timings(out.str()), expected);
+    EXPECT_EQ(normalize_bytes(normalize_timings(out.str())), expected);
 }
 
 TEST(CliGoldenTest, RunWithStatevectorOnASmallCircuitPrintsAmplitudes) {

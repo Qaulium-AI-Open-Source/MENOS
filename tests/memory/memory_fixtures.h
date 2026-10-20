@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -76,13 +77,22 @@ struct Measurement {
 // False when the fixture needs a device this process does not have.
 [[nodiscard]] bool can_run(const Fixture& fixture);
 
-// Does the one-time work a fixture's run would otherwise include: for a job,
-// the planner's per-process hardware calibration, whose buffers would
-// otherwise dominate a small job's peak. run_fixture() calls it too.
+// Does the one-time, per-process work a fixture's run would otherwise
+// include, so that it lands before any measurement: the CPU kernels' thread
+// pool, OpenBLAS's per-thread buffers, and for a job the planner's hardware
+// calibration and the runtime's engine registry. run_fixture() calls it too.
 void prepare(const Fixture& fixture);
 
 // Runs fixture once and measures it with the heap tracker linked into the
-// calling executable.
-[[nodiscard]] Measurement run_fixture(const Fixture& fixture);
+// calling executable. on_window_start, when set, is called where the measured
+// window begins -- after the preparation, and for a job after its planning --
+// so a caller measuring the process (the RSS probe) can start there too. For a
+// fixture whose engine returns a region sampler, draw_samples draws
+// sampler_draws outcomes from it after the engine's window closes, for the
+// outputs' digest; the RSS probe turns it off, because those draws are the
+// runtime's combination step, not the engine's run.
+[[nodiscard]] Measurement run_fixture(const Fixture& fixture,
+                                      bool draw_samples = true,
+                                      const std::function<void()>& on_window_start = {});
 
 }  // namespace menos::test::memory

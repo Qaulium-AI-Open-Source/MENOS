@@ -82,10 +82,26 @@ TEST(StabilizerScaleTest, FiveHundredQubitCliffordCircuitProducesCorrectCountKey
     const StabilizerEngine stabilizer_engine;
     constexpr std::uint64_t kBudget = 1'000'000'000;
 
-    const CostEstimate dense_estimate =
-        cost::estimate_direct(circuit, dense_engine, false, true, false, nullptr, kBudget, {});
-    const CostEstimate stabilizer_estimate =
-        cost::estimate_direct(circuit, stabilizer_engine, false, true, false, nullptr, kBudget, {});
+    const CostEstimate dense_estimate = cost::estimate_direct(circuit,
+                                                              dense_engine,
+                                                              false,
+                                                              true,
+                                                              false,
+                                                              nullptr,
+                                                              kBudget,
+                                                              {},
+                                                              /*trajectories=*/0,
+                                                              /*shots=*/0);
+    const CostEstimate stabilizer_estimate = cost::estimate_direct(circuit,
+                                                                   stabilizer_engine,
+                                                                   false,
+                                                                   true,
+                                                                   false,
+                                                                   nullptr,
+                                                                   kBudget,
+                                                                   {},
+                                                                   /*trajectories=*/0,
+                                                                   /*shots=*/0);
     ASSERT_FALSE(dense_estimate.feasible);
     ASSERT_TRUE(stabilizer_estimate.feasible);
 
@@ -206,7 +222,8 @@ TEST(StabilizerScaleTest, MixedComponentsRunOnTheRightEngineAndExplainShowsWhy) 
                                                   /*want_expectation=*/false,
                                                   /*observable=*/nullptr,
                                                   /*budget_bytes=*/1'000'000'000ULL,
-                                                  {});
+                                                  {},
+                                                  /*shots=*/10);
     plan.reduced_circuit = circuit;
     ASSERT_EQ(plan.regions.size(), 2U);
     for (const Region& region : plan.regions) {

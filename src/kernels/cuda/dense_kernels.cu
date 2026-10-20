@@ -370,8 +370,7 @@ std::complex<double> expectation_of_term(ConstDeviceState state,
     // Bounded grid: each block accumulates over a strided range, so the partial
     // array stays small enough to sum on the host in fixed order regardless of
     // qubit count.
-    constexpr std::size_t kMaxBlocks = 1024;
-    const std::size_t blocks = std::min(kMaxBlocks, grid_for(total));
+    const std::size_t blocks = std::min(kExpectationMaxBlocks, grid_for(total));
 
     void* partials_device = nullptr;
     const std::size_t partial_bytes = blocks * sizeof(std::complex<double>);
