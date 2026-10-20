@@ -42,17 +42,17 @@ struct EngineChoice {
 // before DirectMPS ignores it. trajectories is the count N the
 // DirectTrajectory candidate costs (Phase 13, cost::trajectory_count);
 // every other engine ignores it.
-[[nodiscard]] CostEstimate estimate_direct(const Circuit& circuit,
-                                           const SimulationEngine& engine,
-                                           bool want_statevector,
-                                           bool want_counts,
-                                           bool want_expectation,
-                                           const Observable* observable,
-                                           std::uint64_t budget_bytes,
-                                           const AccuracyPolicy& accuracy_policy,
-                                           std::uint64_t trajectories = 0,
-                                           std::uint64_t prune_above_work_units =
-                                               std::numeric_limits<std::uint64_t>::max());
+[[nodiscard]] CostEstimate estimate_direct(
+    const Circuit& circuit,
+    const SimulationEngine& engine,
+    bool want_statevector,
+    bool want_counts,
+    bool want_expectation,
+    const Observable* observable,
+    std::uint64_t budget_bytes,
+    const AccuracyPolicy& accuracy_policy,
+    std::uint64_t trajectories = 0,
+    std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max());
 
 // The Factorized candidate: one region per interaction-graph component,
 // executed sequentially, each independently costed via
@@ -81,13 +81,13 @@ struct EngineChoice {
 // signed terms, and no consulted source bounds how a per-fragment error
 // composes across them (docs/adr/0013 section 5.2), so an approximate fragment
 // is refused rather than handed an invented error bound.
-[[nodiscard]] CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
-                                        const Observable& observable,
-                                        std::span<const SimulationEngine* const> engines,
-                                        std::uint64_t budget_bytes,
-                                        const AccuracyPolicy& accuracy_policy,
-                                        std::uint64_t prune_above_work_units =
-                                            std::numeric_limits<std::uint64_t>::max());
+[[nodiscard]] CostEstimate estimate_cut(
+    const analysis::CutPlan& cut_plan,
+    const Observable& observable,
+    std::span<const SimulationEngine* const> engines,
+    std::uint64_t budget_bytes,
+    const AccuracyPolicy& accuracy_policy,
+    std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max());
 
 [[nodiscard]] CostEstimate estimate_factorized(const Circuit& circuit,
                                                const analysis::InteractionGraph& graph,

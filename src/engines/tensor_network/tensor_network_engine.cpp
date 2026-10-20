@@ -100,8 +100,7 @@ CostEstimate pruned_estimate(const EngineEstimateRequest& request,
             std::to_string(request.observable->terms.size()) + ", at " +
             (reached_work_units == kNoPruneBound ? std::string("more than 2^64")
                                                  : std::to_string(reached_work_units)) +
-            " work units, already more than the " +
-            std::to_string(request.prune_above_work_units) +
+            " work units, already more than the " + std::to_string(request.prune_above_work_units) +
             " of a cheaper feasible alternative",
         {}};
 }
@@ -177,8 +176,8 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
                     return running > request.prune_above_work_units;
                 })
                         : analysis::MinFillStopPredicate{};
-            const analysis::EliminationOrder order = analysis::estimate_treewidth_min_fill(
-                line_graph.graph, request.budget_bytes, stop);
+            const analysis::EliminationOrder order =
+                analysis::estimate_treewidth_min_fill(line_graph.graph, request.budget_bytes, stop);
             if (order.stopped_by_caller) {
                 return pruned_estimate(request, costed_terms, running);
             }

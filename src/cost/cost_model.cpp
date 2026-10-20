@@ -32,9 +32,9 @@ EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engin
     EngineEstimateRequest bounded = request;
     for (std::size_t i = 0; i < engines.size(); ++i) {
         bounded.prune_above_work_units =
-            best.has_value() ? std::min(request.prune_above_work_units,
-                                        best_estimate.estimated_work_units)
-                             : request.prune_above_work_units;
+            best.has_value()
+                ? std::min(request.prune_above_work_units, best_estimate.estimated_work_units)
+                : request.prune_above_work_units;
         const CostEstimate estimate = engines[i]->estimate(bounded);
         if (!estimate.feasible) {
             if (!reasons.empty()) {
@@ -243,16 +243,15 @@ CostEstimate pruned_cut_estimate(std::size_t fragment_index,
                                  std::size_t num_fragments,
                                  std::uint64_t reached_work_units,
                                  std::uint64_t bound) {
-    return CostEstimate{/*feasible=*/false,
-                        0,
-                        0,
-                        std::string(kPrunedReasonPrefix) + ": costing stopped in fragment " +
-                            std::to_string(fragment_index + 1) + " of " +
-                            std::to_string(num_fragments) + ", at " +
-                            std::to_string(reached_work_units) +
-                            " work units, already more than the " + std::to_string(bound) +
-                            " of a cheaper feasible alternative",
-                        {}};
+    return CostEstimate{
+        /*feasible=*/false,
+        0,
+        0,
+        std::string(kPrunedReasonPrefix) + ": costing stopped in fragment " +
+            std::to_string(fragment_index + 1) + " of " + std::to_string(num_fragments) + ", at " +
+            std::to_string(reached_work_units) + " work units, already more than the " +
+            std::to_string(bound) + " of a cheaper feasible alternative",
+        {}};
 }
 
 }  // namespace

@@ -236,7 +236,9 @@ public:
     void reset(std::size_t a, std::size_t b) {
         row(a)[b / 64] &= ~(std::uint64_t{1} << (b % 64));
     }
-    void clear_row(std::size_t a) { std::fill_n(row(a), words_, std::uint64_t{0}); }
+    void clear_row(std::size_t a) {
+        std::fill_n(row(a), words_, std::uint64_t{0});
+    }
 
     [[nodiscard]] std::size_t degree(std::size_t a) const {
         std::size_t d = 0;
@@ -268,11 +270,17 @@ public:
             }
         }
     }
-    [[nodiscard]] std::size_t num_nodes() const { return n_; }
+    [[nodiscard]] std::size_t num_nodes() const {
+        return n_;
+    }
 
 private:
-    std::uint64_t* row(std::size_t a) { return bits_.data() + a * words_; }
-    [[nodiscard]] const std::uint64_t* row(std::size_t a) const { return bits_.data() + a * words_; }
+    std::uint64_t* row(std::size_t a) {
+        return bits_.data() + a * words_;
+    }
+    [[nodiscard]] const std::uint64_t* row(std::size_t a) const {
+        return bits_.data() + a * words_;
+    }
 
     std::size_t n_;
     std::size_t words_;
@@ -307,7 +315,8 @@ std::size_t compute_fill(const BitAdjacency& adjacency, std::size_t v) {
 // The original std::set-based fill count, kept as the fallback for graphs too
 // large for a dense bitset (see estimate_treewidth_min_fill) and as the
 // oracle the dense search is tested against.
-std::size_t compute_fill_sparse(const std::vector<std::set<std::size_t>>& adjacency, std::size_t v) {
+std::size_t compute_fill_sparse(const std::vector<std::set<std::size_t>>& adjacency,
+                                std::size_t v) {
     const std::set<std::size_t>& neighbors = adjacency[v];
     std::size_t edges_among_neighbors = 0;
     for (const std::size_t a : neighbors) {
@@ -350,7 +359,7 @@ bool degree_exceeds_budget(std::size_t degree, std::uint64_t max_peak_bytes) {
 
 EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& graph,
                                                    std::uint64_t max_peak_bytes,
-    const MinFillStopPredicate& stop_after_step) {
+                                                   const MinFillStopPredicate& stop_after_step) {
     BitAdjacency adjacency(graph.num_nodes);
     for (const auto& [a, b] : graph.edges) {
         common::ensure(a < graph.num_nodes && b < graph.num_nodes,
@@ -456,7 +465,7 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
 
 EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& graph,
                                                     std::uint64_t max_peak_bytes,
-    const MinFillStopPredicate& stop_after_step) {
+                                                    const MinFillStopPredicate& stop_after_step) {
     std::vector<std::set<std::size_t>> adjacency(graph.num_nodes);
     for (const auto& [a, b] : graph.edges) {
         adjacency.at(a).insert(b);
@@ -556,7 +565,7 @@ constexpr std::size_t kDenseMinFillMaxNodes = 23000;
 
 EliminationOrder estimate_treewidth_min_fill(const TensorNetworkGraph& graph,
                                              std::uint64_t max_peak_bytes,
-    const MinFillStopPredicate& stop_after_step) {
+                                             const MinFillStopPredicate& stop_after_step) {
     return graph.num_nodes <= kDenseMinFillMaxNodes
                ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes, stop_after_step)
                : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes, stop_after_step);
