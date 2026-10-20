@@ -13,6 +13,7 @@
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
 #include "engines/dense/state_vector.h"
+#include "ir/fuse_diagonal.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
 #include "kernels/dense_kernels.h"
@@ -152,7 +153,13 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
 EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request) const {
     StateVector state(static_cast<int>(request.num_qubits), request.budget_bytes);
     initialize(state, request.global_phase);
-    apply_operations(state, request.operations, request.monitor, request.max_threads);
+    if (request.fuse_diagonal_gates) {
+        const std::vector<Operation> fused = ir::fuse_diagonal_gates(
+            request.operations, static_cast<std::uint32_t>(kMaxUnitaryQubits));
+        apply_operations(state, fused, request.monitor, request.max_threads);
+    } else {
+        apply_operations(state, request.operations, request.monitor, request.max_threads);
+    }
 
     EngineExecutionResult result;
     result.actual_bytes = state.size_bytes();
@@ -174,14 +181,39 @@ EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request
     }
 
     if (request.want_expectation) {
-        std::vector<std::complex<double>> terms;
-        terms.reserve(request.observable->terms.size());
-        for (const auto& term : request.observable->terms) {
-            // x_words/z_words have exactly one word here -- estimate()
-            // already made this region infeasible for any num_qubits where
-            // that would not hold (dense's own checked_pow2 ceiling is 62).
-            terms.push_back(kernels::cpu::expectation_of_term(
-                state.amplitudes(), term.first.x_words[0], term.first.z_words[0]));
+        // x_words/z_words have exactly one word here -- estimate() already
+        // made this region infeasible for any num_qubits where that would
+        // not hold (dense's own checked_pow2 ceiling is 62).
+        const auto& all = request.observable->terms;
+        std::vector<std::complex<double>> terms(all.size());
+        // Z-only terms (a diagonal observable, e.g. every QUBO/Ising cost
+        // Hamiltonian) are batched through one Walsh-Hadamard transform when
+        // there are enough of them for its n passes to beat one pass per term.
+        // That batch consumes the state, so it runs after every other output
+        // and after the non-diagonal terms.
+        std::vector<std::size_t> diagonal;
+        std::vector<std::uint64_t> z_masks;
+        for (std::size_t i = 0; i < all.size(); ++i) {
+            if (all[i].first.x_words[0] == 0) {
+                diagonal.push_back(i);
+                z_masks.push_back(all[i].first.z_words[0]);
+            }
+        }
+        const bool batch_diagonal =
+            diagonal.size() >= 2 && diagonal.size() * 4 > request.num_qubits;
+        for (std::size_t i = 0; i < all.size(); ++i) {
+            if (batch_diagonal && all[i].first.x_words[0] == 0) {
+                continue;
+            }
+            terms[i] = kernels::cpu::expectation_of_term(
+                state.amplitudes(), all[i].first.x_words[0], all[i].first.z_words[0]);
+        }
+        if (batch_diagonal) {
+            const std::vector<std::complex<double>> values =
+                kernels::cpu::expectation_of_diagonal_terms(state.amplitudes(), z_masks);
+            for (std::size_t j = 0; j < diagonal.size(); ++j) {
+                terms[diagonal[j]] = values[j];
+            }
         }
         result.expectation_terms = std::move(terms);
     }

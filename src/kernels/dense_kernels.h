@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 // The dense-statevector primitive API (docs/BUILD_PLAN.md Phase 10,
 // docs/adr/0014).
@@ -109,8 +110,14 @@ void initialize(std::span<std::complex<double>> state, double global_phase);
 // Complexity: O(2^(n + k)) for k = operands.size().
 //
 // k = 1 and k = 2 run specialised kernels (docs/adr/0019 section 4); k >= 3
-// runs apply_matrix_generic. The specialised kernels are BITWISE identical to
-// apply_matrix_generic, not merely close: each output amplitude starts from
+// runs apply_matrix_generic. A matrix whose off-diagonal entries are all
+// exactly zero (RZ, RZZ, CP, a fused diagonal block) takes, for every k, a
+// streaming diagonal kernel: one complex multiply per amplitude and no
+// gather, computing `(+0, +0) += matrix[out][out] * a[out]`, which is what
+// the generic sum reduces to when every other product is a signed zero (a
+// signed zero added to a non-zero or to +0.0 leaves it unchanged, and the
+// generic sum never holds -0.0), so it too is bitwise identical. The specialised kernels are
+// BITWISE identical to apply_matrix_generic, not merely close: each output amplitude starts from
 // zero and adds matrix[out][in] * amplitude[in] in increasing `in` order, as
 // the generic loop does, and the target is built with -ffp-contract=off. That
 // identity is what keeps CPU and CUDA statevectors, and therefore counts,
@@ -148,6 +155,20 @@ void apply_matrix_generic(std::span<std::complex<double>> state,
 [[nodiscard]] std::complex<double> expectation_of_term(std::span<const std::complex<double>> state,
                                                        std::uint64_t x_mask,
                                                        std::uint64_t z_mask);
+
+// All Z-only terms (x_mask == 0) at once: p[m] = |psi[m]|^2 followed by one
+// in-place Walsh-Hadamard transform gives every <Z-string z> as p[z], so the
+// cost is O(n * 2^n) for any number of terms instead of O(terms * 2^n).
+// CONSUMES the state: it is overwritten with scratch and must not be read
+// afterwards (the dense engine calls this last, after every other output).
+// No extra allocation beyond the result, so the engine's peak-bytes estimate
+// still holds. Result i has imaginary part +0.0 and real part equal to
+// expectation_of_term(state, 0, z_masks[i]) within common::kDefaultAbsTol
+// (same products, summed in butterfly instead of index order -- the same
+// tolerance the CUDA block-tree reduction is held to, docs/adr/0014 s.14).
+// Precondition: state.size() is a power of two; each mask < state.size().
+[[nodiscard]] std::vector<std::complex<double>> expectation_of_diagonal_terms(
+    std::span<std::complex<double>> state, std::span<const std::uint64_t> z_masks);
 
 }  // namespace cpu
 
