@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "kernels/cuda/cuda_error.h"
 #include "kernels/dense_kernels.h"
 #include "menos/circuit.h"
@@ -375,6 +376,8 @@ std::complex<double> expectation_of_term(ConstDeviceState state,
     void* partials_device = nullptr;
     const std::size_t partial_bytes = blocks * sizeof(std::complex<double>);
     ensure_cuda(cudaMalloc(&partials_device, partial_bytes), "cudaMalloc (partials)");
+    const common::MemoryLedger::Charge partials_charge(partial_bytes,
+                                                       common::MemoryLedger::Space::Device);
 
     expectation_kernel<<<static_cast<unsigned int>(blocks), kBlockSize>>>(
         static_cast<const cuDoubleComplex*>(state.data),

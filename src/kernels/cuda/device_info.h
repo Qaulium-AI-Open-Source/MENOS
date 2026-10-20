@@ -34,9 +34,16 @@ struct DeviceInfo {
 // usable device is present -- never throws, so a caller can simply ask.
 [[nodiscard]] const DeviceInfo& device_info();
 
-// Device memory a region may use. This is the free figure, not the total: the
-// display server and any other process already hold some, and budgeting
-// against total would refuse nothing and then fail at cudaMalloc.
+// The device's free memory now, from a fresh cudaMemGetInfo (Phase 21,
+// docs/adr/0025 section 9, Q3), unlike DeviceInfo::free_memory_bytes, which
+// was read once per process. 0 when no usable device is present or the query
+// fails.
+[[nodiscard]] std::uint64_t device_free_bytes();
+
+// Device memory a region may use: device_free_bytes(). This is the free
+// figure, not the total: the display server and any other process already
+// hold some, and budgeting against total would refuse nothing and then fail at
+// cudaMalloc.
 [[nodiscard]] std::uint64_t device_available_bytes();
 
 }  // namespace menos::kernels::cuda

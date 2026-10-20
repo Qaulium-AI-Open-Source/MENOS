@@ -12,6 +12,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/pauli_row.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -378,6 +379,13 @@ std::complex<double> propagate_term(const PauliString& start,
     std::vector<WeightedTerm> terms;
     terms.push_back(
         WeightedTerm{common::PauliRow{start.x_words, start.z_words, false}, {1.0, 0.0}});
+    // The term list and each term's x and z words, updated after every gate.
+    const std::uint64_t term_words_bytes = 2 * start.x_words.size() * sizeof(std::uint64_t);
+    common::MemoryLedger::Charge terms_charge;
+    const auto charge_terms = [&] {
+        terms_charge.set(common::buffer_bytes(terms) + terms.size() * term_words_bytes);
+    };
+    charge_terms();
 
     for (std::size_t i = operations.size(); i-- > 0;) {
         const GateOp* gate = gate_or_null(operations[i]);
@@ -444,6 +452,7 @@ std::complex<double> propagate_term(const PauliString& start,
                     "estimate()");
         }
         peak_terms_seen = std::max(peak_terms_seen, static_cast<std::uint64_t>(terms.size()));
+        charge_terms();
         ++completed;
         if (monitor != nullptr) {
             monitor->at_safe_boundary(completed);

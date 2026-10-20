@@ -18,6 +18,7 @@ void CumulativeDistribution::build(std::size_t size, ProbabilityOf probability_o
         cumulative += probability_of(basis);
         cumulative_.push_back(cumulative);
     }
+    charge_.set(common::buffer_bytes(cumulative_));
 }
 
 CumulativeDistribution::CumulativeDistribution(
@@ -53,6 +54,9 @@ CumulativeDistribution::CumulativeDistribution(
     : cumulative_(std::move(probabilities)),
       measure_targets_(measure_targets.begin(), measure_targets.end()),
       bitstring_width_(bitstring_width) {
+    // The buffer was charged by its producer until now; it is this
+    // sampler's from here on.
+    charge_.set(common::buffer_bytes(cumulative_));
     double cumulative = 0.0;
     for (double& entry : cumulative_) {
         cumulative += entry;

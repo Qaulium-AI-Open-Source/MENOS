@@ -5,6 +5,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 
 namespace menos::engines::stabilizer {
 namespace {
@@ -102,6 +103,23 @@ std::uint64_t Tableau::expectation_peak_bytes(std::uint32_t num_qubits) {
     return common::checked_add(bytes, 5 * word_bytes);
 }
 
+namespace {
+
+// The bytes a list of rows asked for: the list and each row's words.
+std::uint64_t rows_held_bytes(const std::vector<PauliRow>& rows) {
+    std::uint64_t bytes = common::buffer_bytes(rows);
+    for (const PauliRow& row : rows) {
+        bytes += common::buffer_bytes(row.x) + common::buffer_bytes(row.z);
+    }
+    return bytes;
+}
+
+}  // namespace
+
+std::uint64_t Tableau::held_bytes() const {
+    return rows_held_bytes(rows_);
+}
+
 Tableau::Tableau(std::uint32_t num_qubits) : num_qubits_(num_qubits) {
     common::ensure(num_qubits >= 1, "Tableau: num_qubits must be at least 1");
     const std::size_t words = words_per_row();
@@ -191,6 +209,7 @@ void Tableau::apply_swap(std::uint32_t a, std::uint32_t b) {
 Tableau::AffineSubspace Tableau::reduce() const {
     const std::uint32_t n = num_qubits_;
     std::vector<PauliRow> work = rows_;
+    const common::MemoryLedger::Charge work_charge(rows_held_bytes(work));
 
     // Pass 1: Gauss-Jordan eliminate the x-part. Rows [0, r_dim) end up
     // as the pivot rows (nonzero x); rows [r_dim, n) are forced to
@@ -220,6 +239,7 @@ Tableau::AffineSubspace Tableau::reduce() const {
     const std::size_t r_dim = pivot_row;
 
     std::vector<PauliRow> fixed(work.begin() + static_cast<std::ptrdiff_t>(r_dim), work.end());
+    const common::MemoryLedger::Charge fixed_charge(rows_held_bytes(fixed));
     const std::size_t num_fixed = fixed.size();
     common::ensure(num_fixed == static_cast<std::size_t>(n) - r_dim,
                    "Tableau::reduce: fixed-row count does not match n - r_dim");
@@ -305,6 +325,9 @@ std::optional<bool> Tableau::expectation_sign(const PauliString& query) const {
     std::vector<PauliRow> work = rows_;
     const std::size_t words = words_per_row();
     std::vector<std::vector<std::uint64_t>> masks(n, std::vector<std::uint64_t>(words, 0));
+    const common::MemoryLedger::Charge work_charge(
+        rows_held_bytes(work) + common::buffer_bytes(masks) +
+        std::uint64_t{n} * words * sizeof(std::uint64_t));
     for (std::uint32_t i = 0; i < n; ++i) {
         set_bit(masks[i], i, true);
     }

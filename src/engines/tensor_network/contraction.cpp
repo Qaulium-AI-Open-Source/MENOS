@@ -13,6 +13,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/pauli_row.h"
 #include "ir/gate_table.h"
 
@@ -378,9 +379,22 @@ ContractionResult contract(ContractionNetwork network,
     std::vector<std::size_t> redirect(num_nodes);
     std::iota(redirect.begin(), redirect.end(), std::size_t{0});
     std::size_t peak_legs = 0;
+    // The live tensors' data, charged to the memory ledger (docs/adr/0025
+    // section 3.2); each step's result is charged while its inputs are still
+    // live.
+    std::uint64_t held_bytes = 0;
     for (const LabeledTensor& t : live) {
         peak_legs = std::max(peak_legs, t.legs.size());
+        held_bytes += common::buffer_bytes(t.data);
     }
+    common::MemoryLedger::Charge tensors_charge(held_bytes);
+    const auto replace = [&](std::size_t slot, LabeledTensor&& tensor) {
+        tensors_charge.set(held_bytes + common::buffer_bytes(tensor.data));
+        held_bytes += common::buffer_bytes(tensor.data);
+        held_bytes -= common::buffer_bytes(live[slot].data);
+        live[slot] = std::move(tensor);
+        tensors_charge.set(held_bytes);
+    };
 
     for (const std::size_t wire_node : elimination_order) {
         const LegId& leg = line_graph.wire_of.at(wire_node);
@@ -410,17 +424,17 @@ ContractionResult contract(ContractionNetwork network,
             common::ensure(positions.size() == 2,
                            "contract: a wire appeared neither 0 nor 2 times on its own merged "
                            "slot -- internal invariant violated");
-            live[root_a] = trace_leg(live[root_a], positions[0], positions[1]);
+            replace(root_a, trace_leg(live[root_a], positions[0], positions[1]));
             peak_legs = std::max(peak_legs, live[root_a].legs.size());
             continue;
         }
 
-        live[root_a] = contract_pair(live[root_a], live[root_b]);
+        replace(root_a, contract_pair(live[root_a], live[root_b]));
         redirect[root_b] = root_a;
         // root_b's slot is never read again (find_root now leads past it), so
         // its tensor is released here rather than when contract() returns
         // (docs/adr/0025 section 3.3).
-        live[root_b] = LabeledTensor{};
+        replace(root_b, LabeledTensor{});
         peak_legs = std::max(peak_legs, live[root_a].legs.size());
     }
 

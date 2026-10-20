@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 
+#include "common/memory_ledger.h"
 #include "common/svd.h"
 #include "ir/gate_table.h"
 
@@ -137,6 +138,8 @@ void apply_local_block_gate(MPSState& state,
     const std::size_t dim = std::size_t{1} << k;
 
     std::vector<Complex> theta;
+    // The block's contracted tensors, beside the sites they came from.
+    common::MemoryLedger::Charge block_charge;
     std::size_t combos = 2;
     std::size_t bond{};
     {
@@ -156,6 +159,7 @@ void apply_local_block_gate(MPSState& state,
         const std::size_t new_combos = combos * 2;
         const std::size_t new_bond = next.chi_right;
         std::vector<Complex> new_theta(chi_left * new_combos * new_bond, Complex{0.0, 0.0});
+        block_charge.set(common::buffer_bytes(theta) + common::buffer_bytes(new_theta));
         for (std::size_t l = 0; l < chi_left; ++l) {
             for (std::size_t combo_old = 0; combo_old < combos; ++combo_old) {
                 for (std::size_t m = 0; m < bond; ++m) {
@@ -177,6 +181,7 @@ void apply_local_block_gate(MPSState& state,
     const std::size_t chi_right_last = bond;
 
     std::vector<Complex> theta2(chi_left * dim * chi_right_last, Complex{0.0, 0.0});
+    block_charge.set(common::buffer_bytes(theta) + common::buffer_bytes(theta2));
     for (std::size_t l = 0; l < chi_left; ++l) {
         for (std::size_t combo_out = 0; combo_out < dim; ++combo_out) {
             for (std::size_t r = 0; r < chi_right_last; ++r) {
@@ -223,6 +228,9 @@ void apply_local_block_gate(MPSState& state,
         const double rescale = 1.0 / std::sqrt(kept_weight);
 
         std::vector<Complex> next_remainder(kept * n, Complex{0.0, 0.0});
+        block_charge.set(common::buffer_bytes(theta) + common::buffer_bytes(remainder) +
+                         common::buffer_bytes(next_remainder) + common::buffer_bytes(svd_result.u) +
+                         common::buffer_bytes(svd_result.vt));
         for (std::size_t row = 0; row < kept; ++row) {
             const Complex s = Complex{svd_result.singular_values[row] * rescale, 0.0};
             for (std::size_t col = 0; col < n; ++col) {
@@ -230,6 +238,7 @@ void apply_local_block_gate(MPSState& state,
             }
         }
         remainder = std::move(next_remainder);
+        block_charge.set(common::buffer_bytes(theta) + common::buffer_bytes(remainder));
         cur_left = kept;
         --remaining_bits;
     }

@@ -70,6 +70,11 @@ struct HardwareProfile {
 // docs/adr/0003-default-memory-budget.md.
 inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
 
+// The host memory budget of a job that sets none: kDefaultMemoryBudgetFraction
+// of the profile's total memory. Shared by the planner and readout
+// mitigation, which refuses its own dense vectors against the same budget.
+[[nodiscard]] std::uint64_t default_memory_budget(const HardwareProfile& profile);
+
 // Total memory from sysconf on Linux, sysctlbyname("hw.memsize") on
 // macOS, GlobalMemoryStatusEx on Windows, with both calibrated figures left
 // at zero. Throws InternalError if the platform call fails.
@@ -91,6 +96,16 @@ inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
 // would need staleness rules this phase has no consumer for. Stated so the
 // absence is a decision rather than an oversight.
 [[nodiscard]] const HardwareProfile& calibrated_hardware_profile();
+
+// The calibrated profile, with the CUDA device's free memory read again now
+// (Phase 21, docs/adr/0025 section 9, Q3): the cached figure was taken once
+// per process and could promise memory that other processes, or earlier
+// jobs, have since taken. Everything else is the cached calibration. The api
+// layer calls this once per job, before planning it; a replan within the job
+// reuses the job's figure, so all of a job's plans are compared against the
+// same device memory. Identical to calibrated_hardware_profile() when there is
+// no CUDA device.
+[[nodiscard]] HardwareProfile current_hardware_profile();
 
 // The measurement itself, exposed so tests can check it directly rather than
 // only through the cache. Runs the microbenchmarks every call. Both are

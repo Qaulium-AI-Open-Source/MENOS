@@ -16,12 +16,19 @@
 namespace menos {
 namespace {
 
+// What validate_and_plan() produces: the plan, the job it was planned for,
+// and the hardware profile it was planned against.
+struct PlannedJob {
+    Plan plan;
+    plan::JobSpec job_spec;
+    plan::HardwareProfile hardware_profile;
+};
+
 // Shared by run() and preview(): validate, build the JobSpec, and
 // produce a Plan. run() additionally executes it; preview()
 // (docs/BUILD_PLAN.md Phase 7) returns it as-is, for a preview that
 // never pays execution cost.
-std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
-                                                 const RunOptions& options) {
+PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) {
     ir::validate(circuit);
     ir::validate_output_request(
         circuit, options.shots, options.want_statevector, options.expectation.has_value());
@@ -76,26 +83,25 @@ std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
     };
     // Calibrated, not merely detected: the time budget is evaluated against
     // measured throughput. Cached after the first call, so only the first job
-    // in a process pays for the microbenchmarks.
-    const plan::HardwareProfile& hardware_profile = plan::calibrated_hardware_profile();
+    // in a process pays for the microbenchmarks. The device's free memory is
+    // read again for every job (docs/adr/0025, Q3).
+    const plan::HardwareProfile hardware_profile = plan::current_hardware_profile();
     Plan job_plan = plan::plan_job(job_spec, hardware_profile);
-    return {std::move(job_plan), std::move(job_spec)};
+    return {std::move(job_plan), std::move(job_spec), hardware_profile};
 }
 
 }  // namespace
 
 Result run(const Circuit& circuit, const RunOptions& options) {
-    auto [execution_plan, job_spec] = validate_and_plan(circuit, options);
+    PlannedJob job = validate_and_plan(circuit, options);
     // A fresh steady_clock per execution attempt (Phase 11, docs/adr/0015 --
     // see BudgetMonitor for why the budget bounds an attempt, not the job).
-    return api::run_with_replanning(job_spec,
-                                    plan::calibrated_hardware_profile(),
-                                    std::move(execution_plan),
-                                    &api::steady_elapsed_source);
+    return api::run_with_replanning(
+        job.job_spec, job.hardware_profile, std::move(job.plan), &api::steady_elapsed_source);
 }
 
 Plan preview(const Circuit& circuit, const RunOptions& options) {
-    return validate_and_plan(circuit, options).first;
+    return validate_and_plan(circuit, options).plan;
 }
 
 }  // namespace menos

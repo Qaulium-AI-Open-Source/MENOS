@@ -11,6 +11,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
 #include "ir/gate_table.h"
@@ -296,6 +297,9 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
                                    " bytes");
         }
         std::vector<std::complex<double>> host(static_cast<std::size_t>(num_amplitudes));
+        // Charged while this engine holds it; once moved into the result it is
+        // the result's.
+        common::MemoryLedger::Charge host_charge(common::buffer_bytes(host));
         buffer.copy_to_host(host);
 
         if (request.want_counts) {
@@ -313,6 +317,7 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
         }
 
         if (request.want_statevector) {
+            host_charge.release();
             result.statevector = std::move(host);
         }
     }

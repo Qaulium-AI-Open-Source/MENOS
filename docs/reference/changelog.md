@@ -2,6 +2,21 @@
 
 MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
 
+## Phase 21: memory accounting and copy removal
+
+- **Every memory estimate is an upper bound on use, shown by measurement.** Each engine's estimate now counts everything it holds at once. Before, several paths allocated more than they estimated: a dense statevector job up to twice its estimate, and a sampler about six times. Some jobs that were feasible on a tight budget are now refused; each change is listed in `docs/adr/0025` section 10.
+- **Avoidable copies removed, with every result bitwise identical:**
+  - the statevector is moved into the result, not copied;
+  - the CUDA state is copied straight into the result;
+  - counts samplers hold 8 bytes per basis state instead of about 48;
+  - the MPS sampler uses the state itself;
+  - the tensor network frees absorbed tensors;
+  - the SVD owns its workspace.
+
+  A 24-qubit dense statevector job's peak fell from 537.6 MB to 269.0 MB.
+- **New `Result.peak_host_bytes` and `Result.peak_device_bytes`** (C++ and Python): the most memory the execution really held, measured by a memory ledger. `explain()` appends them to the `actual` line. It also shows each GPU candidate's `device_bytes` and, for a plan that uses the GPU, the `device_available_bytes` it was checked against.
+- **Free GPU memory is read again before each job**, not once per process.
+
 ## Phase 20: PennyLane device
 
 - New PennyLane device **`menos.qubit`** (`menos.pennylane.MENOSQubitDevice`), registered through PennyLane's `pennylane.plugins` entry point and installed with the `pennylane` extra (PennyLane 0.45.1, CPython 3.11 or later).

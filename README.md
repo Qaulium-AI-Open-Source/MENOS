@@ -23,7 +23,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 - **Infeasible is a first-class answer.** A candidate that cannot run is reported with the reason.
 - **Independent qubit groups are simulated independently** and recombined exactly.
 - **Work the output cannot depend on is removed** (light-cone reduction) before planning.
-- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes.
+- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes. Every memory estimate is an upper bound on what the job really holds, checked by measurement, and each result reports its measured peak.
 - **Exact results, reproducibly.** Every engine reachable from Python is exact, and the same circuit, options and seed give the same counts.
 
 ## Key capabilities

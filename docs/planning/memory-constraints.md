@@ -57,9 +57,18 @@ The same budget lets very different problems through:
 
 GPU memory is a separate budget; see [GPU Memory](/gpu/gpu-memory).
 
-## Memory is exact, not approximate
+## Estimates are upper bounds, checked by measurement
 
-Predicted peak bytes matched actual peak bytes in every workload measured, because each engine allocates what it estimates. `Result.actual_state_bytes` reports the real figure.
+Each engine's estimate counts everything it holds at once: the state, scratch and working buffers, the SVD workspace, samplers and the counts histogram. Each container is charged with the allocator's own overhead. The estimate is an upper bound, not a prediction (since Phase 21).
+
+Two checks run on a fixture set covering every engine and output kind, on Linux and Windows:
+
+- the heap memory a run actually allocated never exceeds the estimate;
+- the process's resident memory grows by no more than the estimate plus a fixed baseline. This check is asserted on Linux and reported on Windows.
+
+Where an estimate is well above use, it charges the worst case the code permits: for example, every shot drawing a different outcome.
+
+`Result.peak_host_bytes` and `Result.peak_device_bytes` report the most memory the execution really held. A memory ledger adds up every buffer that grows with the problem as it is allocated and freed, so the figure never exceeds the estimate. `explain()` prints both on its `actual` line. `actual_state_bytes` is the older, engine-reported figure, kept for compatibility.
 
 ## Related
 

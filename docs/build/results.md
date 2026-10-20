@@ -48,7 +48,9 @@ See [Counts](/build/counts) and [Statevectors](/build/statevectors).
 | `statevector` | `numpy.ndarray` or `None` | complex128 amplitudes |
 | `expectation_value` | `complex` or `None` | The expectation value, when one was requested |
 | `exact` | `bool` | `True` if nothing was approximated |
-| `actual_state_bytes` | `int` | Peak bytes the engine actually used |
+| `actual_state_bytes` | `int` | The state bytes the engine reports for the run |
+| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured (Phase 21) |
+| `peak_device_bytes` | `int` | The same for CUDA device memory; `0` without a CUDA region |
 | `execute_seconds` | `float` | Time executing the successful attempt |
 | `sample_seconds` | `float` | Time drawing samples |
 | `explain()` | `str` | The plan report |

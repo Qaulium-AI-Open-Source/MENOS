@@ -7,6 +7,7 @@ add_executable(menos_common_tests
     pauli_row_test.cpp
     svd_test.cpp
     svd_lapacke_reference_test.cpp
+    memory_ledger_test.cpp
 )
 
 target_link_libraries(menos_common_tests PRIVATE menos_common GTest::gtest_main)

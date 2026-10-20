@@ -19,6 +19,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
@@ -353,6 +354,9 @@ EngineExecutionResult DensityMatrixEngine::execute(const EngineExecutionRequest&
     if (request.want_counts) {
         const std::uint64_t dim = std::uint64_t{1} << n;
         std::vector<double> probabilities(dim);
+        // Charged here until a sampler takes the buffer over and charges it
+        // itself.
+        common::MemoryLedger::Charge probabilities_charge(common::buffer_bytes(probabilities));
         for (std::uint64_t x = 0; x < dim; ++x) {
             probabilities[x] = rho.amplitudes()[x | (x << n)].real();
         }
@@ -365,6 +369,7 @@ EngineExecutionResult DensityMatrixEngine::execute(const EngineExecutionRequest&
                 probabilities, request.shots, request.seed, targets, request.bitstring_width);
         } else if (request.is_sole_region) {
             // Per shot: one word for the true outcome, then one per readout target.
+            probabilities_charge.release();
             const DensityMatrixCountsSampler sampler(
                 std::move(probabilities), targets, request.bitstring_width, std::move(readouts));
             common::Rng rng(request.seed);
@@ -372,8 +377,11 @@ EngineExecutionResult DensityMatrixEngine::execute(const EngineExecutionRequest&
             for (std::uint64_t shot = 0; shot < request.shots; ++shot) {
                 counts[sampler.sample_one(rng)] += 1;
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
+            probabilities_charge.release();
             result.counts_sampler = std::make_unique<DensityMatrixCountsSampler>(
                 std::move(probabilities), targets, request.bitstring_width, std::move(readouts));
         }

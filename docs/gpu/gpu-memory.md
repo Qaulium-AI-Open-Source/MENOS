@@ -40,7 +40,7 @@ An expectation-only job transfers almost nothing back, which is where the GPU's 
 
 ## Other processes
 
-A desktop environment, a browser, or another GPU job all hold device memory. The free figure is read when MENOS first queries the device and cached for the process, so memory released or claimed afterwards is not noticed.
+A desktop environment, a browser, or another GPU job all hold device memory. MENOS reads the free figure again before planning each job (since Phase 21), so memory released or claimed between jobs is noticed. A replan within a job uses that job's figure. When a plan puts anything on the device, `explain()` prints the figure it used on the `estimated` line as `device_available_bytes=`, and each CUDA candidate's `device_bytes=`. Because the figure depends on other processes, such a report can differ between two runs of the same job.
 
 ## If a device allocation still fails
 

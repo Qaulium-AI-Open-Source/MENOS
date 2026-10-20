@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 
+#include "common/memory_ledger.h"
 #include "kernels/dense_kernels.h"
 
 namespace menos::kernels::cuda {
@@ -47,6 +48,7 @@ public:
 private:
     void* data_;
     std::size_t num_amplitudes_;
+    common::MemoryLedger::Charge charge_;
 };
 
 }  // namespace menos::kernels::cuda

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 
 namespace menos::engines::dense {
@@ -38,6 +39,7 @@ std::map<BitString, std::uint64_t> sample_impl(
         uniforms[i] = rng.next_uniform();
     }
     std::sort(uniforms.begin(), uniforms.end());
+    const common::MemoryLedger::Charge uniforms_charge(common::buffer_bytes(uniforms));
 
     const auto outcome_for = [&](std::size_t basis) {
         BitString outcome(bitstring_width);
@@ -64,6 +66,10 @@ std::map<BitString, std::uint64_t> sample_impl(
     if (shot_index < uniforms.size() && size != 0) {
         counts[outcome_for(size - 1)] += (uniforms.size() - shot_index);
     }
+    // The histogram at its largest, beside the uniforms; it is the result's
+    // once returned.
+    const common::MemoryLedger::Charge histogram_charge(
+        common::histogram_bytes(counts.size(), bitstring_width));
     return counts;
 }
 

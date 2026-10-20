@@ -201,9 +201,8 @@ MitigatedResult run_readout_mitigated(const Circuit& target,
     // Refused before any circuit runs: the dense vectors are a cost of the
     // mitigation itself, separate from (and after) each circuit's own plan.
     const std::uint64_t needed = mitigation::peak_bytes(pairs.size());
-    const std::uint64_t budget = options.memory_budget_bytes.value_or(static_cast<std::uint64_t>(
-        static_cast<double>(plan::calibrated_hardware_profile().total_memory_bytes) *
-        plan::kDefaultMemoryBudgetFraction));
+    const std::uint64_t budget = options.memory_budget_bytes.value_or(
+        plan::default_memory_budget(plan::calibrated_hardware_profile()));
     if (needed > budget) {
         throw common::ResourceExceeded(std::format(
             "readout mitigation of {} measured clbits needs {} bytes for its dense vectors, over "

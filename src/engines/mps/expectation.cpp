@@ -3,6 +3,7 @@
 #include <array>
 #include <vector>
 
+#include "common/memory_ledger.h"
 #include "common/pauli_row.h"
 
 namespace menos::engines::mps {
@@ -21,6 +22,7 @@ std::complex<double> compute_expectation(const MPSState& state, const PauliStrin
     // Starts as the trivial 1x1 identity (no sites processed yet).
     std::vector<Complex> l = {Complex{1.0, 0.0}};
     std::size_t chi = 1;
+    common::MemoryLedger::Charge environment_charge;
 
     for (std::uint32_t i = 0; i < n; ++i) {
         const SiteTensor& t = state.site(i);
@@ -28,6 +30,7 @@ std::complex<double> compute_expectation(const MPSState& state, const PauliStrin
             common::get_bit(pauli.x_words, i), common::get_bit(pauli.z_words, i));
 
         std::vector<Complex> l_new(t.chi_right * t.chi_right, Complex{0.0, 0.0});
+        environment_charge.set(common::buffer_bytes(l) + common::buffer_bytes(l_new));
         for (std::size_t r = 0; r < t.chi_right; ++r) {
             for (std::size_t rp = 0; rp < t.chi_right; ++rp) {
                 Complex sum{0.0, 0.0};
@@ -49,6 +52,7 @@ std::complex<double> compute_expectation(const MPSState& state, const PauliStrin
             }
         }
         l = std::move(l_new);
+        environment_charge.set(common::buffer_bytes(l));
         chi = t.chi_right;
     }
 

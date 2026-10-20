@@ -417,3 +417,102 @@ No tolerance was changed. Each expectation was restated from the new formula, ei
 | `TrajectoryRunTest` (`run_on_trajectories`, `AReplanFromTheDensityMatrixToTrajectoriesIsDeterministic`) | density matrix excluded by a memory budget | excluded by an observed time floor, as after a replan. With real figures a small density matrix is below the trajectory engine's own buffers |
 | `RuntimeTest.CountsOnlyPeakBytesIsSingleRegionNotSumOfAllRegions`, `StatevectorPeakBytesIsOneRegionPlusGlobalNotSumOfAllRegions` | 16·2^5 | the largest region's own figure |
 | `CliGoldenTest` explain and run, `BackendRequestTest` (Phase 17) | literal byte figures | byte figures blanked, since they now depend on the standard library and the LAPACK. The forced-CPU report is compared exactly with the unforced report of the same build |
+
+### 10.4 Step 4: the ledger, `Result`, `explain()` and Python — [MEASURED], 2026-10-20
+
+`Result::peak_host_bytes()` and `Result::peak_device_bytes()` report the peak of a `common::MemoryLedger` (`src/common/memory_ledger.{h,cpp}`) that the runtime installs for each execution attempt (Q2).
+
+#### As built, and how it differs from section 3.2
+
+Section 3.2 proposed a `LedgerAllocator<T>`. As built, charges are explicit instead:
+
+- **Mechanism.** A buffer that grows with the problem holds a `MemoryLedger::Charge` for the bytes it asked for, from its allocation until it is freed or handed to the result.
+  - The charge lives inside the object that owns the buffer, so moving the object moves the charge.
+  - Copying the object, which copies the buffer, charges the copy again.
+  - `Runtime::execute` installs the ledger on its thread for the attempt (`MemoryLedger::Scope`). The kernels' worker threads never allocate, so one thread-local installation reaches every charge.
+  - A charge made with no ledger installed (calibration, benchmarks, an engine called directly) records nothing.
+- **Why not the allocator.** The statevector is moved into `Result` as a plain `std::vector<std::complex<double>>`. A ledger allocator would change that public type, which Q5 kept.
+- **What is charged:**
+  - the dense state (`StateVector`), the CUDA host copy, and the device state and expectation partials (device);
+  - `CumulativeDistribution`, the sampling uniforms, and every counts histogram: each node's value and four link words, plus its key's words;
+  - the density matrix's diagonal; the trajectory engine's Kraus products;
+  - the stabilizer tableau, `reduce()`'s and `expectation_sign()`'s working copies, the subspace and the sampler's generators;
+  - the Pauli term list;
+  - the MPS sites, re-charged after every gate and centre move, the contracted block, the SVD's buffers and the expectation environment;
+  - the tensor network's live tensors, each step's result charged while its inputs are live;
+  - the runtime's global statevector, each region's statevector while it is multiplied in, and the combined histogram.
+- **What is not charged:** what does not grow with the state, and the allocator's own overhead (section 10.3).
+  - That covers per-gate matrices and small lists, and a container's header.
+  - It also covers two structures that grow with the circuit rather than the state: the tensor network's line graph and elimination search, and the cut path's fragment circuits and observables. Both are outside section 3.2's list, which names the tensor network's tensors only.
+
+The ledger's peak is therefore at most what the process allocated. `tests/memory` asserts on every fixture:
+
+- ledger peak ≤ heap-tracker peak, with no slack, in the Linux and Windows release builds;
+- ledger peak ≤ estimate, in every build;
+- device ledger peak ≤ device estimate.
+
+`tests/api/peak_memory_test.cpp` asserts exact, hand-counted figures:
+
+- a dense statevector job reports 16·2^n;
+- a dense counts job reports the state, plus 8 bytes per shot, plus one node and key word per distinct outcome;
+- a Factorized statevector reports the global state plus one region's state.
+
+Linux `release`, bytes:
+
+| Fixture | Estimate | Tracked | Ledger |
+|---|---|---|---|
+| dense_statevector | 4 194 720 | 4 194 560 | 4 194 304 |
+| dense_counts | 9 154 704 | 4 712 304 | 4 712 304 |
+| dense_expectation | 4 194 720 | 4 194 560 | 4 194 304 |
+| dense_all | 9 154 832 | 4 712 304 | 4 712 304 |
+| dense_region_counts | 1 573 400 | 1 573 080 | 1 572 864 |
+| density_matrix_counts | 1 274 176 | 1 228 064 | 1 228 064 |
+| density_matrix_counts_readout | 1 274 176 | 1 071 176 | 1 070 784 |
+| density_matrix_expectation | 1 049 416 | 1 049 096 | 1 048 576 |
+| density_matrix_region_counts | 1 052 416 | 1 050 808 | 1 050 624 |
+| trajectory_counts | 349 496 | 288 200 | 283 728 |
+| trajectory_expectation | 275 208 | 269 272 | 265 728 |
+| stabilizer_counts | 5 428 464 | 2 145 464 | 2 145 432 |
+| stabilizer_expectation | 181 232 | 78 032 | 75 776 |
+| stabilizer_region_counts | 258 832 | 81 012 | 65 432 |
+| pauli_expectation | 548 752 | 544 | 176 |
+| mps_counts | 1 023 232 | 698 728 | 696 688 |
+| mps_expectation | 678 008 | 672 984 | 671 936 |
+| mps_counts_controlled | 763 968 | 417 592 | 415 424 |
+| mps_region_counts | 678 008 | 672 984 | 671 936 |
+| tensor_network_expectation | 335 160 | 117 584 | 22 816 |
+| run_dense_statevector | 4 194 840 | 4 194 560 | 4 194 304 |
+| run_factorized_statevector | 4 212 088 | 4 202 864 | 4 202 496 |
+| run_factorized_counts | 4 844 824 | 834 568 | 828 112 |
+| run_factorized_expectation | 18 088 | 8 656 | 8 192 |
+| run_cut_expectation | 48 540 | 8 280 | 1 408 |
+| run_mitigated (largest of its three runs) | 17 888 968 | 16 866 495 | 16 840 288 |
+
+The tensor network's and the cut path's gaps are the circuit-sized structures listed above.
+
+On `cuda12-release` (RTX 4060 Laptop GPU, driver 566.14), the device ledger equals the device estimate on all five CUDA fixtures, for example 4 194 304 for `dense_cuda_statevector` and 4 210 688 for `dense_cuda_expectation`.
+
+**A side effect on the estimates.** A `Charge` is 24 bytes. `CumulativeDistribution`, `MPSState` and `StabilizerCountsSampler` each gained one, and the estimates charge those objects by `sizeof`. Every estimate that includes one rose by that much, for example `density_matrix_counts` from 1 274 128 to 1 274 176 bytes. No plan changed.
+
+#### Reporting
+
+- **`explain()`.**
+  - The `actual` line keeps its fields and appends `peak_host_bytes=… peak_device_bytes=…`.
+  - A candidate on the CUDA backend appends `device_bytes=…`.
+  - The `estimated` line appends `device_available_bytes=…`, but only when a candidate or a region of the plan runs on CUDA. So a plan with no CUDA in it, which is every plan on a machine without a GPU, reports exactly as before.
+- **Python.** `Result.peak_host_bytes` and `Result.peak_device_bytes` (`python/tests/test_peak_memory.py`), and `docs/reference/python-api.md`.
+- **Unchanged.** `Result::actual_state_bytes()` and every pre-Phase-21 field.
+
+#### Q3: free device memory, as built
+
+- **Fresh reads.** `kernels::cuda::device_free_bytes()` makes a fresh `cudaMemGetInfo` call. `device_available_bytes()`, which the CUDA engine budgets against, now returns it rather than the per-process figure.
+- **One figure per job.**
+  - `plan::current_hardware_profile()` is the cached calibration with that figure read again.
+  - `menos::run` and `menos::preview` call it once per job (`run_batch` and readout mitigation go through `run`).
+  - The job's plans, a replan included, are all compared against that one figure.
+- **Test.** `tests/api/cuda_peak_memory_test.cpp`, on the GPU: a 64 MiB device allocation held between two jobs lowers the second job's `device_available_bytes` by at least 64 MiB.
+
+#### Two items from the plan
+
+- **The plan's `estimated_state_bytes`.** For a DirectDense plan, this is now the chosen backend's host figure, the candidate's own (section 5). The region keeps the CPU figure as its execution budget, which is at least the CUDA host copy.
+- **The default budget.** `plan::default_memory_budget(profile)` replaces the two copies of the half-of-total-RAM formula, in the planner and in readout mitigation. Q1 is unchanged.

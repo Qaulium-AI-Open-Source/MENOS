@@ -17,6 +17,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "common/splitmix64.h"
 #include "common/thread_count.h"
@@ -418,6 +419,7 @@ EngineExecutionResult TrajectoryEngine::execute(const EngineExecutionRequest& re
             }
         }
     }
+    const common::MemoryLedger::Charge products_charge(product_bytes);
 
     dense::StateVector psi(static_cast<int>(request.num_qubits), request.budget_bytes);
     const std::vector<noise::ReadoutTarget> readouts =
@@ -460,6 +462,8 @@ EngineExecutionResult TrajectoryEngine::execute(const EngineExecutionRequest& re
         }
         boundaries.cross();
     }
+    const common::MemoryLedger::Charge histogram_charge(
+        common::histogram_bytes(counts.size(), request.bitstring_width));
 
     EngineExecutionResult result;
     result.statistical = true;

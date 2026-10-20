@@ -27,6 +27,7 @@
 #include "menos/simulation_engine.h"
 
 #ifdef MENOS_ENABLE_CUDA
+#include "kernels/cuda/device_info.h"
 #include "plan/cuda_calibration.h"
 #endif
 
@@ -246,6 +247,21 @@ HardwareProfile calibrate_hardware() {
     profile.cuda_device_to_host_bytes_per_second = cuda.device_to_host_bytes_per_second;
     profile.cuda_kernel_launch_seconds = cuda.kernel_launch_seconds;
     profile.cuda_device_work_units_per_second = cuda.device_work_units_per_second;
+#endif
+    return profile;
+}
+
+std::uint64_t default_memory_budget(const HardwareProfile& profile) {
+    return static_cast<std::uint64_t>(static_cast<double>(profile.total_memory_bytes) *
+                                      kDefaultMemoryBudgetFraction);
+}
+
+HardwareProfile current_hardware_profile() {
+    HardwareProfile profile = calibrated_hardware_profile();
+#ifdef MENOS_ENABLE_CUDA
+    if (profile.cuda_present) {
+        profile.cuda_device_available_bytes = kernels::cuda::device_free_bytes();
+    }
 #endif
     return profile;
 }

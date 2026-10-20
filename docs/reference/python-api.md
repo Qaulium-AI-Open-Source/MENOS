@@ -142,7 +142,9 @@ At least one of counts (`shots > 0` with a measured circuit), a statevector, or 
 | `expectation_value` | `complex` or `None` | The expectation value |
 | `expectation_standard_error` | `float` or `None` | The measured standard error of a sampled expectation value; `None` for an exact one |
 | `exact` | `bool` | Whether nothing was approximated or sampled. `False` for a trajectory result |
-| `actual_state_bytes` | `int` | Peak bytes the engine actually used |
+| `actual_state_bytes` | `int` | The state bytes the engine reports for the run |
+| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured by the runtime's memory ledger (Phase 21) |
+| `peak_device_bytes` | `int` | The same for CUDA device memory; `0` for a plan with no CUDA region (Phase 21) |
 | `execute_seconds` | `float` | Seconds executing the attempt that succeeded |
 | `sample_seconds` | `float` | Seconds sampling |
 | `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend` and `reason`. Empty if the job never replanned (Phase 17) |
@@ -202,7 +204,8 @@ assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
-     "actual_state_bytes", "execute_seconds", "sample_seconds", "replans", "explain"]
+     "actual_state_bytes", "peak_host_bytes", "peak_device_bytes", "execute_seconds",
+     "sample_seconds", "replans", "explain"]
 )
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP CCX".split()

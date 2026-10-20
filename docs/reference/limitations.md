@@ -73,6 +73,8 @@ Every entry here is a real limitation of this release. None is speculative, and 
 ## Reporting
 
 - `explain()` labels of 11 characters or more run into their value (`candidate 0strategy=…`).
+- **The measured peak (`peak_host_bytes`) counts the buffers that grow with the problem's state.** It leaves out the allocator's own overhead and small fixed-size allocations. It also leaves out two structures that grow with the circuit rather than the state: the tensor network's contraction-order analysis and the cut path's fragment circuits. The figure is therefore a lower bound on the process's own use, and never above the estimate.
+- **The memory-accounting checks are verified on libstdc++ and the MSVC standard library.** libc++ is not verified.
 - Calibration costs about 0.1 s on the first job in a process and varies about 1.5× between processes.
 
 ## Command line

@@ -34,6 +34,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/tolerance.h"
 
 namespace menos::common {
@@ -153,6 +154,9 @@ SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_
         static_cast<std::size_t>(std::max<lapack_int>(1, lwork)));
     std::vector<double> rwork(rwork_size(m, n));
     std::vector<lapack_int> iwork(std::max<std::size_t>(1, 8 * k));
+    MemoryLedger::Charge charge(buffer_bytes(a_col) + buffer_bytes(u_col) + buffer_bytes(vt_col) +
+                                buffer_bytes(result.singular_values) + buffer_bytes(work) +
+                                buffer_bytes(rwork) + buffer_bytes(iwork));
 
     const char jobz = 'S';
     const lapack_int lda = std::max<lapack_int>(1, lm);
@@ -187,6 +191,8 @@ SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_
     std::vector<lapack_int>().swap(iwork);
 
     result.u.resize(m * k);
+    charge.set(buffer_bytes(u_col) + buffer_bytes(vt_col) + buffer_bytes(result.singular_values) +
+               buffer_bytes(result.u));
     for (std::size_t i = 0; i < m; ++i) {
         for (std::size_t j = 0; j < k; ++j) {
             result.u[(i * k) + j] = u_col[(j * m) + i];

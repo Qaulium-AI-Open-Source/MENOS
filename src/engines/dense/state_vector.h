@@ -6,6 +6,8 @@
 #include <span>
 #include <vector>
 
+#include "common/memory_ledger.h"
+
 namespace menos::engines::dense {
 
 // A complex128 statevector of num_qubits qubits. Sized through checked_pow2
@@ -32,6 +34,7 @@ public:
 private:
     int num_qubits_;
     std::vector<std::complex<double>> data_;
+    common::MemoryLedger::Charge charge_;
 };
 
 // Sets state to exp(i * global_phase) * |0...0>. Precondition: state's

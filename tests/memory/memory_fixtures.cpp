@@ -1,5 +1,6 @@
 #include "memory_fixtures.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <complex>
@@ -12,6 +13,7 @@
 #include <utility>
 #include <variant>
 
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "common/svd.h"
 #include "engines/dense/dense_engine.h"
@@ -656,9 +658,13 @@ Measurement run_engine_fixture(const Fixture& fixture,
     if (on_window_start) {
         on_window_start();
     }
+    common::MemoryLedger ledger;
     const std::uint64_t live_before = heap_tracker::live_bytes();
     heap_tracker::reset_peak();
     {
+        // Installed as the runtime installs it for a region's execution; it
+        // outlives the result, whose sampler holds a charge.
+        const common::MemoryLedger::Scope scope(ledger);
         // The engine's own window ends when execute() returns: drawing from a
         // region's sampler is the runtime's combination step, whose histogram
         // the Factorized estimate covers (run_factorized_counts).
@@ -666,6 +672,8 @@ Measurement run_engine_fixture(const Fixture& fixture,
         if (heap_tracker::available()) {
             m.tracked_peak_bytes = heap_tracker::peak_bytes() - live_before;
         }
+        m.ledger_host_bytes = ledger.peak_host_bytes();
+        m.ledger_device_bytes = ledger.peak_device_bytes();
         std::map<BitString, std::uint64_t> drawn;
         if (result.counts_sampler && draw_samples) {
             common::Rng rng(99);
@@ -741,6 +749,8 @@ const char* strategy_name(Strategy s) {
 
 void record_result(const Result& result, Measurement& m) {
     m.reported_actual_bytes = result.actual_state_bytes();
+    m.ledger_host_bytes = std::max(m.ledger_host_bytes, result.peak_host_bytes());
+    m.ledger_device_bytes = std::max(m.ledger_device_bytes, result.peak_device_bytes());
     m.strategy = strategy_name(result.plan().strategy);
     if (!result.counts().empty()) {
         m.counts_digest = digest_counts(result.counts());
@@ -807,6 +817,7 @@ Measurement run_job_fixture(const Fixture& fixture, const std::function<void()>&
         m.estimated_peak_bytes = winner_peak_bytes(mitigated.raw().plan());
         for (const Result& calibration : mitigated.calibration_results()) {
             m.estimated_peak_bytes += winner_peak_bytes(calibration.plan());
+            m.ledger_host_bytes = std::max(m.ledger_host_bytes, calibration.peak_host_bytes());
         }
         record_result(mitigated.raw(), m);
         Fnv1a h;

@@ -43,8 +43,20 @@ const DeviceInfo& device_info() {
     return kInfo;
 }
 
+std::uint64_t device_free_bytes() {
+    if (!device_info().present) {
+        return 0;
+    }
+    std::size_t free_bytes = 0;
+    std::size_t total_bytes = 0;
+    if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(free_bytes);
+}
+
 std::uint64_t device_available_bytes() {
-    return device_info().free_memory_bytes;
+    return device_free_bytes();
 }
 
 }  // namespace menos::kernels::cuda

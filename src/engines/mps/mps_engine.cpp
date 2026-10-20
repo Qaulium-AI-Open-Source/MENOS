@@ -11,6 +11,7 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "engines/mps/apply_gate.h"
 #include "engines/mps/expectation.h"
@@ -176,8 +177,10 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
                     const std::vector<std::complex<double>> matrix =
                         ir::generate_matrix(o.opcode, o.params);
                     apply_gate(state, matrix, o.qubits, request.accuracy_policy, stats);
+                    state.charge_sites();
                 } else if constexpr (std::is_same_v<T, UnitaryOp>) {
                     apply_gate(state, o.matrix, o.qubits, request.accuracy_policy, stats);
+                    state.charge_sites();
                 } else if constexpr (std::is_same_v<T, ChannelOp>) {
                     // Unreachable: estimate() refuses a noisy region.
                     throw common::InternalError("mps: a noise channel reached a pure-state engine");
@@ -228,6 +231,8 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
                     request.monitor->at_safe_boundary(completed);
                 }
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
             result.counts_sampler = std::make_unique<MPSCountsSampler>(

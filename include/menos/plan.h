@@ -326,6 +326,13 @@ struct Plan {
     // explain() can say the backend was requested rather than chosen. Unset
     // when the planner chose, and then explain() prints nothing extra.
     std::optional<Backend> requested_backend = std::nullopt;
+    // The CUDA device's free memory this plan was checked against, read when
+    // the job was planned (Phase 21, docs/adr/0025 section 9, Q3). Set only
+    // when a candidate or a region of this plan runs on CUDA, so explain()
+    // shows the figure a device decision rested on, and every plan with no
+    // CUDA in it reports exactly as before. Like estimated_seconds, it is a
+    // measured figure: it changes with other processes' use of the GPU.
+    std::optional<std::uint64_t> device_available_bytes = std::nullopt;
 
     // A deterministic text report: the "circuit", "light_cone",
     // candidate, "strategy" and region lines, and the "estimated" line

@@ -119,7 +119,8 @@ TEST(CliGoldenTest, RunProducesExactOutputAfterNormalizingTimings) {
         "strategy   direct_stabilizer (exact)\n"
         "region 0   qubits=[0,1] engine=stabilizer backend=cpu\n"
         "estimated  state_bytes=<b> work_units=16\n"
-        "actual     state_bytes=<b> execute_s=<t> sample_s=<t>\n"
+        "actual     state_bytes=<b> execute_s=<t> sample_s=<t> peak_host_bytes=<b> "
+        "peak_device_bytes=<b>\n"
         "00: 50\n"
         "11: 50\n";
     EXPECT_EQ(normalize_bytes(normalize_timings(out.str())), expected);

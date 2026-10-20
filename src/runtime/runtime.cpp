@@ -13,6 +13,7 @@
 
 #include "analysis/cut.h"
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "common/splitmix64.h"
 #include "ir/final_writes.h"
@@ -42,7 +43,8 @@ const SimulationEngine& engine_for(Engine engine, Backend backend) {
 
 Result execute_direct(Plan&& plan,
                       const menos::plan::JobSpec& job_spec,
-                      const ExecutionMonitor* monitor) {
+                      const ExecutionMonitor* monitor,
+                      const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_direct: plan.reduced_circuit must be set by plan_job -- internal "
                    "invariant violated");
@@ -151,7 +153,9 @@ Result execute_direct(Plan&& plan,
                   execute_seconds,
                   /*sample_seconds=*/0.0,
                   /*replans=*/{},
-                  result.expectation_standard_error);
+                  result.expectation_standard_error,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes());
 }
 
 // {1, 0}: a static, never-allocated |0> amplitude pair for an idle
@@ -183,7 +187,8 @@ std::vector<std::complex<double>> idle_region_expectation_terms(
 
 Result execute_factorized(Plan&& plan,
                           const menos::plan::JobSpec& job_spec,
-                          const ExecutionMonitor* monitor) {
+                          const ExecutionMonitor* monitor,
+                          const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_factorized: plan.reduced_circuit must be set by plan_job -- internal "
                    "invariant violated");
@@ -220,9 +225,11 @@ Result execute_factorized(Plan&& plan,
     }
 
     std::optional<std::vector<std::complex<double>>> global;
+    common::MemoryLedger::Charge global_charge;
     if (job_spec.want_statevector) {
         global =
             allocate_global_statevector(reduced_circuit.num_qubits(), plan.estimated_state_bytes);
+        global_charge.set(common::buffer_bytes(*global));
     }
 
     std::vector<std::unique_ptr<RegionCountsSampler>> samplers;
@@ -251,6 +258,8 @@ Result execute_factorized(Plan&& plan,
 
         std::span<const std::complex<double>> psi_r;
         std::optional<EngineExecutionResult> engine_result;
+        // The region's statevector, held until it is multiplied in.
+        common::MemoryLedger::Charge region_state_charge;
         if (region.estimated_state_bytes == 0) {
             // Idle: statically |0>, no allocation, no engine invoked
             // (docs/BUILD_PLAN.md Phase 3, 3.2). No counts draw needed
@@ -293,6 +302,8 @@ Result execute_factorized(Plan&& plan,
             if (request.want_statevector) {
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
                 psi_r = std::span<const std::complex<double>>(*engine_result->statevector);
+                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+                region_state_charge.set(common::buffer_bytes(*engine_result->statevector));
             }
             if (want_expectation) {
                 std::vector<std::complex<double>> region_terms =
@@ -346,6 +357,8 @@ Result execute_factorized(Plan&& plan,
         }
         const auto start_sample = std::chrono::steady_clock::now();
         counts = combine_counts(sampler_ptrs, rngs, bitstring_width, job_spec.shots, monitor);
+        const common::MemoryLedger::Charge histogram_charge(
+            common::histogram_bytes(counts.size(), bitstring_width));
         sample_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start_sample).count();
     }
@@ -378,7 +391,11 @@ Result execute_factorized(Plan&& plan,
                   std::move(plan),
                   actual_peak_bytes,
                   execute_seconds,
-                  sample_seconds);
+                  sample_seconds,
+                  /*replans=*/{},
+                  /*expectation_standard_error=*/std::nullopt,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes());
 }
 
 }  // namespace
@@ -390,7 +407,8 @@ Result execute_factorized(Plan&& plan,
 // strategy uses.
 Result execute_cut(Plan&& plan,
                    const menos::plan::JobSpec& job_spec,
-                   const ExecutionMonitor* monitor) {
+                   const ExecutionMonitor* monitor,
+                   const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_cut: plan.reduced_circuit must be set by plan_job");
     common::ensure(!plan.regions.empty() && plan.regions[0].observable.has_value(),
@@ -506,21 +524,30 @@ Result execute_cut(Plan&& plan,
                   std::move(plan),
                   actual_peak_bytes,
                   execute_seconds,
-                  /*sample_seconds=*/0.0);
+                  /*sample_seconds=*/0.0,
+                  /*replans=*/{},
+                  /*expectation_standard_error=*/std::nullopt,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes());
 }
 
 Result Runtime::execute(Plan&& plan,
                         const menos::plan::JobSpec& job_spec,
                         const ExecutionMonitor* monitor) const {
+    // One ledger per execution attempt, installed on this thread for the
+    // engines' charges (docs/adr/0025 section 3.2). Its peak is what
+    // Result::peak_host_bytes() and peak_device_bytes() report.
+    common::MemoryLedger ledger;
+    const common::MemoryLedger::Scope scope(ledger);
     if (plan.strategy == Strategy::CutAndRecombine) {
-        return execute_cut(std::move(plan), job_spec, monitor);
+        return execute_cut(std::move(plan), job_spec, monitor, ledger);
     }
     if (plan.strategy == Strategy::DirectDense || plan.strategy == Strategy::DirectStabilizer ||
         plan.strategy == Strategy::DirectPauli || plan.strategy == Strategy::DirectDensityMatrix ||
         plan.strategy == Strategy::DirectTrajectory) {
-        return execute_direct(std::move(plan), job_spec, monitor);
+        return execute_direct(std::move(plan), job_spec, monitor, ledger);
     }
-    return execute_factorized(std::move(plan), job_spec, monitor);
+    return execute_factorized(std::move(plan), job_spec, monitor, ledger);
 }
 
 Result Runtime::execute(const Plan& plan,

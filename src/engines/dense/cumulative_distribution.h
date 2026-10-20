@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/memory_ledger.h"
 #include "engines/dense/state_vector.h"
 #include "menos/bitstring.h"
 #include "menos/simulation_engine.h"
@@ -90,6 +91,7 @@ private:
     std::vector<double> cumulative_;  // ascending, back() ~= 1.0
     std::vector<std::pair<std::uint32_t, std::uint32_t>> measure_targets_;
     std::uint32_t bitstring_width_;
+    common::MemoryLedger::Charge charge_;
 };
 
 }  // namespace menos::engines::dense

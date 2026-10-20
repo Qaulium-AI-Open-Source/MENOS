@@ -66,6 +66,12 @@ struct Measurement {
     std::uint64_t reported_actual_bytes = 0;
     // Heap-tracker peak above the live bytes at entry; 0 if no tracker.
     std::uint64_t tracked_peak_bytes = 0;
+    // The memory ledger's peaks over the same window (docs/adr/0025 section
+    // 3.2): Result::peak_host_bytes()/peak_device_bytes() for a run, or a
+    // ledger installed around execute() for an engine. For the mitigated run,
+    // the largest of its three runs' peaks.
+    std::uint64_t ledger_host_bytes = 0;
+    std::uint64_t ledger_device_bytes = 0;
     std::string strategy;
     // FNV-1a 64-bit digests of the outputs' exact bits, as 16 hex digits, or
     // "-" for an output the fixture does not request.

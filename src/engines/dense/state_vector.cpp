@@ -24,6 +24,7 @@ StateVector::StateVector(int num_qubits, std::uint64_t budget_bytes) : num_qubit
                                        std::to_string(budget_bytes) + " bytes");
     }
     data_.resize(num_amplitudes);
+    charge_.set(common::buffer_bytes(data_));
 }
 
 int StateVector::num_qubits() const {
@@ -43,6 +44,8 @@ std::span<const std::complex<double>> StateVector::amplitudes() const {
 }
 
 std::vector<std::complex<double>> StateVector::release() && {
+    // From here the buffer is the result's, charged by whoever holds it.
+    charge_.release();
     return std::move(data_);
 }
 

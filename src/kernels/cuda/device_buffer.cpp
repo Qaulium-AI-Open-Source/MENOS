@@ -24,6 +24,7 @@ DeviceBuffer::DeviceBuffer(std::size_t num_amplitudes, std::uint64_t budget_byte
                                        std::to_string(budget_bytes) + " bytes");
     }
     ensure_cuda(cudaMalloc(&data_, required_bytes), "cudaMalloc");
+    charge_ = common::MemoryLedger::Charge(required_bytes, common::MemoryLedger::Space::Device);
     // Zero-filled so initialize() only has to write element 0. cudaMemset is
     // used rather than a kernel because a byte-wise zero fill is exactly an
     // all-zero complex128 buffer.

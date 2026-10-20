@@ -89,6 +89,11 @@ std::string candidate_line(std::size_t index, const CandidateSummary& c, bool sh
     if (c.feasible) {
         s += std::format(
             " peak_bytes={} work_units={}", c.estimated_peak_bytes, c.estimated_work_units);
+        // A CUDA candidate's device memory, beside its host peak_bytes
+        // (docs/adr/0025 section 5). CPU candidates print nothing new.
+        if (c.backend == Backend::Cuda) {
+            s += std::format(" device_bytes={}", c.device.device_bytes);
+        }
         // Printed only for a time-constrained plan. estimated_seconds is
         // measured, so it differs between machines; including it in every
         // report would break the byte-identical output Plan::explain()
@@ -213,9 +218,14 @@ std::string Plan::explain() const {
         }
         out += " (statistical, not exact)\n";
     }
-    out +=
-        label("estimated") +
-        std::format("state_bytes={} work_units={}\n", estimated_state_bytes, estimated_work_units);
+    out += label("estimated") +
+           std::format("state_bytes={} work_units={}", estimated_state_bytes, estimated_work_units);
+    // The device memory the CUDA decisions above were checked against
+    // (docs/adr/0025, Q3). Absent from every plan with no CUDA in it.
+    if (device_available_bytes.has_value()) {
+        out += std::format(" device_available_bytes={}", *device_available_bytes);
+    }
+    out += "\n";
     return out;
 }
 

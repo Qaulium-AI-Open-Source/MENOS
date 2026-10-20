@@ -11,6 +11,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "engines/stabilizer/tableau.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -126,7 +127,10 @@ BitString project(const std::vector<bool>& full,
 class StabilizerCountsSampler : public RegionCountsSampler {
 public:
     StabilizerCountsSampler(BitString base, std::vector<BitString> generators)
-        : base_(std::move(base)), generators_(std::move(generators)) {}
+        : base_(std::move(base)), generators_(std::move(generators)) {
+        charge_.set(common::buffer_bytes(generators_) +
+                    generators_.size() * common::bitstring_words_bytes(base_.num_bits()));
+    }
 
     [[nodiscard]] BitString sample_one(common::Rng& rng) const override {
         BitString outcome = base_;
@@ -149,6 +153,7 @@ public:
 private:
     BitString base_;
     std::vector<BitString> generators_;
+    common::MemoryLedger::Charge charge_;
 };
 
 // Everything execute() allocates, at the most it holds at once (Phase 21,
@@ -266,6 +271,7 @@ CostEstimate StabilizerEngine::estimate(const EngineEstimateRequest& request) co
 
 EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& request) const {
     Tableau tableau(request.num_qubits);
+    const common::MemoryLedger::Charge tableau_charge(tableau.held_bytes());
     // Between two gates the tableau is a complete, valid stabilizer state, so
     // this is a safe boundary to abandon at (Phase 11, docs/adr/0015). This is
     // also the engine with the cheapest work per boundary (~1.3 us at n=200),
@@ -307,6 +313,11 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
 
     if (request.want_counts) {
         const Tableau::AffineSubspace subspace = tableau.reduce();
+        // The subspace's n-bit vectors, held while they are projected; a
+        // std::vector<bool> asks for at least one byte per 8 bits.
+        const common::MemoryLedger::Charge subspace_charge(
+            common::buffer_bytes(subspace.generators) +
+            (subspace.generators.size() + 1) * ((std::uint64_t{request.num_qubits} + 7) / 8));
         BitString base = project(subspace.base, request.measure_targets, request.bitstring_width);
         std::vector<BitString> generators;
         generators.reserve(subspace.generators.size());
@@ -314,7 +325,6 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
             generators.push_back(
                 project(generator, request.measure_targets, request.bitstring_width));
         }
-
         if (request.is_sole_region) {
             common::Rng rng(request.seed);
             const StabilizerCountsSampler sampler(std::move(base), std::move(generators));
@@ -329,6 +339,8 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
                     request.monitor->at_safe_boundary(completed);
                 }
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
             result.counts_sampler =

@@ -145,8 +145,8 @@ std::optional<Engine> single_engine_of(Strategy strategy) {
 Plan plan_job(const JobSpec& job_spec,
               const HardwareProfile& hardware_profile,
               const RuntimeObservations& observations) {
-    const std::uint64_t budget = job_spec.memory_budget_bytes.value_or(static_cast<std::uint64_t>(
-        static_cast<double>(hardware_profile.total_memory_bytes) * kDefaultMemoryBudgetFraction));
+    const std::uint64_t budget =
+        job_spec.memory_budget_bytes.value_or(default_memory_budget(hardware_profile));
     const bool want_counts = job_spec.shots > 0;
     const bool want_expectation = job_spec.expectation.has_value();
 
@@ -918,7 +918,11 @@ Plan plan_job(const JobSpec& job_spec,
                                                    candidates[dense_index].backend,
                                                    direct_dense_estimate,
                                                    reduced_observable));
-        plan.estimated_state_bytes = direct_dense_estimate.estimated_peak_bytes;
+        // The chosen backend's host figure (docs/adr/0025 section 5): the
+        // candidate carries the CUDA one when the dense job moved to the
+        // device. The region keeps the CPU figure, at least the CUDA host
+        // copy, as its execution budget.
+        plan.estimated_state_bytes = candidates[dense_index].estimated_peak_bytes;
         plan.estimated_work_units = direct_dense_estimate.estimated_work_units;
     } else if (*winner == stabilizer_index) {
         plan.strategy = Strategy::DirectStabilizer;
@@ -1099,6 +1103,12 @@ Plan plan_job(const JobSpec& job_spec,
         plan.estimated_state_bytes = factorized_estimate->estimated_peak_bytes;
         plan.estimated_work_units = factorized_estimate->estimated_work_units;
         // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+
+    const auto on_cuda = [](const auto& item) { return item.backend == Backend::Cuda; };
+    if (std::any_of(plan.candidates.begin(), plan.candidates.end(), on_cuda) ||
+        std::any_of(plan.regions.begin(), plan.regions.end(), on_cuda)) {
+        plan.device_available_bytes = hardware_profile.cuda_device_available_bytes;
     }
 
     return plan;

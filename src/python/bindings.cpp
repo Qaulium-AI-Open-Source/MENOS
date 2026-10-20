@@ -219,6 +219,10 @@ NB_MODULE(_core, m) {
         .def_prop_ro("expectation_standard_error", &menos::Result::expectation_standard_error)
         .def_prop_ro("exact", &menos::Result::exact)
         .def_prop_ro("actual_state_bytes", &menos::Result::actual_state_bytes)
+        // Phase 21 (docs/adr/0025 section 3.2): the most host and CUDA device
+        // memory the execution held, measured by the runtime's memory ledger.
+        .def_prop_ro("peak_host_bytes", &menos::Result::peak_host_bytes)
+        .def_prop_ro("peak_device_bytes", &menos::Result::peak_device_bytes)
         .def_prop_ro("execute_seconds", &menos::Result::execute_seconds)
         .def_prop_ro("sample_seconds", &menos::Result::sample_seconds)
         // Phase 17 (docs/adr/0021 section 3): the abandoned attempts of a job

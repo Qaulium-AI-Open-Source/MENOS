@@ -23,7 +23,10 @@
 //   * the estimate is at least the heap-tracker peak, with no slack;
 //   * the estimate plus B is at least the rise in peak RSS, measured in a fresh
 //     process, where B is the same figure for the smallest run of the same
-//     engine in the same session.
+//     engine in the same session;
+//   * the memory ledger's peak, which Result reports (section 3.2), is at
+//     most the heap-tracker peak, and its device peak at most the device
+//     estimate.
 // Under AddressSanitizer (the dev and windows-dev presets) the sanitizer owns
 // operator new and the process's memory, so both memory checks are skipped
 // there, by name; the bitwise check runs everywhere. Each figure is also
@@ -80,14 +83,25 @@ TEST_P(MemoryFixtureTest, OutputsMatchTheBaselineAndMemoryIsReported) {
               << " reported_actual=" << m.reported_actual_bytes << " tracked_peak="
               << (heap_tracker::available() ? std::to_string(m.tracked_peak_bytes)
                                             : std::string("n/a"))
-              << "\n";
+              << " ledger_host=" << m.ledger_host_bytes
+              << " ledger_device=" << m.ledger_device_bytes << "\n";
     RecordProperty("estimate", std::to_string(m.estimated_peak_bytes));
     RecordProperty("tracked_peak", std::to_string(m.tracked_peak_bytes));
+    RecordProperty("ledger_host", std::to_string(m.ledger_host_bytes));
 
     if (heap_tracker::available()) {
         EXPECT_LE(m.tracked_peak_bytes, m.estimated_peak_bytes)
             << fixture->name << ": the estimate is below the heap the run really used";
+        // The ledger counts only buffers the run really allocated, so it can
+        // never exceed what the heap tracker saw.
+        EXPECT_LE(m.ledger_host_bytes, m.tracked_peak_bytes)
+            << fixture->name << ": the ledger reports more than the heap the run used";
     }
+    EXPECT_LE(m.ledger_host_bytes, m.estimated_peak_bytes) << fixture->name;
+    EXPECT_LE(m.ledger_device_bytes, m.estimated_device_bytes) << fixture->name;
+    // Every fixture allocates a state, a tableau or a term list, so a zero
+    // ledger would mean an engine charges nothing.
+    EXPECT_GT(m.ledger_host_bytes + m.ledger_device_bytes, 0U) << fixture->name;
 
     const nlohmann::json& all = baseline();
     ASSERT_TRUE(all.is_object()) << "missing baseline " << kBaselineFile;
