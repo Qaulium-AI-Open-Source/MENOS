@@ -174,6 +174,21 @@ Matrix matrix_cp(std::span<const double> params) {
     return m;
 }
 
+// RZZ(theta) = exp(-i theta/2 Z(x)Z): diag(e^{-i t/2}, e^{i t/2}, e^{i t/2}, e^{-i t/2})
+// in the operand-order bit convention (both operands symmetric). Matches
+// Qiskit's RZZGate and PennyLane's IsingZZ, and equals CX RZ(theta) CX.
+Matrix matrix_rzz(std::span<const double> params) {
+    const double theta = params[0];
+    const std::complex<double> same = std::exp(-0.5i * theta);  // |00>, |11>
+    const std::complex<double> diff = std::exp(0.5i * theta);   // |01>, |10>
+    Matrix m(16, 0.0);
+    m[0] = same;
+    m[5] = diff;
+    m[10] = diff;
+    m[15] = same;
+    return m;
+}
+
 // --- 3-qubit gate. operands (control1, control2, target): control1 = bit
 // 0, control2 = bit 1, target = bit 2. Flips the target (bit 2) when both
 // controls are 1, i.e. swaps local indices 3 (0b011) and 7 (0b111). ---
@@ -190,7 +205,7 @@ Matrix matrix_ccx(std::span<const double>) {
     return m;
 }
 
-constexpr std::array<GateInfo, 19> kGateTable{{
+constexpr std::array<GateInfo, 20> kGateTable{{
     {Opcode::X, "x", 1, 0, &matrix_x, /*is_clifford=*/true},
     {Opcode::Y, "y", 1, 0, &matrix_y, /*is_clifford=*/true},
     {Opcode::Z, "z", 1, 0, &matrix_z, /*is_clifford=*/true},
@@ -210,6 +225,7 @@ constexpr std::array<GateInfo, 19> kGateTable{{
     {Opcode::CZ, "cz", 2, 0, &matrix_cz, /*is_clifford=*/true},
     {Opcode::SWAP, "swap", 2, 0, &matrix_swap, /*is_clifford=*/true},
     {Opcode::CP, "cp", 2, 1, &matrix_cp, /*is_clifford=*/false},
+    {Opcode::RZZ, "rzz", 2, 1, &matrix_rzz, /*is_clifford=*/false},
 }};
 
 constexpr GateInfo kCcxInfo{Opcode::CCX, "ccx", 3, 0, &matrix_ccx, /*is_clifford=*/false};

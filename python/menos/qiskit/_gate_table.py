@@ -43,6 +43,7 @@ GATE_TABLE: dict[str, GateSpec] = {
     "cz": GateSpec(Opcode.CZ, 2, 0),
     "swap": GateSpec(Opcode.SWAP, 2, 0),
     "cp": GateSpec(Opcode.CP, 2, 1),
+    "rzz": GateSpec(Opcode.RZZ, 2, 1),
     "ccx": GateSpec(Opcode.CCX, 3, 0),
 }
 

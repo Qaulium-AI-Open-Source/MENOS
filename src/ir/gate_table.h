@@ -12,7 +12,7 @@ namespace menos::ir {
 using MatrixGenerator = std::vector<std::complex<double>> (*)(std::span<const double> params);
 
 // opcode, name, arity, parameter count, matrix generator: the single
-// source of truth for the 19 named-gate opcodes (docs/BUILD_PLAN.md
+// source of truth for the 20 named-gate opcodes (docs/BUILD_PLAN.md
 // Phase 1, 1.1). Matrices follow Qiskit's standard gate library;
 // tests/ir's Qiskit-generated fixtures are the arbiter.
 struct GateInfo {
@@ -27,7 +27,7 @@ struct GateInfo {
     bool is_clifford;
 };
 
-// Precondition: opcode is one of the 19 named gates (not Unitary or
+// Precondition: opcode is one of the 20 named gates (not Unitary or
 // Measure, which have no table entry). Violating this is an internal
 // invariant failure, not a user input error -- callers dispatch on
 // Opcode before reaching here.

@@ -78,6 +78,9 @@ INSTANTIATE_TEST_SUITE_P(ParametrizedGatesAtSeveralAngles,
                                            GateTableParam{Opcode::P, 2, {1.9}},
                                            GateTableParam{Opcode::CP, 4, {0.0}},
                                            GateTableParam{Opcode::CP, 4, {1.9}},
+                                           GateTableParam{Opcode::RZZ, 4, {0.0}},
+                                           GateTableParam{Opcode::RZZ, 4, {1.9}},
+                                           GateTableParam{Opcode::RZZ, 4, {-2.6}},
                                            GateTableParam{Opcode::U, 2, {0.0, 0.0, 0.0}},
                                            GateTableParam{Opcode::U, 2, {0.7, 1.3, -0.4}},
                                            GateTableParam{Opcode::U, 2, {3.0, -1.5, 2.8}}));
@@ -96,6 +99,35 @@ TEST(GateTableTest, GenerateMatrixThrowsInternalErrorOnParamCountMismatch) {
     EXPECT_THROW((void)generate_matrix(Opcode::X, std::vector<double>{1.0}), common::InternalError);
 }
 
+// RZZ(t) = CX RZ(t) CX (target = operand 1), the decomposition Qiskit's
+// RZZGate and PennyLane's IsingZZ both document: diagonal, symmetric in its
+// operands, and e^{-it/2} on the even-parity states |00>, |11>.
+TEST(GateTableTest, RzzIsCxRzCxAndDiagonal) {
+    using C = std::complex<double>;
+    const double theta = 0.83;
+    const std::vector<C> rzz = generate_matrix(Opcode::RZZ, std::vector<double>{theta});
+    ASSERT_EQ(rzz.size(), 16u);
+    const C same = std::exp(C{0.0, -theta / 2});
+    const C diff = std::exp(C{0.0, theta / 2});
+    for (std::size_t r = 0; r < 4; ++r) {
+        for (std::size_t c = 0; c < 4; ++c) {
+            const C expected = r != c ? C{0.0, 0.0} : (r == 0 || r == 3) ? same : diff;
+            EXPECT_NEAR(std::abs(rzz[r * 4 + c] - expected), 0.0, 1e-15) << r << "," << c;
+        }
+    }
+    // CX RZ(t) CX in the operand-order bit convention: CX flips bit 1 when
+    // bit 0 is set; RZ(t) on bit 1 is diag(e^{-it/2}, e^{it/2}) by that bit.
+    const std::vector<C> rz = generate_matrix(Opcode::RZ, std::vector<double>{theta});
+    for (std::size_t i = 0; i < 4; ++i) {
+        const std::size_t flipped = ((i & 1u) != 0) ? (i ^ 2u) : i;  // CX
+        const C phase = rz[((flipped >> 1) & 1u) * 3];               // RZ on bit 1
+        EXPECT_NEAR(std::abs(rzz[i * 4 + i] - phase), 0.0, 1e-15) << i;
+    }
+    EXPECT_FALSE(gate_info(Opcode::RZZ).is_clifford);
+    EXPECT_EQ(gate_info(Opcode::RZZ).arity, 2);
+    EXPECT_EQ(gate_info(Opcode::RZZ).num_params, 1);
+}
+
 TEST(GateTableTest, RzIsNotP) {
     // CLAUDE.md: "RZ is not P. RZ(t) and P(t) differ by a global phase."
     const std::vector<double> theta{1.234};
@@ -112,11 +144,12 @@ TEST(GateTableTest, GateInfoByNameFindsEveryOneOfTheNineteenNamedGatesPlusCcx) {
         std::string_view name;
         Opcode opcode;
     } kCases[] = {
-        {"x", Opcode::X},   {"y", Opcode::Y},       {"z", Opcode::Z},   {"h", Opcode::H},
-        {"s", Opcode::S},   {"sdg", Opcode::Sdg},   {"t", Opcode::T},   {"tdg", Opcode::Tdg},
-        {"sx", Opcode::SX}, {"sxdg", Opcode::SXdg}, {"rx", Opcode::RX}, {"ry", Opcode::RY},
-        {"rz", Opcode::RZ}, {"p", Opcode::P},       {"u", Opcode::U},   {"cx", Opcode::CX},
-        {"cz", Opcode::CZ}, {"swap", Opcode::SWAP}, {"cp", Opcode::CP}, {"ccx", Opcode::CCX},
+        {"x", Opcode::X},     {"y", Opcode::Y},       {"z", Opcode::Z},   {"h", Opcode::H},
+        {"s", Opcode::S},     {"sdg", Opcode::Sdg},   {"t", Opcode::T},   {"tdg", Opcode::Tdg},
+        {"sx", Opcode::SX},   {"sxdg", Opcode::SXdg}, {"rx", Opcode::RX}, {"ry", Opcode::RY},
+        {"rz", Opcode::RZ},   {"p", Opcode::P},       {"u", Opcode::U},   {"cx", Opcode::CX},
+        {"cz", Opcode::CZ},   {"swap", Opcode::SWAP}, {"cp", Opcode::CP}, {"ccx", Opcode::CCX},
+        {"rzz", Opcode::RZZ},
     };
     for (const auto& c : kCases) {
         const GateInfo* info = gate_info_by_name(c.name);

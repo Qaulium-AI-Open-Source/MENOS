@@ -25,10 +25,11 @@ Twenty named gates run natively, plus explicit unitaries and measurements. The t
 | `cz` | `Opcode.CZ` | 2 | 0 | Controlled-Z | yes | yes |
 | `swap` | `Opcode.SWAP` | 2 | 0 | Swap | yes | yes |
 | `cp` | `Opcode.CP` | 2 | 1 | Controlled phase (control, target) | no | no |
+| `rzz` | `Opcode.RZZ` | 2 | 1 | Ising ZZ rotation exp(-iθ/2 Z⊗Z) = diag(e^{-iθ/2}, e^{iθ/2}, e^{iθ/2}, e^{-iθ/2}); Qiskit `RZZGate`, PennyLane `IsingZZ` | no | no |
 | `ccx` | `Opcode.CCX` | 3 | 0 | Toffoli (control, control, target) | no | no |
 
 - **Clifford** gates are the ones the [stabilizer engine](/engines/stabilizer) can run: `x y z h s sdg sx sxdg cx cz swap`.
-- **Pauli propagation** accepts the Clifford gates plus `rz rx ry p u`. It does **not** accept `t`, `tdg`, `cp`, `ccx` or unitaries. See [Pauli Propagation](/engines/pauli).
+- **Pauli propagation** accepts the Clifford gates plus `rz rx ry p u`. It does **not** accept `t`, `tdg`, `cp`, `rzz`, `ccx` or unitaries. See [Pauli Propagation](/engines/pauli).
 - The **dense**, **MPS**, **tensor-network** and **cut** strategies accept every gate in the table.
 
 ## Other operations
@@ -66,7 +67,7 @@ from menos.qiskit.target import build_target
 page = Path("docs/reference/supported-gates.md").read_text(encoding="utf-8")
 documented = set(re.findall(r"^\| `([a-z]+)` \| `Opcode\.(\w+)`", page, flags=re.MULTILINE))
 assert documented == {(name, spec.opcode.name) for name, spec in GATE_TABLE.items()}
-assert len(GATE_TABLE) == 20
+assert len(GATE_TABLE) == 21
 assert {name for name in GATE_TABLE} <= set(build_target().operation_names)
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(spec.opcode.name for spec in GATE_TABLE.values())
 ```
