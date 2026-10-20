@@ -135,6 +135,24 @@ struct LineGraph {
 
 [[nodiscard]] LineGraph build_line_graph(const ClosedTimelines& timelines);
 
+// The node and edge counts build_line_graph(timelines) would produce,
+// computed without building it: nodes are the wires; edges are, per tensor
+// node with k incident wires, the C(k, 2) pairs of its clique, less one for
+// every pair of parallel wires (two wires joining the same two tensors appear
+// in both endpoints' cliques but are one edge after deduplication).
+//
+// What a caller can do with it: in ANY elimination ordering, each original
+// edge {u, v} is still present when the first of u and v is eliminated (an
+// edge only disappears with an endpoint, fill-in only adds edges), so the
+// degrees at elimination sum to at least num_edges. With num_nodes steps,
+// that bounds any convex, increasing per-step cost from below without running
+// the search at all.
+struct LineGraphSize {
+    std::size_t num_nodes;
+    std::size_t num_edges;
+};
+[[nodiscard]] LineGraphSize line_graph_size(const ClosedTimelines& timelines);
+
 struct EliminationOrder {
     // The validated elimination sequence itself (node ids, in the order
     // they were eliminated) -- needed by the engine's execute() to

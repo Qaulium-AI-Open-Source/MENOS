@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -282,7 +283,25 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
         std::uint64_t peak_bytes = 0;
         std::uint64_t total_work = 0;
         std::size_t costed_fragments = 0;
-        for (const analysis::CutFragment& fragment : cut_plan.fragments) {
+        // Under a branch-and-bound bound, fragments are costed in descending
+        // order of their evaluation count, so a dear plan crosses the bound
+        // after as few engine estimates as possible. The total (a sum) and the
+        // peak (a max) do not depend on the order; without a bound the
+        // original order is kept.
+        std::vector<std::size_t> fragment_order(cut_plan.fragments.size());
+        std::iota(fragment_order.begin(), fragment_order.end(), std::size_t{0});
+        if (prune_above_work_units != std::numeric_limits<std::uint64_t>::max()) {
+            std::vector<std::uint64_t> evaluation_counts(cut_plan.fragments.size());
+            for (std::size_t f = 0; f < cut_plan.fragments.size(); ++f) {
+                evaluation_counts[f] = analysis::distinct_evaluation_count(cut_plan.fragments[f]);
+            }
+            std::stable_sort(
+                fragment_order.begin(), fragment_order.end(), [&](std::size_t a, std::size_t b) {
+                    return evaluation_counts[a] > evaluation_counts[b];
+                });
+        }
+        for (const std::size_t fragment_index : fragment_order) {
+            const analysis::CutFragment& fragment = cut_plan.fragments[fragment_index];
             // Cost this fragment on a representative assignment. Every
             // assignment has the same circuit shape -- only which Clifford
             // prepares each cut wire and which Pauli is measured differ, and

@@ -214,6 +214,38 @@ LineGraph build_line_graph(const ClosedTimelines& timelines) {
     return LineGraph{TensorNetworkGraph{wire_of.size(), std::move(edges)}, std::move(wire_of)};
 }
 
+LineGraphSize line_graph_size(const ClosedTimelines& timelines) {
+    std::vector<std::size_t> incident(timelines.num_nodes, 0);
+    std::vector<std::pair<std::size_t, std::size_t>> wires;
+    for (const std::vector<ClosedTimelineEntry>& combined : timelines.per_qubit) {
+        for (std::size_t i = 0; i + 1 < combined.size(); ++i) {
+            const std::size_t a = combined[i].node_id;
+            const std::size_t b = combined[i + 1].node_id;
+            if (a == b) {
+                continue;
+            }
+            ++incident.at(a);
+            ++incident.at(b);
+            wires.emplace_back(std::min(a, b), std::max(a, b));
+        }
+    }
+    std::size_t edges = 0;
+    for (const std::size_t k : incident) {
+        edges += k * (k - 1) / 2;
+    }
+    std::sort(wires.begin(), wires.end());
+    for (std::size_t i = 0; i < wires.size();) {
+        std::size_t j = i;
+        while (j < wires.size() && wires[j] == wires[i]) {
+            ++j;
+        }
+        const std::size_t parallel = j - i;
+        edges -= parallel * (parallel - 1) / 2;
+        i = j;
+    }
+    return LineGraphSize{wires.size(), edges};
+}
+
 namespace {
 
 // Dense bitset adjacency for the min-fill search. The graph the search
