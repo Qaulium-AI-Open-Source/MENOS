@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "ir/fuse_diagonal.h"
 
 #include <gtest/gtest.h>
