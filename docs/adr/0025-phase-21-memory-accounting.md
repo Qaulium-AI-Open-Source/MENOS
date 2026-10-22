@@ -516,3 +516,34 @@ On `cuda12-release` (RTX 4060 Laptop GPU, driver 566.14), the device ledger equa
 
 - **The plan's `estimated_state_bytes`.** For a DirectDense plan, this is now the chosen backend's host figure, the candidate's own (section 5). The region keeps the CPU figure as its execution budget, which is at least the CUDA host copy.
 - **The default budget.** `plan::default_memory_budget(profile)` replaces the two copies of the half-of-total-RAM formula, in the planner and in readout mitigation. Q1 is unchanged.
+
+### 10.5 Step 5: verification on the final commit — [MEASURED], 2026-10-20 to 2026-10-22
+
+#### Version mismatch (`2b00040`)
+
+The first `scripts/verify.sh` and `scripts/verify-windows.ps1` runs on `824df08` both failed at pytest, on one test: the `reference/compatibility.md` snippet that asserts `menos.__version__ == version("menos")`. The merge `1df592a` had left `pyproject.toml` at 1.2.0, while `python/menos/__init__.py` and `.github/workflows/build-wheels.yml` said 1.2.1. At the owner's decision (2026-10-21), `2b00040` sets `pyproject.toml` to 1.2.1.
+
+#### A Factorized plan with CUDA regions estimated no device memory
+
+The next `verify.sh` run, on `2b00040`, failed in `cuda12-dev`, the build in which the GPU tests actually run (driver 566.14), with 4 of 818 tests failing. ASan slows the CPU calibration there, so the planner put dense work on the GPU:
+
+- **The bug.** Phase 17's per-region selection checked that each CUDA region fits the device, but left the Factorized candidate's `device.device_bytes` at 0. `run_factorized_{statevector,counts,expectation}` measured a device ledger peak of 8 192, 8 192 and 8 224 bytes against a device estimate of 0.
+- **The fix.** The candidate's `device_bytes` is now the largest of its CUDA regions' device figures, since regions run one after another and each frees its device state before the next. `explain()` prints it on the candidate line. A plan with no CUDA region is unchanged.
+- **New test.** `CudaPeakMemoryTest.AFactorizedPlanWithCudaRegionsEstimatesTheLargestRegionsDeviceState` forces two regions of 7 and 5 qubits onto the device. The estimate is at least the 7-qubit state and below both states together, the measured device peak is at most the estimate, and `explain()` shows the figure. It executes on the GPU in `cuda12-dev`.
+- **Two fragile tests.** `run_factorized_expectation` also differed from its bitwise baseline. A CUDA region's expectation is not bitwise the CPU's: Phase 17 promises that only for counts (`docs/adr/0021`). Likewise `PeakMemoryTest.ADenseStatevectorJobHoldsExactlyItsState` assumed the CPU. The whole-job memory fixtures and the exact host-byte tests of `tests/api/peak_memory_test.cpp` are now pinned to `Backend::Cpu`. Their figures are the CPU engines' own, which the committed baselines were taken with. The CUDA figures stay covered by the `dense_cuda` fixtures and `tests/api/cuda_peak_memory_test.cpp`.
+
+With the GPU hidden (`CUDA_VISIBLE_DEVICES=`), the four tests already passed their assertions, which confirms the cause. After the fix, the CPU-pinned `run_*` fixtures report exactly the figures of section 10.4.
+
+#### Criterion 4, gate run 1 and gate run 2 (`2b00040`)
+
+- **Gate run 1** (2026-10-21) was invalid: AC power was lost before the round-3 check, so `gate.sh` refused it.
+- **Gate run 2** (2026-10-21) was valid, on AC throughout. It failed four of the 52 dense ratios:
+  - `DenseGateApplication/18`: 1.049
+  - `DenseGateApplication/20`: 1.100
+  - `DenseExpectationTerm/24`: 1.021
+  - `DenseSample/20`: 1.020
+  - `BM_MpsUnmonitored` passed at 0.984, and every one-thread dense benchmark was at or below 1.0.
+- **The machine slowed during the session.** The base build's own median for `DenseGateApplication/20` went from 0.71 ms in round 1 to 1.34 ms in round 3. Head against base for that benchmark was even in round 1, +10% in round 2 and −21% in round 3.
+- **Alignment experiment.** Phase 21 dropped the statevector's 64-byte alignment (Q5), and `malloc` places it 16 bytes past a cache line at every size measured. A throwaway benchmark, not committed, ran the same multithreaded two-qubit kernel on a 64-byte-aligned and a 16-byte-offset buffer, interleaved in one binary, three runs each. The two agree within the run-to-run spread, about 3%, with neither consistently faster. For n = 20 the medians were 0.845, 0.821 and 0.827 ms aligned against 0.825, 0.830 and 0.837 ms offset. Alignment is not the cause.
+
+Criterion 4 is re-run on the final commit, recorded below.

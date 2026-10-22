@@ -90,8 +90,9 @@ std::string candidate_line(std::size_t index, const CandidateSummary& c, bool sh
         s += std::format(
             " peak_bytes={} work_units={}", c.estimated_peak_bytes, c.estimated_work_units);
         // A CUDA candidate's device memory, beside its host peak_bytes
-        // (docs/adr/0025 section 5). CPU candidates print nothing new.
-        if (c.backend == Backend::Cuda) {
+        // (docs/adr/0025 section 5), and a Factorized candidate's when some
+        // of its regions run on CUDA. CPU candidates print nothing new.
+        if (c.backend == Backend::Cuda || c.device.device_bytes > 0) {
             s += std::format(" device_bytes={}", c.device.device_bytes);
         }
         // Printed only for a time-constrained plan. estimated_seconds is

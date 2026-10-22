@@ -795,6 +795,7 @@ Plan plan_job(const JobSpec& job_spec,
             std::vector<Backend> backends(regions.size(), Backend::Cpu);
             double mixed_seconds = 0.0;
             bool any_cuda = false;
+            std::uint64_t region_device_bytes = 0;
             std::string refusal;
             for (std::size_t i = 0; i < regions.size() && refusal.empty(); ++i) {
                 const Region& region = regions[i];
@@ -844,6 +845,10 @@ Plan plan_job(const JobSpec& job_spec,
                 backends[i] = Backend::Cuda;
                 any_cuda = true;
                 mixed_seconds += on_cuda;
+                // Regions run one after another, each freeing its device
+                // state before the next starts: the plan's device peak is
+                // the largest region's (docs/adr/0025 section 10.5).
+                region_device_bytes = std::max(region_device_bytes, on_device.device.device_bytes);
             }
             CandidateSummary& factorized = candidates[*factorized_index];
             if (!refusal.empty()) {
@@ -851,6 +856,7 @@ Plan plan_job(const JobSpec& job_spec,
                 factorized.infeasible_reason = "backend=cuda requested: " + refusal;
             } else if (any_cuda) {
                 factorized_backends = std::move(backends);
+                factorized.device.device_bytes = region_device_bytes;
                 if (timed) {
                     factorized_mixed_seconds = mixed_seconds;
                 }

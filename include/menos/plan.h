@@ -252,7 +252,10 @@ struct CandidateSummary {
     // can see which hardware the chosen plan is actually for.
     Backend backend = Backend::Cpu;
     // The accelerator terms this candidate was costed with; all zero for a CPU
-    // backend. Separate from estimated_peak_bytes, which is host memory.
+    // backend. Separate from estimated_peak_bytes, which is host memory. A
+    // Factorized candidate stays on the Cpu backend even when some of its
+    // regions run on CUDA; its device_bytes is then the largest such region's,
+    // since regions run one at a time (docs/adr/0025 section 10.5).
     DeviceCost device = {};
     // estimated_work_units converted to wall-clock seconds using the
     // calibrated throughput of the machine that planned this job

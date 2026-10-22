@@ -702,6 +702,13 @@ RunOptions options_for(const Fixture& fixture) {
         .shots = fixture.shots, .want_statevector = fixture.want_statevector, .seed = 2025};
     options.expectation = fixture.observable;
     options.accuracy_policy = fixture.accuracy_policy;
+    // The whole-job fixtures are pinned to the CPU. Left free, a CUDA build
+    // moves dense work to the GPU whenever its calibration wins (always under
+    // ASan), and a CUDA region's expectation is not bitwise the CPU's (only
+    // counts are, docs/adr/0021), so the committed baseline would depend on
+    // the calibration. The dense_cuda fixtures and
+    // tests/api/cuda_peak_memory_test.cpp cover the CUDA figures.
+    options.backend = Backend::Cpu;
     return options;
 }
 

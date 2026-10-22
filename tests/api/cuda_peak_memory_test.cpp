@@ -74,6 +74,47 @@ TEST(CudaPeakMemoryTest, ExplainShowsTheDeviceBytesAndTheFreeDeviceMemoryItUsed)
               std::string::npos);
 }
 
+TEST(CudaPeakMemoryTest, AFactorizedPlanWithCudaRegionsEstimatesTheLargestRegionsDeviceState) {
+    if (!engines::dense_cuda::cuda_device_available()) {
+        GTEST_SKIP() << "no CUDA device";
+    }
+    // Two independent blocks of 7 and 5 qubits, both forced onto the device.
+    Circuit circuit(12, 0);
+    for (std::uint32_t layer = 0; layer < 3; ++layer) {
+        for (QubitId q = 0; q < 12; ++q) {
+            circuit.append(Opcode::H, {q});
+            circuit.append(Opcode::T, {q});
+        }
+        for (QubitId q = 0; q + 1 < 12; ++q) {
+            if (q != 6) {
+                circuit.append(Opcode::CX, {q, static_cast<QubitId>(q + 1)});
+            }
+        }
+    }
+    const Result result = run(circuit, on_cuda());
+    const Plan& plan = result.plan();
+    ASSERT_EQ(plan.strategy, Strategy::Factorized);
+    ASSERT_EQ(plan.regions.size(), 2U);
+    for (const Region& region : plan.regions) {
+        ASSERT_EQ(region.backend, Backend::Cuda);
+    }
+    const CandidateSummary* winner = nullptr;
+    for (const CandidateSummary& candidate : plan.candidates) {
+        if (candidate.is_winner) {
+            winner = &candidate;
+        }
+    }
+    ASSERT_NE(winner, nullptr);
+    // The regions run one after another, so the device holds the 7-qubit
+    // state at most; until docs/adr/0025 section 10.5 the estimate was 0.
+    EXPECT_GE(winner->device.device_bytes, kAmplitude << 7);
+    EXPECT_LT(winner->device.device_bytes, (kAmplitude << 7) + (kAmplitude << 5));
+    EXPECT_GT(result.peak_device_bytes(), 0U);
+    EXPECT_LE(result.peak_device_bytes(), winner->device.device_bytes);
+    EXPECT_NE(result.explain().find(std::format(" device_bytes={}", winner->device.device_bytes)),
+              std::string::npos);
+}
+
 TEST(CudaPeakMemoryTest, EachJobReadsTheDevicesFreeMemoryAgain) {
     if (!engines::dense_cuda::cuda_device_available()) {
         GTEST_SKIP() << "no CUDA device";

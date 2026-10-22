@@ -41,9 +41,18 @@ Circuit entangled(std::uint32_t num_qubits) {
 
 constexpr std::uint64_t kAmplitude = sizeof(std::complex<double>);
 
+// These figures are the CPU engines' own. In a CUDA build the planner may put
+// dense work on the GPU (always so when ASan slows the CPU calibration), which
+// adds a host copy and a device figure, so the jobs are pinned to the CPU.
+// tests/api/cuda_peak_memory_test.cpp covers the CUDA figures.
+RunOptions on_cpu(RunOptions options) {
+    options.backend = Backend::Cpu;
+    return options;
+}
+
 TEST(PeakMemoryTest, ADenseStatevectorJobHoldsExactlyItsState) {
     const Result result =
-        run(entangled(12), RunOptions{.shots = 0, .want_statevector = true, .seed = 1});
+        run(entangled(12), on_cpu(RunOptions{.shots = 0, .want_statevector = true, .seed = 1}));
     ASSERT_EQ(result.plan().strategy, Strategy::DirectDense);
     // The state, moved into the result rather than copied (docs/adr/0025).
     EXPECT_EQ(result.peak_host_bytes(), kAmplitude << 12);
@@ -60,7 +69,7 @@ TEST(PeakMemoryTest, ADenseCountsJobAddsItsUniformsAndItsHistogram) {
     // The statevector request keeps the job on dense, which samples before
     // it hands the state over.
     const Result result =
-        run(circuit, RunOptions{.shots = shots, .want_statevector = true, .seed = 3});
+        run(circuit, on_cpu(RunOptions{.shots = shots, .want_statevector = true, .seed = 3}));
     ASSERT_EQ(result.plan().strategy, Strategy::DirectDense);
     // At the end of sampling: the state, one double per shot, and one node
     // (its value and four link words) and one key word per distinct outcome.
@@ -76,7 +85,8 @@ TEST(PeakMemoryTest, AFactorizedStatevectorHoldsTheGlobalStateAndOneRegionAtATim
     Circuit circuit(12, 0);
     add_entangled_block(circuit, 0, 6);
     add_entangled_block(circuit, 6, 6);
-    const Result result = run(circuit, RunOptions{.shots = 0, .want_statevector = true, .seed = 1});
+    const Result result =
+        run(circuit, on_cpu(RunOptions{.shots = 0, .want_statevector = true, .seed = 1}));
     ASSERT_EQ(result.plan().strategy, Strategy::Factorized);
     ASSERT_EQ(result.plan().regions.size(), 2U);
     // The global buffer, plus a region's state while it is multiplied in.
@@ -116,7 +126,7 @@ TEST(PeakMemoryTest, StabilizerAndMpsJobsReportAPeakWithinTheirEstimates) {
 
 TEST(PeakMemoryTest, ExplainAppendsBothPeaksToTheActualLine) {
     const Result result =
-        run(entangled(8), RunOptions{.shots = 0, .want_statevector = true, .seed = 1});
+        run(entangled(8), on_cpu(RunOptions{.shots = 0, .want_statevector = true, .seed = 1}));
     const std::string text = result.explain();
     const std::size_t actual = text.find("actual     state_bytes=");
     ASSERT_NE(actual, std::string::npos);
