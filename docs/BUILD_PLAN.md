@@ -26,7 +26,7 @@
 | 19 | OpenQASM 3 import (frontend) | **COMPLETE — acceptance gate passed 2026-10-16 (evidence: `docs/adr/0023` section 10; `scripts/verify.sh` exit 0 on `bb720d8`)** |
 | 20 | PennyLane device (frontend) | **COMPLETE — gate recorded passed 2026-10-18 (evidence: `docs/adr/0024` section 10; `scripts/verify.sh` exit 0 on `5da898e`)** |
 | 21 | Memory accounting and copy removal | Started 2026-10-20 — implemented through `72d8f27` (ADR `docs/adr/0025`); **gate OPEN**, verification deferred 2026-10-31 |
-| 22 | CUDA memory efficiency | Started 2026-10-31 — ADR `docs/adr/0026`, section 9 awaiting answers |
+| 22 | CUDA memory efficiency | Started 2026-10-31 — ADR `docs/adr/0026` section 9 answered; implementation plan next |
 | 23 | Tiered memory across VRAM, RAM and disk | Not started (memory roadmap, 2026-10-18) |
 | 24 | Stim engine for noisy Clifford circuits (backend) | Proposed (2026-10-07) — not approved |
 | 25 | Cirq frontend | Proposed (2026-10-07) — not approved |
@@ -505,7 +505,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 ### Phase 22: CUDA memory efficiency — STARTED (2026-10-31)
 
-*The owner started this phase on 2026-10-31, with the Phase 21 gate open. Design: `docs/adr/0026`, awaiting the owner's answers to its section 9. Branch: `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`).*
+*The owner started this phase on 2026-10-31, with the Phase 21 gate open. Design: `docs/adr/0026`; the owner answered its section 9 the same day, taking every recommended option. Branch: `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`).*
 
 **Goal.** Less time spent allocating and copying on the GPU, using only CUDA runtime features MENOS already links (CUDA 12.0 and later). No new library.
 

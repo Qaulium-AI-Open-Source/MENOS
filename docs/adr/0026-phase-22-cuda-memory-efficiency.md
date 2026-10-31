@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; section 9 awaits the owner's answers.** The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. No implementation, source, test or build file has changed yet; the implementation plan goes through plan mode and owner approval next.
+**Accepted; section 9 answered (2026-10-31).** The owner took the recommended option for every question (answers recorded at the end of section 9). The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. No implementation, source, test or build file has changed yet; the implementation plan goes through plan mode and owner approval next.
 
 Labels follow `docs/adr/0014`–`0025`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). Every figure in section 1 is **[DERIVED] from reading the source at `72d8f27`** or quoted from an earlier ADR's measurement, and says which. Nothing in this ADR has been measured for Phase 22 yet; step 1 of section 6 measures first, and section 10 will record the results.
 
@@ -167,6 +167,17 @@ Whichever is adopted, the bytes that land in the result are the same bytes, so t
   The 2% rule of section 6 step 1 is yours to confirm or replace.
 - **Q5 — Explicit pool or the device default pool?** (a, recommended) explicit, so no other library in the process is affected; (b) the device default pool, fewer lines.
 - **Q6 — Order of the two open gates.** (a, recommended) Phase 21's verification and criterion 4 re-run are made on the Phase 21 branch first, then Phase 22 rebases if needed; (b) one verification on Phase 22's final commit covers both, with each phase's criteria listed separately in its own ADR. Either way neither gate is marked passed without your confirmation.
+
+### Owner answers (2026-10-31)
+
+The owner took the recommended option, (a), for every question:
+
+- **Q1:** the pool persists across jobs, regions, replans and batch circuits in one process; only `release_device_memory()` or process exit empties it.
+- **Q2:** the release threshold is the device's total memory; the pool is never trimmed automatically, and the planner counts its retained bytes as available.
+- **Q3:** the device→host path is decided from the step-1 measurement among register-in-place, pinned staging and pageable; the figures are shown to the owner before step 4.
+- **Q4:** the gate as written in Q4; the reduction factors of criteria 2 and 3 are set by the owner from the step-1 baseline; the 2% materiality rule of section 6 step 1 is confirmed.
+- **Q5:** an explicit pool, not the device default pool.
+- **Q6:** Phase 21's verification and criterion 4 re-run are made on the Phase 21 branch, before the Phase 22 gate is claimed; Phase 22 work proceeds meanwhile, as the owner instructed on 2026-10-31, and rebases onto Phase 21's final commit if that commit differs from `9b8833c`.
 
 ## 10. Gate evidence
 
