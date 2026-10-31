@@ -134,6 +134,21 @@ if(MENOS_ENABLE_CUDA)
         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>
         $<$<COMPILE_LANGUAGE:CUDA>:-fmad=false>)
 
+    # Phase 22 step 1 (docs/adr/0026 section 4): allocation, the expectation
+    # scratch, three device-to-host paths and whole executions, same run. It
+    # calls the CUDA runtime directly, so it takes the toolkit's include
+    # directories through menos_kernels_cuda, as device_buffer.cpp does.
+    add_executable(menos_cuda_memory_benchmark
+        cuda_memory_benchmark.cpp
+        menos_benchmark_main.cpp
+    )
+    target_link_libraries(menos_cuda_memory_benchmark PRIVATE
+        menos_kernels_cuda menos_engines_dense_cuda menos_ir menos_plan
+        menos_benchmark_environment benchmark::benchmark
+        nlohmann_json::nlohmann_json  # MENOS_CUDA_MEMORY_JSON output
+    )
+    target_compile_options(menos_cuda_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
     # Phase 17 step 4a (docs/adr/0021 section 5): every CPU/CUDA assignment of
     # a Factorized plan's regions, and one fragment-sized evaluation on each
     # backend. Benchmark-only; the planner is unchanged by it.

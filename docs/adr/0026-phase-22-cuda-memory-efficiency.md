@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted; section 9 answered (2026-10-31).** The owner took the recommended option for every question (answers recorded at the end of section 9). The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. No implementation, source, test or build file has changed yet; the implementation plan goes through plan mode and owner approval next.
+**Accepted; section 9 answered (2026-10-31).** The owner took the recommended option for every question (answers recorded at the end of section 9). The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. The owner approved the implementation plan on 2026-10-31. Step 1 of section 6 (measure first, change nothing) is done and recorded in section 10.1; no engine, planner or runtime code has changed. Steps 2–6 wait for the owner's answers to Q7–Q9 at the end of section 10.1.
 
 Labels follow `docs/adr/0014`–`0025`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). Every figure in section 1 is **[DERIVED] from reading the source at `72d8f27`** or quoted from an earlier ADR's measurement, and says which. Nothing in this ADR has been measured for Phase 22 yet; step 1 of section 6 measures first, and section 10 will record the results.
 
@@ -181,4 +181,74 @@ The owner took the recommended option, (a), for every question:
 
 ## 10. Gate evidence
 
-To be written step by step, as `docs/adr/0025` section 10 was. Nothing is recorded yet.
+### 10.1 Step 1: the measurements before any change — [MEASURED], 2026-10-31
+
+Tool: `benchmarks/cuda_memory_benchmark.cpp` (`menos_cuda_memory_benchmark`, section 4), built in the WSL clone with the `cuda12-release` preset (g++-13, CUDA 12.4 runtime, driver API 12.7, driver 566.14) against the engines unchanged from `72d8f27`. RTX 4060 Laptop GPU, 8 585 216 000 bytes total. Five runs, JSON in `docs/benchmarks/phase-22-baseline/cuda-memory-run1.json` to `run5.json`: runs 1–3 with earlier drafts of the benchmark that lacked some of the section (2) rows (the rows they have are the same measurements), runs 4–5 with the committed source. Every figure is the median of 10 repetitions after a warm-up; interquartile ranges are in the JSON. Both the GPU's clock state and the host-side driver costs moved between runs by up to 2.4×, so each conclusion below is drawn from same-run ratios and is stated only where all five runs agree.
+
+**Facts (0).** `cudaDevAttrMemoryPoolsSupported` = 1, `cudaDevAttrHostRegisterSupported` = 1, the default pool's release threshold = 0 bytes (so an unconfigured pool would retain nothing across MENOS's per-gate synchronisations). With the threshold set to the device's total memory, the explicit pool held 1 073 741 824 bytes reserved after the sweep: the configuration of section 3.1 works on this machine.
+
+**(1) Allocation**, microseconds per cycle, direct = `cudaMalloc` + `cudaMemset` + `cudaFree` + synchronise (what `DeviceBuffer` does today), pooled = `cudaMallocFromPoolAsync` + `cudaFreeAsync` + stream synchronise from a warm pool; runs 1 / 2 / 3 / 4 / 5:
+
+| n | bytes | direct | memset alone | pooled |
+|---|---|---|---|---|
+| 16 | 1 048 576 | 2 321 / 1 653 / 655 / 535 / 801 | 115 / 61 / 32 / 30 / 82 | 2.1 / 1.8 / 1.2 / 0.9 / 1.0 |
+| 18 | 4 194 304 | 1 858 / 1 767 / 735 / 644 / 658 | 144 / 97 / 37 / 42 / 36 | 1.5 / 1.4 / 1.1 / 0.9 / 3.1 |
+| 20 | 16 777 216 | 3 117 / 2 399 / 1 370 / 1 096 / 1 287 | 294 / 280 / 64 / 45 / 59 | 1.4 / 1.4 / 1.1 / 0.9 / 0.9 |
+| 22 | 67 108 864 | 6 508 / 6 419 / 3 635 / 2 707 / 3 275 | 961 / 928 / 443 / 334 / 426 | 2.7 / 2.2 / 6.1 / 0.9 / 0.9 |
+| 24 | 268 435 456 | 22 714 / 22 358 / 15 849 / 9 462 / 12 117 | 2 193 / 1 742 / 1 639 / 1 134 / 1 627 | 2.2 / 1.4 / 0.9 / 1.3 / 2.0 |
+| 26 | 1 073 741 824 | 50 160 / 54 142 / 63 387 / 39 830 / 42 972 | 6 468 / 6 527 / 6 369 / 6 206 / 4 973 | 2.8 / 2.5 / 1.1 / 0.9 / 1.0 |
+
+The same-run ratio direct / pooled is between 215× and 45 000× in every row of every run. A pooled cycle is 1–6 µs at every size; a direct cycle is 1–3 ms at n = 20, 9–23 ms at n = 24 and 40–63 ms at n = 26. The zero fill is 3–15% of the direct cycle; `cudaMalloc` + `cudaFree` are the rest.
+
+**(2) The expectation scratch**, microseconds per term at n = 20, 100 terms; runs 1 / 2 / 3 / 4 / 5 (— = not in that draft):
+
+| Row | Figures |
+|---|---|
+| bookkeeping today (16 KiB `cudaMalloc`, synchronising copy back, `cudaFree`, host vector) | 75 / 109 / 38 / 40 / 44 |
+| the same with the allocation from the pool | — / — / 41 / 41 / 42 |
+| the copy alone, into buffers allocated once | 67 / 48 / 36 / 28 / 35 |
+| whole `expectation_of_term`, kernel included, state \|0…0⟩ | 308 / 305 / 401 / 255 / 290 |
+| whole call on the state the crossover circuit leaves | — / — / 395 / 236 / 288 |
+| whole call right after an H gate, the gate's own time subtracted | — / — / 382 / 233 / 294 |
+| whole call in `execute()`'s own sequence (fresh buffer, initialise, gates, 100 terms) | — / — / — / 223 / 286 |
+
+What item 2 as written removes is "bookkeeping today" minus "the copy alone": 8 / 61 / 2 / 12 / 9 µs per term, 2.6 / 20.1 / 0.5 / 4.6 / 3.0% of a term, and over 100 terms 0.4 / 2.8 / 0.1 / 0.9 / 0.6% of the 100-term n = 20 execution of table (4) (median 0.6%). The 16 KiB allocation itself costs the same from the pool as from `cudaMalloc` (41 vs 38–44 µs), so item 1 does not help a term. The larger part of the bookkeeping is the synchronising 16 KiB copy (28–67 µs); the kernel is the rest of the term. The state's contents and a preceding gate make no difference (rows 5–6 equal row 4 within the run's spread).
+
+**(3) Device→host of the state**, GB/s of the median (higher is better); pageable = `cudaMemcpy` into a `std::vector`, as `copy_to_host` does today; register = `cudaHostRegister` + copy + `cudaHostUnregister`, all three timed; staged = the best of two-chunk pinned staging at 4, 16 and 64 MiB; runs 1 / 2 / 3 / 4 / 5:
+
+| n | pageable | register, total | staged, best |
+|---|---|---|---|
+| 20 | 3.12 / 3.13 / 3.16 / 6.24 / 6.22 | 1.77 / 1.48 / 2.06 / 3.29 / 3.63 | 2.64 / 2.57 / 2.91 / 5.20 / 5.41 |
+| 22 | 3.20 / 3.17 / 3.23 / 6.32 / 6.37 | 1.84 / 1.74 / 2.80 / 3.66 / 4.10 | 2.78 / 2.98 / 3.10 / 3.10 / 5.83 |
+| 24 | 3.19 / 3.22 / 3.25 / 6.39 / 3.25 | 1.90 / 1.83 / 2.50 / 2.50 / 2.52 | 3.07 / 3.11 / 3.17 / 3.19 / 3.21 |
+| 26 | 3.16 / 3.16 / 3.24 / 3.25 / 3.24 | 2.01 / 2.04 / 2.25 / 2.41 / 2.52 | 3.18 / 3.18 / 3.23 / 3.22 / 3.22 |
+
+Pageable is never beaten, in any run at any size. Registering the destination costs 5.7–18.9 ms at n = 24 on its own, and the copy into the registered pages is then *slower* than the pageable copy (90–104 ms against 42–84 ms). Staging matches pageable within 3% at n ≥ 24 and loses below. The pageable path itself is bimodal on this machine (3.2 or 6.3 GB/s), which is the WSL transfer path's own behaviour and not something MENOS controls. The copy is 3.2–7.4% of a statevector execution and cannot be made cheaper here.
+
+**(4) End to end**, `CudaDenseEngine::execute` on the crossover circuit, seconds; runs 1 / 2 / 3 / 4 / 5:
+
+| n | statevector | expectation, 1 term | expectation, 100 terms |
+|---|---|---|---|
+| 16 | 0.0147 / 0.0138 / 0.0128 / 0.0089 / 0.0086 | 0.0116 / 0.0139 / 0.0136 / 0.0083 / 0.0082 | 0.0273 / 0.0273 / 0.0257 / 0.0180 / 0.0165 |
+| 18 | 0.0227 / 0.0316 / 0.0331 / 0.0186 / 0.0186 | 0.0237 / 0.0224 / 0.0318 / 0.0189 / 0.0176 | 0.1395 / 0.1828 / 0.1268 / 0.0848 / 0.0861 |
+| 20 | 0.0732 / 0.0727 / 0.1192 / 0.0640 / 0.0622 | 0.0686 / 0.0693 / 0.1121 / 0.0626 / 0.0711 | 0.2087 / 0.2184 / 0.2545 / 0.1327 / 0.1521 |
+| 22 | 0.318 / 0.307 / 0.502 / 0.279 / 0.327 | 0.253 / 0.256 / 0.456 / 0.234 / 0.306 | 0.435 / 0.441 / 0.706 / 0.361 / 0.449 |
+| 24 | 1.279 / 1.263 / 2.129 / 1.145 / 1.434 | 1.043 / 1.032 / 1.031 / 1.040 / 1.362 | 1.523 / 1.434 / 1.280 / 1.349 / 1.731 |
+| 26 | 5.565 / 5.575 / 5.053 / 6.616 / 6.535 | 4.327 / 4.250 / 4.413 / 5.807 / 5.625 | 5.525 / 6.703 / 6.502 / 7.036 / 6.911 |
+
+The share of an execution that item 1 would remove (the direct cycle of table (1) against the same run's execution): statevector at n = 16: 15.8 / 12.0 / 5.1 / 6.0 / 9.3%; n = 18: 8.2 / 5.6 / 2.2 / 3.5 / 3.5%; n = 20: 4.3 / 3.3 / 1.2 / 1.7 / 2.1%; n = 22: 2.1 / 2.1 / 0.7 / 1.0 / 1.0%; n = 24: 1.8 / 1.8 / 0.7 / 0.8 / 0.8%; n = 26: 0.9 / 1.0 / 1.3 / 0.6 / 0.7%. One-term expectation at n = 20: 4.5 / 3.5 / 1.2 / 1.8 / 1.8%. The redundant second zero fill alone is 0.05–0.4% at n = 20.
+
+**A note on method.** The difference of the 100-term and 1-term medians divided by 99 is *not* a per-term cost: it gives 0.7–1.5 ms at n = 20 but 0.08–0.16 ms at n = 16, below any isolated call, because the two medians are taken in separate windows between which the GPU's clock state moves. The per-term figures of this record are the direct ones in table (2), whose last row times the terms inside `execute()`'s own sequence.
+
+#### Conclusions under section 6, step 1
+
+1. **Item 1 (the pool) is on the materiality line at n = 20 and clearly above it below n = 20.** Its saving is 1.2–4.5% (median 1.8%) of the smallest n ≥ 20 execution, 2.2–20% at n = 16–18, and 0.6–2.6% at n ≥ 22. The primitive it replaces is 215–45 000× slower than its replacement. The sizes where it matters most are exactly where Factorized regions, `run_batch` circuits and PennyLane parameter-shift circuits run on the device. **Recommended: build it** (section 3.1, including the removal of the duplicate zero fill, which costs nothing extra to remove). The owner decides (Q7).
+2. **Item 2 (the scratch allocated once) is immaterial as written:** 0.1–2.8% (median 0.6%) of a 100-term n = 20 execution, and the allocation it removes is not where a term's bookkeeping goes; the synchronising copy is. **Recommended: recorded, not built.** The variant that would address the copy, one copy back for all terms at the end of the sweep (bitwise identical, the same partials summed in the same order on the host), would save about 99 × (28–67) µs ≈ 3–7 ms, 1.3–2.7% at n = 20 with 100 terms; it is a change to the kernel-call structure that this ADR did not propose. **Recommended: not in Phase 22, recorded for a later ADR.** The owner decides (Q8).
+3. **Item 3 (page-locked device→host) is not adopted: 3.3(c).** No page-locked path beat the pageable copy in any of five runs at any size on this machine. Recorded as "measured, not adopted". Whether native Linux behaves differently is unmeasured and stays so in this phase.
+4. **The section 3.4 accounting** (the pool's retained bytes counted as available and printed) is needed if and only if item 1 is built.
+
+#### Owner decisions from step 1
+
+- **Q7 — Item 1.** (a, recommended) Build the pool and remove the duplicate zero fill, as section 3.1. (b) Do not build it: the measured share at n ≥ 20 is at the 2% line.
+- **Q8 — Item 2.** (a, recommended) Not built, recorded; the one-copy-for-all-terms variant recorded for a later ADR. (b) Build the one-copy variant in this phase. (c) Build item 2 as written despite the measurement.
+- **Q9 — The gate's figures (Q4 criteria 2 and 3).** (a, recommended) Criterion 2: the per-execution device allocation + zero fill + free, measured as a same-run ratio by `menos_cuda_memory_benchmark` table (1), is at least 10× cheaper from the pool than direct at n = 20, 22 and 24 (measured 215–45 000×); the expectation clause of criterion 2 is dropped with Q8(a). Criterion 3: replaced by the record of 3.3(c) above. (b) Figures of your own.

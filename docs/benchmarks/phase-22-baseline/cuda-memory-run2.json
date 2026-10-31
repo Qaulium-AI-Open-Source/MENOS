@@ -1,0 +1,630 @@
+{
+  "allocation": [
+    {
+      "bytes": 1048576,
+      "direct_cycle_seconds": {
+        "max": 0.0022986459,
+        "median": 0.0016534906999999999,
+        "min": 0.0012940691000000002,
+        "q1": 0.0015423346499999998,
+        "q3": 0.00188197215
+      },
+      "direct_over_pooled": 920.0883089421847,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 9.864590000000001e-05,
+        "median": 6.13355e-05,
+        "min": 5.81561e-05,
+        "q1": 5.9604024999999996e-05,
+        "q3": 6.7265525e-05
+      },
+      "n": 16,
+      "pooled_cycle_seconds": {
+        "max": 2.2458e-06,
+        "median": 1.7971e-06,
+        "min": 1.7835000000000002e-06,
+        "q1": 1.788125e-06,
+        "q3": 1.8029250000000002e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.0016516935999999999
+    },
+    {
+      "bytes": 4194304,
+      "direct_cycle_seconds": {
+        "max": 0.0025248405,
+        "median": 0.0017671159,
+        "min": 0.0011727583,
+        "q1": 0.001556160325,
+        "q3": 0.0020405552749999997
+      },
+      "direct_over_pooled": 1245.061579651941,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 0.0001207098,
+        "median": 9.653385e-05,
+        "min": 9.10861e-05,
+        "q1": 9.59788e-05,
+        "q3": 9.8909125e-05
+      },
+      "n": 18,
+      "pooled_cycle_seconds": {
+        "max": 1.5545000000000001e-06,
+        "median": 1.4193000000000001e-06,
+        "min": 1.4035e-06,
+        "q1": 1.4124249999999999e-06,
+        "q3": 1.4293e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.0017656966
+    },
+    {
+      "bytes": 16777216,
+      "direct_cycle_seconds": {
+        "max": 0.0032822524,
+        "median": 0.00239911285,
+        "min": 0.0022046324,
+        "q1": 0.0023092481,
+        "q3": 0.0026311243499999998
+      },
+      "direct_over_pooled": 1692.9138411600748,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 0.0002923723,
+        "median": 0.0002804182,
+        "min": 0.00026026420000000003,
+        "q1": 0.000265493975,
+        "q3": 0.000290067125
+      },
+      "n": 20,
+      "pooled_cycle_seconds": {
+        "max": 1.5743000000000001e-06,
+        "median": 1.41715e-06,
+        "min": 1.4026e-06,
+        "q1": 1.412225e-06,
+        "q3": 1.424625e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.0023976957000000003
+    },
+    {
+      "bytes": 67108864,
+      "direct_cycle_seconds": {
+        "max": 0.0068713394,
+        "median": 0.0064192963,
+        "min": 0.006111864,
+        "q1": 0.0063177395,
+        "q3": 0.006550528575000001
+      },
+      "direct_over_pooled": 2976.7888427740036,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 0.0012341546,
+        "median": 0.0009278640499999998,
+        "min": 0.0008996682,
+        "q1": 0.000919925825,
+        "q3": 0.0009367665
+      },
+      "n": 22,
+      "pooled_cycle_seconds": {
+        "max": 4.2583e-06,
+        "median": 2.15645e-06,
+        "min": 2.1078999999999998e-06,
+        "q1": 2.1188e-06,
+        "q3": 2.30385e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.006417139850000001
+    },
+    {
+      "bytes": 268435456,
+      "direct_cycle_seconds": {
+        "max": 0.0261359901,
+        "median": 0.022357872700000003,
+        "min": 0.020831034800000002,
+        "q1": 0.021849399499999998,
+        "q3": 0.02300650795
+      },
+      "direct_over_pooled": 15559.797271904798,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 0.0017890964,
+        "median": 0.0017418397499999998,
+        "min": 0.0016956404000000001,
+        "q1": 0.0017054706000000002,
+        "q3": 0.0017618635000000002
+      },
+      "n": 24,
+      "pooled_cycle_seconds": {
+        "max": 1.7846000000000002e-06,
+        "median": 1.4369e-06,
+        "min": 1.4242e-06,
+        "q1": 1.4291249999999998e-06,
+        "q3": 1.438875e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.022356435800000005
+    },
+    {
+      "bytes": 1073741824,
+      "direct_cycle_seconds": {
+        "max": 0.0797303204,
+        "median": 0.05414205405,
+        "min": 0.0491170822,
+        "q1": 0.0515351711,
+        "q3": 0.075983516725
+      },
+      "direct_over_pooled": 21543.07418828585,
+      "measured": true,
+      "memset_only_seconds": {
+        "max": 0.006636734,
+        "median": 0.00652703445,
+        "min": 0.0064375794,
+        "q1": 0.006483465125000001,
+        "q3": 0.006593452675
+      },
+      "n": 26,
+      "pooled_cycle_seconds": {
+        "max": 3.1778e-06,
+        "median": 2.5132e-06,
+        "min": 2.4982e-06,
+        "q1": 2.50265e-06,
+        "q3": 2.525025e-06
+      },
+      "pooled_measured": true,
+      "saved_per_cycle_seconds": 0.05413954085
+    }
+  ],
+  "cycles_per_sample": 10,
+  "device_present": true,
+  "end_to_end": [
+    {
+      "allocation_saving_share_of_expectation_1": 0.1184125445375057,
+      "allocation_saving_share_of_statevector": 0.12011233895997742,
+      "expectation_100_terms_seconds": {
+        "max": 0.04917463,
+        "median": 0.027342334,
+        "min": 0.024759637,
+        "q1": 0.02576550525,
+        "q3": 0.02995422075
+      },
+      "expectation_1_term_seconds": {
+        "max": 0.016601327,
+        "median": 0.013948637,
+        "min": 0.010626322,
+        "q1": 0.01232321925,
+        "q3": 0.014819009250000001
+      },
+      "gates": 147,
+      "measured": true,
+      "memset_share_of_statevector": 0.00446036139286348,
+      "n": 16,
+      "pageable_d2h_share_of_statevector": 0.0,
+      "statevector_seconds": {
+        "max": 0.017627628,
+        "median": 0.01375124,
+        "min": 0.010722368,
+        "q1": 0.01225741225,
+        "q3": 0.01465877325
+      }
+    },
+    {
+      "allocation_saving_share_of_expectation_1": 0.07866169456559,
+      "allocation_saving_share_of_statevector": 0.055868203183905195,
+      "expectation_100_terms_seconds": {
+        "max": 0.207774153,
+        "median": 0.1827688085,
+        "min": 0.144975635,
+        "q1": 0.16998704275,
+        "q3": 0.19733373275
+      },
+      "expectation_1_term_seconds": {
+        "max": 0.0266184,
+        "median": 0.0224467145,
+        "min": 0.020586064,
+        "q1": 0.02117411075,
+        "q3": 0.0247223045
+      },
+      "gates": 165,
+      "measured": true,
+      "memset_share_of_statevector": 0.00305441645293117,
+      "n": 18,
+      "pageable_d2h_share_of_statevector": 0.0,
+      "statevector_seconds": {
+        "max": 0.039178031,
+        "median": 0.0316046785,
+        "min": 0.025487033,
+        "q1": 0.027316747500000002,
+        "q3": 0.03529025175
+      }
+    },
+    {
+      "allocation_saving_share_of_expectation_1": 0.03461570278621609,
+      "allocation_saving_share_of_statevector": 0.03296359742446017,
+      "expectation_100_terms_seconds": {
+        "max": 0.269134352,
+        "median": 0.2184116265,
+        "min": 0.196952767,
+        "q1": 0.207455492,
+        "q3": 0.222829467
+      },
+      "expectation_1_term_seconds": {
+        "max": 0.075141182,
+        "median": 0.069266128,
+        "min": 0.06246327,
+        "q1": 0.06762484775,
+        "q3": 0.0706313235
+      },
+      "gates": 183,
+      "measured": true,
+      "memset_share_of_statevector": 0.003855198412080297,
+      "n": 20,
+      "pageable_d2h_share_of_statevector": 0.0736470805648291,
+      "statevector_seconds": {
+        "max": 0.106276771,
+        "median": 0.072737683,
+        "min": 0.069725937,
+        "q1": 0.070672252,
+        "q3": 0.0751047595
+      }
+    },
+    {
+      "allocation_saving_share_of_expectation_1": 0.025075554139792133,
+      "allocation_saving_share_of_statevector": 0.02090471044790782,
+      "expectation_100_terms_seconds": {
+        "max": 0.491814607,
+        "median": 0.44105156,
+        "min": 0.412120353,
+        "q1": 0.430668237,
+        "q3": 0.4580602775
+      },
+      "expectation_1_term_seconds": {
+        "max": 0.288115294,
+        "median": 0.255912185,
+        "min": 0.250623246,
+        "q1": 0.25342980275,
+        "q3": 0.26152837575
+      },
+      "gates": 201,
+      "measured": true,
+      "memset_share_of_statevector": 0.003022644005533564,
+      "n": 22,
+      "pageable_d2h_share_of_statevector": 0.0689335362914853,
+      "statevector_seconds": {
+        "max": 0.32974153,
+        "median": 0.306970999,
+        "min": 0.295192606,
+        "q1": 0.30434434325,
+        "q3": 0.310731588
+      }
+    },
+    {
+      "allocation_saving_share_of_expectation_1": 0.021670866034036926,
+      "allocation_saving_share_of_statevector": 0.01769607756779539,
+      "expectation_100_terms_seconds": {
+        "max": 1.811787512,
+        "median": 1.4342938965,
+        "min": 1.389417088,
+        "q1": 1.4122685874999998,
+        "q3": 1.446934083
+      },
+      "expectation_1_term_seconds": {
+        "max": 1.043789062,
+        "median": 1.03163555,
+        "min": 1.022020701,
+        "q1": 1.02639027125,
+        "q3": 1.03459102625
+      },
+      "gates": 219,
+      "measured": true,
+      "memset_share_of_statevector": 0.001378740851288528,
+      "n": 24,
+      "pageable_d2h_share_of_statevector": 0.06604261998598682,
+      "statevector_seconds": {
+        "max": 1.33480464,
+        "median": 1.2633554365,
+        "min": 1.217027532,
+        "q1": 1.24575710925,
+        "q3": 1.2916706475000002
+      }
+    },
+    {
+      "allocation_saving_share_of_expectation_1": 0.012739636647783884,
+      "allocation_saving_share_of_statevector": 0.009710920772779174,
+      "expectation_100_terms_seconds": {
+        "max": 7.711380091,
+        "median": 6.703496137,
+        "min": 5.189773851,
+        "q1": 5.7120876415,
+        "q3": 7.047737495250001
+      },
+      "expectation_1_term_seconds": {
+        "max": 59.766607986,
+        "median": 4.249692699,
+        "min": 4.235632791,
+        "q1": 4.23958418225,
+        "q3": 24.67601022075
+      },
+      "gates": 237,
+      "measured": true,
+      "memset_share_of_statevector": 0.0011707434793501814,
+      "n": 26,
+      "pageable_d2h_share_of_statevector": 0.06091461658792874,
+      "statevector_seconds": {
+        "max": 20.900092037,
+        "median": 5.5751192,
+        "min": 5.483095062,
+        "q1": 5.535222301,
+        "q3": 5.657829609749999
+      }
+    }
+  ],
+  "environment": "environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H",
+  "facts": {
+    "default_pool_release_threshold_bytes": 0,
+    "driver_version": 12070,
+    "host_register_supported": 1,
+    "memory_pools_supported": 1,
+    "runtime_version": 12040
+  },
+  "gpu": {
+    "compute_capability": "8.9",
+    "free_memory_bytes": 7443841024,
+    "multiprocessors": 24,
+    "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "total_memory_bytes": 8585216000
+  },
+  "repetitions": 10,
+  "schema_version": 1,
+  "scratch": {
+    "bookkeeping_today_seconds": {
+      "max": 0.00012828725,
+      "median": 0.000109429,
+      "min": 8.774308e-05,
+      "q1": 0.0001069498575,
+      "q3": 0.0001116721675
+    },
+    "measured": true,
+    "n": 20,
+    "removable_share": 0.20086445211308668,
+    "reused_copy_seconds": {
+      "max": 6.0411479999999994e-05,
+      "median": 4.8148820000000004e-05,
+      "min": 4.049047e-05,
+      "q1": 4.57235e-05,
+      "q3": 5.228253e-05
+    },
+    "scratch_bytes": 16384,
+    "terms": 100,
+    "whole_call_seconds": {
+      "max": 0.00032783501,
+      "median": 0.000305082255,
+      "min": 0.00028456794,
+      "q1": 0.0002961493175,
+      "q3": 0.00032031353249999995
+    }
+  },
+  "terms": 100,
+  "transfer": [
+    {
+      "bytes": 16777216,
+      "measured": true,
+      "n": 20,
+      "pageable_seconds": {
+        "max": 0.005523278,
+        "median": 0.0053569180000000004,
+        "min": 0.005284241,
+        "q1": 0.005317302,
+        "q3": 0.0054406445
+      },
+      "register_seconds": {
+        "max": 0.003000393,
+        "median": 0.0021281345,
+        "min": 0.001708757,
+        "q1": 0.00180433525,
+        "q3": 0.00230522125
+      },
+      "registered_copy_seconds": {
+        "max": 0.007829167,
+        "median": 0.007284259,
+        "min": 0.006796395,
+        "q1": 0.00707062925,
+        "q3": 0.00737878775
+      },
+      "registered_total_seconds": 0.011304281000000001,
+      "staged_16mib_seconds": {
+        "max": 0.007527535,
+        "median": 0.006717628999999999,
+        "min": 0.006564888,
+        "q1": 0.0066673324999999995,
+        "q3": 0.00710913525
+      },
+      "staged_4mib_seconds": {
+        "max": 0.00746416,
+        "median": 0.0065349495,
+        "min": 0.006024181,
+        "q1": 0.006250172500000001,
+        "q3": 0.0068138734999999995
+      },
+      "staged_64mib_seconds": {
+        "max": 0.00892166,
+        "median": 0.006662177,
+        "min": 0.006528949,
+        "q1": 0.00655980525,
+        "q3": 0.006778431499999999
+      },
+      "unregister_seconds": {
+        "max": 0.002773651,
+        "median": 0.0018918875,
+        "min": 0.001773294,
+        "q1": 0.00181427375,
+        "q3": 0.00211863525
+      }
+    },
+    {
+      "bytes": 67108864,
+      "measured": true,
+      "n": 22,
+      "pageable_seconds": {
+        "max": 0.021961477,
+        "median": 0.0211605965,
+        "min": 0.020815209,
+        "q1": 0.02087260525,
+        "q3": 0.02168502325
+      },
+      "register_seconds": {
+        "max": 0.011063522,
+        "median": 0.0048826185,
+        "min": 0.003738774,
+        "q1": 0.00415401225,
+        "q3": 0.0063934707500000005
+      },
+      "registered_copy_seconds": {
+        "max": 0.0288966,
+        "median": 0.0277760305,
+        "min": 0.025585029,
+        "q1": 0.027189761,
+        "q3": 0.02854237975
+      },
+      "registered_total_seconds": 0.038534572499999996,
+      "staged_16mib_seconds": {
+        "max": 0.02264627,
+        "median": 0.022556957500000002,
+        "min": 0.022246372,
+        "q1": 0.02234753175,
+        "q3": 0.02260382975
+      },
+      "staged_4mib_seconds": {
+        "max": 0.024761137,
+        "median": 0.023519408,
+        "min": 0.022707364,
+        "q1": 0.023043136999999998,
+        "q3": 0.0240828095
+      },
+      "staged_64mib_seconds": {
+        "max": 0.029290349,
+        "median": 0.0272520075,
+        "min": 0.025663858,
+        "q1": 0.02624258,
+        "q3": 0.028076056999999998
+      },
+      "unregister_seconds": {
+        "max": 0.007317033,
+        "median": 0.0058759235,
+        "min": 0.005406451,
+        "q1": 0.00562752425,
+        "q3": 0.006057253
+      }
+    },
+    {
+      "bytes": 268435456,
+      "measured": true,
+      "n": 24,
+      "pageable_seconds": {
+        "max": 0.087712659,
+        "median": 0.083435303,
+        "min": 0.082694265,
+        "q1": 0.08302857,
+        "q3": 0.08378245675
+      },
+      "register_seconds": {
+        "max": 0.028883125,
+        "median": 0.0189029215,
+        "min": 0.01440304,
+        "q1": 0.01668282275,
+        "q3": 0.02343532675
+      },
+      "registered_copy_seconds": {
+        "max": 0.10657388,
+        "median": 0.10405155199999999,
+        "min": 0.097509939,
+        "q1": 0.10078056425,
+        "q3": 0.10551595524999999
+      },
+      "registered_total_seconds": 0.1468558865,
+      "staged_16mib_seconds": {
+        "max": 0.090617012,
+        "median": 0.086337232,
+        "min": 0.084981162,
+        "q1": 0.08546186725,
+        "q3": 0.08808493125
+      },
+      "staged_4mib_seconds": {
+        "max": 0.095280749,
+        "median": 0.0925800265,
+        "min": 0.089852129,
+        "q1": 0.09071804425,
+        "q3": 0.093585351
+      },
+      "staged_64mib_seconds": {
+        "max": 0.090516454,
+        "median": 0.089353283,
+        "min": 0.08760706,
+        "q1": 0.0883789355,
+        "q3": 0.09003912675
+      },
+      "unregister_seconds": {
+        "max": 0.029055109,
+        "median": 0.023901413,
+        "min": 0.018918638,
+        "q1": 0.02074797,
+        "q3": 0.0251908785
+      }
+    },
+    {
+      "bytes": 1073741824,
+      "measured": true,
+      "n": 26,
+      "pageable_seconds": {
+        "max": 0.36114246,
+        "median": 0.3396062485,
+        "min": 0.332228327,
+        "q1": 0.33494077925,
+        "q3": 0.34435013324999997
+      },
+      "register_seconds": {
+        "max": 0.070669415,
+        "median": 0.057679161,
+        "min": 0.045510491,
+        "q1": 0.0524118745,
+        "q3": 0.06199733775
+      },
+      "registered_copy_seconds": {
+        "max": 0.408487768,
+        "median": 0.3946669935,
+        "min": 0.381435717,
+        "q1": 0.387723622,
+        "q3": 0.40434958899999995
+      },
+      "registered_total_seconds": 0.5255674404999999,
+      "staged_16mib_seconds": {
+        "max": 0.348516769,
+        "median": 0.3400313285,
+        "min": 0.338399157,
+        "q1": 0.3393412715,
+        "q3": 0.342077274
+      },
+      "staged_4mib_seconds": {
+        "max": 0.386608775,
+        "median": 0.37140867899999996,
+        "min": 0.362848433,
+        "q1": 0.3677709185,
+        "q3": 0.37769618525
+      },
+      "staged_64mib_seconds": {
+        "max": 0.339837596,
+        "median": 0.337805613,
+        "min": 0.336854969,
+        "q1": 0.337288007,
+        "q3": 0.33876664125
+      },
+      "unregister_seconds": {
+        "max": 0.087993548,
+        "median": 0.073221286,
+        "min": 0.059541007,
+        "q1": 0.07051301825,
+        "q3": 0.07887367375
+      }
+    }
+  ]
+}
