@@ -226,6 +226,14 @@ std::string Plan::explain() const {
     if (device_available_bytes.has_value()) {
         out += std::format(" device_available_bytes={}", *device_available_bytes);
     }
+    // The part of it that is MENOS's own retained pool, and whether there is
+    // one (Phase 22, docs/adr/0026 section 3.4). Set with the figure above.
+    if (device_pool_bytes.has_value()) {
+        out += std::format(" device_pool_bytes={}", *device_pool_bytes);
+    }
+    if (device_pooled.has_value()) {
+        out += std::format(" pooled={}", *device_pooled ? "true" : "false");
+    }
     out += "\n";
     return out;
 }

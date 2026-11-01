@@ -28,6 +28,7 @@
 
 #ifdef MENOS_ENABLE_CUDA
 #include "kernels/cuda/device_info.h"
+#include "kernels/cuda/device_pool.h"
 #include "plan/cuda_calibration.h"
 #endif
 
@@ -260,7 +261,11 @@ HardwareProfile current_hardware_profile() {
     HardwareProfile profile = calibrated_hardware_profile();
 #ifdef MENOS_ENABLE_CUDA
     if (profile.cuda_present) {
-        profile.cuda_device_available_bytes = kernels::cuda::device_free_bytes();
+        // Free memory plus what MENOS's own pool already holds for reuse
+        // (Phase 22, docs/adr/0026 section 3.4).
+        profile.cuda_device_available_bytes = kernels::cuda::device_available_bytes();
+        profile.cuda_device_pool_bytes = kernels::cuda::device_pool_bytes();
+        profile.cuda_device_pooled = kernels::cuda::device_pool().pooled();
     }
 #endif
     return profile;

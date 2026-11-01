@@ -180,7 +180,7 @@ With `time_budget_seconds`, the planner's time estimate uses the calibrated sing
 
 ## CUDA
 
-Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6).
+Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6). GPU states are allocated from a memory pool that keeps a finished job's memory for the next job; `release_device_memory()` gives it back to the driver.
 
 Building with CUDA requires setting the GPU architecture explicitly:
 

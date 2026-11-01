@@ -55,6 +55,11 @@ struct HardwareProfile {
     // not the total and emphatically not the nameplate: the development GPU is
     // sold as 4096 MiB, reports 3770 MiB total and 3681 MiB free.
     std::uint64_t cuda_device_available_bytes = 0;
+    // The part of cuda_device_available_bytes that is MENOS's own memory
+    // pool, retained from earlier jobs, and whether the pool is in use
+    // (Phase 22, docs/adr/0026 section 3.4). Both are reported on the Plan.
+    std::uint64_t cuda_device_pool_bytes = 0;
+    bool cuda_device_pooled = false;
     double cuda_host_to_device_bytes_per_second = 0.0;
     double cuda_device_to_host_bytes_per_second = 0.0;
     // Fixed cost per kernel launch. The term that correctly makes a small

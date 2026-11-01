@@ -6,7 +6,7 @@ The native API, exported from the top-level `menos` package. It is the thin laye
 from menos import Circuit, NoiseMethod, Opcode, RunOptions, Result, run
 ```
 
-The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
+The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `release_device_memory`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
 
 ## `run`
 
@@ -54,6 +54,14 @@ options.shots = 100
 options.seed = 1
 assert sum(menos.run(circuit, options).counts.values()) == 100
 ```
+
+## `release_device_memory`
+
+```text
+release_device_memory() -> None
+```
+
+Gives back to the CUDA driver the device memory MENOS keeps between jobs (Phase 22). MENOS allocates every GPU state from one memory pool and keeps a finished job's state memory in the pool, so the next job of the same size pays no allocation; the planner counts that memory as available, and `explain()` shows it as `device_pool_bytes` beside `device_available_bytes`. Call this when another process needs the GPU. A no-op in a build without CUDA, on a machine without a GPU, or when the pool is already empty.
 
 ## Readout mitigation
 

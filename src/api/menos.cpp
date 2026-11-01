@@ -13,6 +13,10 @@
 #include "plan/job_spec.h"
 #include "plan/planner.h"
 
+#ifdef MENOS_ENABLE_CUDA
+#include "kernels/cuda/device_pool.h"
+#endif
+
 namespace menos {
 namespace {
 
@@ -102,6 +106,12 @@ Result run(const Circuit& circuit, const RunOptions& options) {
 
 Plan preview(const Circuit& circuit, const RunOptions& options) {
     return validate_and_plan(circuit, options).plan;
+}
+
+void release_device_memory() {
+#ifdef MENOS_ENABLE_CUDA
+    kernels::cuda::device_pool().trim();
+#endif
 }
 
 }  // namespace menos

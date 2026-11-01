@@ -67,9 +67,16 @@ TEST(CudaPeakMemoryTest, ExplainShowsTheDeviceBytesAndTheFreeDeviceMemoryItUsed)
             EXPECT_LE(result.peak_device_bytes(), candidate.device.device_bytes);
         }
     }
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    EXPECT_NE(text.find(std::format(" device_available_bytes={}\n", *plan.device_available_bytes)),
-              std::string::npos);
+    ASSERT_TRUE(plan.device_pool_bytes.has_value());
+    ASSERT_TRUE(plan.device_pooled.has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
+    EXPECT_NE(text.find(std::format(" device_available_bytes={} device_pool_bytes={} pooled={}\n",
+                                    *plan.device_available_bytes,
+                                    *plan.device_pool_bytes,
+                                    *plan.device_pooled ? "true" : "false")),
+              std::string::npos)
+        << text;
+    // NOLINTEND(bugprone-unchecked-optional-access)
     EXPECT_NE(text.find(std::format(" peak_device_bytes={}", result.peak_device_bytes())),
               std::string::npos);
 }

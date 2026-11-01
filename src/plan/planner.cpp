@@ -1115,6 +1115,8 @@ Plan plan_job(const JobSpec& job_spec,
     if (std::any_of(plan.candidates.begin(), plan.candidates.end(), on_cuda) ||
         std::any_of(plan.regions.begin(), plan.regions.end(), on_cuda)) {
         plan.device_available_bytes = hardware_profile.cuda_device_available_bytes;
+        plan.device_pool_bytes = hardware_profile.cuda_device_pool_bytes;
+        plan.device_pooled = hardware_profile.cuda_device_pooled;
     }
 
     return plan;

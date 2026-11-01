@@ -58,6 +58,8 @@ Every entry here is a real limitation of this release. None is speculative, and 
 - **A CUDA build needs an explicit `CMAKE_CUDA_ARCHITECTURES`.** Without it CMake targets a default architecture and the kernels fail at run time.
 - The CMake presets pin machine-specific values (`/usr/local/cuda`, compute capability 8.6).
 - **CUDA gate kernels are double-precision-bound on consumer GPUs.** One- and two-qubit gates have specialised kernels, but bitwise identity with the CPU rules out fused multiply-add and kernels that skip zero products, so large circuits run at the GPU's double-precision arithmetic rate. Kernels specialised to diagonal or permutation gates are not implemented.
+- **MENOS keeps GPU memory between jobs.** A finished job's device state stays in MENOS's memory pool for the next job of that size (Phase 22). The planner counts it as available and `explain()` shows it as `device_pool_bytes`; other processes see it as used until `release_device_memory()` (C++ and Python) gives it back or the process exits. A device without memory-pool support falls back to a `cudaMalloc` per job (`pooled=false` in `explain()`).
+- **Device-to-host copies are pageable.** Page-locked and staged transfers were measured under WSL and were no faster than the pageable copy, so they are not used (`docs/adr/0026` section 10.1). On that machine the copy runs at 3–6 GB/s and is 3–7% of a statevector job.
 - CUDA on Linux aarch64 and on macOS is not supported.
 - The largest state executed in verification on the 4 GB card was 26 qubits; 27 is the arithmetic ceiling and was not run.
 

@@ -251,6 +251,10 @@ NB_MODULE(_core, m) {
 
     m.def("run", &menos::run, "circuit"_a, "options"_a);
 
+    // Phase 22 (docs/adr/0026): give the device memory MENOS retains between
+    // jobs back to the driver. A no-op without CUDA.
+    m.def("release_device_memory", &menos::release_device_memory);
+
     // Phase 19 (docs/adr/0023): OpenQASM 3 import. menos.from_qasm3 wraps it so
     // that inputs may be None.
     m.def(

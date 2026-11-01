@@ -132,4 +132,15 @@ struct RunOptions {
 // share a name visible in the same scope).
 [[nodiscard]] Plan preview(const Circuit& circuit, const RunOptions& options);
 
+// Returns to the CUDA driver the device memory MENOS keeps between jobs
+// (Phase 22, docs/adr/0026 section 3.1). MENOS allocates every device state
+// from one memory pool and, when a job finishes, keeps its state's memory in
+// the pool for the next job instead of freeing it, so a second job of the
+// same size pays no allocation. That memory is counted as available by the
+// planner and shown in explain() (device_pool_bytes). Call this to give it
+// back when another process needs the GPU. A no-op in a build without CUDA,
+// on a machine without a device, or when the pool is already empty. Throws
+// InternalError if the driver refuses to release it.
+void release_device_memory();
+
 }  // namespace menos

@@ -7,6 +7,7 @@
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "kernels/cuda/cuda_error.h"
+#include "kernels/cuda/device_pool.h"
 
 namespace menos::kernels::cuda {
 
@@ -23,18 +24,20 @@ DeviceBuffer::DeviceBuffer(std::size_t num_amplitudes, std::uint64_t budget_byte
                                        " bytes of device memory exceeds the device budget of " +
                                        std::to_string(budget_bytes) + " bytes");
     }
-    ensure_cuda(cudaMalloc(&data_, required_bytes), "cudaMalloc");
+    // From the process's pool (Phase 22, docs/adr/0026 section 3.1): the
+    // block a previous DeviceBuffer of this size freed, when there is one,
+    // instead of a cudaMalloc. Its contents are undefined. initialize()
+    // zeroes the state before it writes amplitude 0; until Phase 22 this
+    // constructor zeroed it a second time (docs/adr/0026 section 10.1).
+    data_ = device_pool().allocate(required_bytes);
     charge_ = common::MemoryLedger::Charge(required_bytes, common::MemoryLedger::Space::Device);
-    // Zero-filled so initialize() only has to write element 0. cudaMemset is
-    // used rather than a kernel because a byte-wise zero fill is exactly an
-    // all-zero complex128 buffer.
-    ensure_cuda(cudaMemset(data_, 0, required_bytes), "cudaMemset");
 }
 
 DeviceBuffer::~DeviceBuffer() {
-    // A destructor cannot throw, and there is no recovery from a failed free.
-    // The value is deliberately discarded rather than checked.
-    static_cast<void>(cudaFree(data_));
+    // Back to the pool, which keeps it for the next DeviceBuffer. release()
+    // never throws: a destructor cannot, and there is no recovery from a
+    // failed free.
+    device_pool().release(data_);
 }
 
 DeviceState DeviceBuffer::state() {

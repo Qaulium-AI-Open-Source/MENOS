@@ -30,7 +30,8 @@ if(MENOS_ENABLE_CUDA)
     target_sources(menos_api_tests PRIVATE cpu_cuda_differential_test.cpp
                                            cuda_execution_monitor_test.cpp
                                            cuda_backend_request_test.cpp
-                                           cuda_peak_memory_test.cpp)
+                                           cuda_peak_memory_test.cpp
+                                           cuda_memory_pool_test.cpp)
     target_link_libraries(menos_api_tests PRIVATE menos_engines_dense_cuda)
 endif()
 

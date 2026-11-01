@@ -40,10 +40,18 @@ struct DeviceInfo {
 // fails.
 [[nodiscard]] std::uint64_t device_free_bytes();
 
-// Device memory a region may use: device_free_bytes(). This is the free
-// figure, not the total: the display server and any other process already
-// hold some, and budgeting against total would refuse nothing and then fail at
-// cudaMalloc.
+// Device memory a region may use: device_free_bytes() plus the bytes MENOS's
+// own pool holds reserved but unused (device_pool_bytes(), Phase 22,
+// docs/adr/0026 section 3.4), which the next allocation takes without asking
+// the driver. The free figure, not the total: the display server and any
+// other process already hold some, and budgeting against total would refuse
+// nothing and then fail at allocation.
 [[nodiscard]] std::uint64_t device_available_bytes();
+
+// The bytes MENOS's device pool retains between jobs (device_pool.h): part of
+// device_available_bytes(), printed by explain() so the sum is auditable, and
+// returned to the driver by menos::release_device_memory(). 0 when no device
+// is present or the device has no memory-pool support.
+[[nodiscard]] std::uint64_t device_pool_bytes();
 
 }  // namespace menos::kernels::cuda

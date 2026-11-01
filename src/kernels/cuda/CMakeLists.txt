@@ -6,6 +6,7 @@
 add_library(menos_kernels_cuda STATIC
     device_buffer.cpp
     device_info.cpp
+    device_pool.cpp
     device_benchmarks.cpp
     dense_kernels.cu
 )

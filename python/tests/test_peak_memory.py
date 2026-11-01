@@ -51,3 +51,13 @@ def test_explain_ends_the_actual_line_with_both_peaks():
     assert actual.endswith(
         f" peak_host_bytes={result.peak_host_bytes} peak_device_bytes=0"
     )
+
+
+def test_release_device_memory_is_exported_and_a_no_op_without_a_gpu():
+    # Phase 22 (docs/adr/0026 section 3.1): gives the retained GPU pool back
+    # to the driver; nothing to give back in a CPU build or without a device.
+    import menos
+
+    assert "release_device_memory" in menos.__all__
+    assert menos.release_device_memory() is None
+    assert menos.release_device_memory() is None

@@ -2,6 +2,13 @@
 
 MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
 
+## Phase 22: CUDA memory efficiency
+
+- **GPU states come from a memory pool.** A finished job's device state stays in MENOS's own CUDA memory pool and serves the next job, region, replan or batch circuit of that size, instead of a `cudaMalloc` and `cudaFree` per execution. Measured on the development GPU, the allocation cycle went from 1–3 ms at 20 qubits and 9–23 ms at 24 to 1–6 µs (`docs/adr/0026` section 10). The state is zero-filled once, not twice. Results are unchanged, bitwise.
+- **The retained memory is counted and shown.** The planner counts it as available device memory, so no job is refused for memory that is waiting for it, and `explain()` prints it as `device_pool_bytes` beside `device_available_bytes`, with `pooled=false` on a device without memory-pool support (which falls back to `cudaMalloc`).
+- **New `release_device_memory()`** (C++ and Python) returns the pool's memory to the driver, for when another process needs the GPU.
+- **Measured and not adopted:** allocating the expectation partial sums once per execution saves 0.1–2.8% of a 100-term job; no page-locked device-to-host path beat the pageable copy on the development machine (WSL). Both are recorded in `docs/adr/0026` section 10.1.
+
 ## Phase 21: memory accounting and copy removal
 
 - **Every memory estimate is an upper bound on use, shown by measurement.** Each engine's estimate now counts everything it holds at once. Before, several paths allocated more than they estimated: a dense statevector job up to twice its estimate, and a sampler about six times. Some jobs that were feasible on a tight budget are now refused; each change is listed in `docs/adr/0025` section 10.

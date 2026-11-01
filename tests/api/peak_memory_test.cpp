@@ -143,9 +143,13 @@ TEST(PeakMemoryTest, APlanWithNoCudaReportsNoDeviceFigures) {
     options.backend = Backend::Cpu;  // in a CUDA build too
     const Plan plan = preview(entangled(8), options);
     EXPECT_FALSE(plan.device_available_bytes.has_value());
+    EXPECT_FALSE(plan.device_pool_bytes.has_value());
+    EXPECT_FALSE(plan.device_pooled.has_value());
     const std::string text = plan.explain();
     EXPECT_EQ(text.find("device_bytes="), std::string::npos);
     EXPECT_EQ(text.find("device_available_bytes="), std::string::npos);
+    EXPECT_EQ(text.find("device_pool_bytes="), std::string::npos);
+    EXPECT_EQ(text.find("pooled="), std::string::npos);
 }
 
 }  // namespace

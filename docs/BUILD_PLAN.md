@@ -505,7 +505,18 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 ### Phase 22: CUDA memory efficiency — STARTED (2026-10-31)
 
-*The owner started this phase on 2026-10-31, with the Phase 21 gate open. Design: `docs/adr/0026`; the owner answered its section 9 the same day, taking every recommended option. Branch: `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`).*
+*The owner started this phase on 2026-10-31, with the Phase 21 gate open. Design: `docs/adr/0026`; the owner answered its section 9 the same day, taking every recommended option, and approved the implementation plan. Branch: `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`). The owner decisions and the gate below supersede the proposal text where they differ.*
+
+**Owner decisions (2026-10-31).** Q1–Q6 of `docs/adr/0026` section 9: the pool persists across jobs, regions, replans and batch circuits in one process; its release threshold is the device's total memory and the planner counts its retained bytes as available; the device→host path is decided by measurement; the gate as refined there; an explicit pool, not the device default pool; Phase 21 is verified on its own branch before the Phase 22 gate. After step 1 measured (section 10.1), Q7–Q9: **item 1 is built** (a pooled cycle is 215–45 000× cheaper than a direct one, worth 1.2–4.5% of a 20-qubit execution and 2–20% at 16–18 qubits); **item 2 is recorded, not built** (0.1–2.8% of a 100-term job; the cost is the synchronising copy, not the allocation); **item 3 is recorded, not adopted** (no page-locked path beat the pageable copy in five runs on this machine).
+
+**Phase 22 acceptance gate** (`docs/adr/0026` section 9, Q4 as amended by Q9):
+1. The step-1 measurements recorded as same-run ratios with spread.
+2. Device allocation + zero fill + free per execution at least 10× cheaper from the pool than direct at n = 20, 22 and 24, same run (`menos_cuda_memory_benchmark`).
+3. Page-locked transfers: the record of their non-adoption with the measurement.
+4. The pool's retained memory counted in the device feasibility check and printed by `explain()`; `release_device_memory()` works; the fallback works.
+5. Every count, statevector and expectation in the Phase 21 fixture set bitwise identical to the `1f89192` baseline.
+6. The planner change (recalibrated device rate, any crossover shift) recorded.
+7. GPU tests execute in the `cuda12-*` presets; `scripts/verify.sh` (WSL) and `scripts/verify-windows.ps1` exit 0 on the final commit; documentation updated; every new symbol has a production caller and tests.
 
 **Goal.** Less time spent allocating and copying on the GPU, using only CUDA runtime features MENOS already links (CUDA 12.0 and later). No new library.
 

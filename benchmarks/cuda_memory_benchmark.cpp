@@ -253,14 +253,15 @@ nlohmann::json allocation_section(const Facts& facts,
     std::printf(
         "\n== (1) allocation: cudaMalloc + cudaMemset + cudaFree against a warm pool "
         "(microseconds, medians) ==\n");
-    std::printf("%3s %11s %13s %13s %13s %9s %13s\n",
+    std::printf("%3s %11s %13s %13s %13s %9s %13s %13s\n",
                 "n",
                 "bytes",
                 "direct",
                 "memset only",
                 "pooled",
                 "d/pooled",
-                "saved/cycle");
+                "saved/cycle",
+                "DeviceBuffer");
     nlohmann::json rows = nlohmann::json::array();
     const menos::kernels::cuda::DeviceInfo& info = menos::kernels::cuda::device_info();
     const std::uint64_t device_budget = menos::kernels::cuda::device_available_bytes();
@@ -294,14 +295,26 @@ nlohmann::json allocation_section(const Facts& facts,
         }
         const double ratio = pool.has_value() ? direct.median / pooled.median : 0.0;
         const double saved = pool.has_value() ? direct.median - pooled.median : 0.0;
-        std::printf("%3u %11llu %13.2f %13.2f %13.2f %8.2fx %13.2f\n",
+        // DeviceBuffer as shipped: construct (budget check, allocation, ledger
+        // charge) and destroy, plus a synchronise. Before Phase 22 step 2 this
+        // was the direct cycle; from step 2 on it is the pooled one, through
+        // the process's own pool rather than this benchmark's.
+        const Spread shipped = time_host(
+            [size, device_budget] {
+                DeviceBuffer buffer(size / sizeof(std::complex<double>), device_budget);
+                static_cast<void>(buffer.state());
+                ensure_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+            },
+            kCyclesPerSample);
+        std::printf("%3u %11llu %13.2f %13.2f %13.2f %8.2fx %13.2f %13.2f\n",
                     n,
                     static_cast<unsigned long long>(bytes),
                     direct.median * kMicro,
                     memset_only.median * kMicro,
                     pooled.median * kMicro,
                     ratio,
-                    saved * kMicro);
+                    saved * kMicro,
+                    shipped.median * kMicro);
         std::fflush(stdout);
         rows_out[n] = AllocationRow{direct, memset_only, pooled};
         rows.push_back({
@@ -314,6 +327,7 @@ nlohmann::json allocation_section(const Facts& facts,
             {"pooled_measured", pool.has_value()},
             {"direct_over_pooled", ratio},
             {"saved_per_cycle_seconds", saved},
+            {"device_buffer_cycle_seconds", spread_json(shipped)},
         });
     }
     if (pool.has_value()) {

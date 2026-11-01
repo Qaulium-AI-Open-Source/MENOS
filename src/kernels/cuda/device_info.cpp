@@ -2,6 +2,8 @@
 
 #include <cuda_runtime.h>
 
+#include "kernels/cuda/device_pool.h"
+
 namespace menos::kernels::cuda {
 namespace {
 
@@ -56,7 +58,14 @@ std::uint64_t device_free_bytes() {
 }
 
 std::uint64_t device_available_bytes() {
-    return device_free_bytes();
+    return device_free_bytes() + device_pool_bytes();
+}
+
+std::uint64_t device_pool_bytes() {
+    if (!device_info().present) {
+        return 0;
+    }
+    return device_pool().reusable_bytes();
 }
 
 }  // namespace menos::kernels::cuda

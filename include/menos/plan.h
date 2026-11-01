@@ -336,6 +336,12 @@ struct Plan {
     // CUDA in it reports exactly as before. Like estimated_seconds, it is a
     // measured figure: it changes with other processes' use of the GPU.
     std::optional<std::uint64_t> device_available_bytes = std::nullopt;
+    // The part of device_available_bytes that is MENOS's own memory pool,
+    // retained from earlier jobs (Phase 22, docs/adr/0026 section 3.4), and
+    // whether the pool is in use at all (false on a device without
+    // memory-pool support). Set exactly when device_available_bytes is.
+    std::optional<std::uint64_t> device_pool_bytes = std::nullopt;
+    std::optional<bool> device_pooled = std::nullopt;
 
     // A deterministic text report: the "circuit", "light_cone",
     // candidate, "strategy" and region lines, and the "estimated" line
