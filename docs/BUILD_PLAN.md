@@ -463,7 +463,7 @@ ADR `docs/adr/0022` first, then plan mode and owner approval (both done on 2026-
 
 ## Memory roadmap (Phases 21–23) — Phase 21 COMPLETE, Phase 22 IMPLEMENTED (gate open), Phase 23 NOT STARTED
 
-**Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18). **Update (2026-10-31):** the owner deferred Phase 21's final verification and gate decision, and started Phase 22 (`docs/adr/0026`) on branch `phase-22-cuda-memory-efficiency` from Phase 21's head, so Phase 22 merges after Phase 21. This sets aside "current phase only" for the two memory phases, as it was for Phases 18 and 19. Neither gate is passed.
+**Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18). **Update (2026-10-31):** the owner deferred Phase 21's final verification and gate decision, and started Phase 22 (`docs/adr/0026`) on branch `phase-22-cuda-memory-efficiency` from Phase 21's head, so Phase 22 merges after Phase 21. This sets aside "current phase only" for the two memory phases, as it was for Phases 18 and 19. Neither gate is passed. **Update (2026-11-02):** the owner placed a planner phase (Phase 24, "Planner and dense-engine roadmap" below) after Phase 23, so the interoperability phases became Phases 25–30.
 
 ### Why
 
@@ -542,15 +542,43 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 2. Unified memory (managed memory oversubscribing VRAM), compared by measurement with explicit chunking.
 3. Out-of-core CPU dense: the state in a memory-mapped file (`mmap` / `CreateFileMapping`); reaches the disk limit. [DERIVED] One pass over a 34-qubit state (256 GiB) at about 3 GB/s takes about 90 s, so this is useful only with deep gate grouping.
 
-**Owner decisions needed.** Which candidate plans are in scope; the disk location and size limit; whether NVIDIA cuStateVec (Phase 28, licence decision) is used here.
+**Owner decisions needed.** Which candidate plans are in scope; the disk location and size limit; whether NVIDIA cuStateVec (Phase 29, licence decision) is used here.
 
 **Candidates carried from the memory review of 2026-11-02** (`docs/adr/0026` section 11; each needs an owner decision at kickoff and is in Phase 23 only if the owner puts it there): a separately reported planning-memory peak; budget reservation at the allocation sites, as a runtime guarantee behind the estimates; a configurable cap on the retained device pool, and `ResourceExceeded` rather than `InternalError` when another process takes device memory between planning and allocation; a batch-level budget or a streaming `run_batch`. The thread-local ledger is an invariant to preserve, not work.
 
 **Acceptance gate (proposed).** Each tier runs a circuit too large for the tier above it; results bitwise identical to the in-memory dense engine on overlapping sizes; predicted time within a factor the owner sets of measured time; the planner picks a tier only when it is the cheapest feasible plan, shown in `explain()`; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
 
-## Interoperability roadmap (Phases 19–20 complete; 24–29 proposed)
+## Planner and dense-engine roadmap (Phase 24) — NOT STARTED
 
-**Status (2026-10-07): proposal only.** The owner asked for MENOS to work with other open-source quantum SDKs, both as frontends (other SDKs submit circuits to MENOS) and as backends (MENOS plans over external engines). Nothing in this section is approved. The owner sets the order, the scope and every threshold at each phase's kickoff. Every phase follows the usual process: an ADR, then plan mode, then owner approval, on a `phase-<N>-<slug>` branch. The roadmap comes after Phase 17 and does not renumber it. *Renumbered by the owner on 2026-10-13 from Phases 18–25 to Phases 19–26, when native Windows became Phase 18; the content is unchanged. Renumbered again by the owner on 2026-10-18: the memory roadmap became Phases 21–23, so the proposed Phases 21–26 became Phases 24–29 with their content unchanged (Stim 24, Cirq 25, adjoint differentiation 26, dynamic circuits 27, cuQuantum 28, further candidates 29). The Phase 19 and 20 records and their ADRs are kept as written: their "Phase 24" (dynamic circuits, `reset`) now means Phase 27.*
+**Status (2026-11-02):** the owner placed one planner phase after the memory roadmap, on the assessment of a planner review the same day, and ahead of the interoperability phases, which were renumbered from Phases 24–29 to Phases 25–30 with their content unchanged. It is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, branch `phase-24-planner-accuracy`). The scope, thresholds and gate are set at its kickoff; the text below is the proposal. **Update (2026-11-02, later the same day):** after a measured comparison with Qiskit Aer and PennyLane Lightning (recorded under "Why" below), the owner added two dense-engine items to this phase, gate fusion (item 7) and SIMD kernels (item 8), and extended item 2 with a bound on the tensor-network elimination search. The phase's name became "Planner accuracy, planning cost and dense-engine throughput"; its branch name is unchanged.
+
+### Phase 24: Planner accuracy, planning cost and dense-engine throughput — NOT STARTED
+
+**Why.** The planner ranks feasible candidates by work units alone and converts them to seconds only to enforce a time budget (`docs/planning/cost-model.md`; `src/plan/planner.cpp`, selection loop). Its time models were last measured against runs in Phase 11 (`docs/adr/0015`): actual over predicted was 0.77–0.88 for dense, 1.4–1.6 for stabilizer, 0.70–1.33 for factorized and 42–1,167 for MPS. Phase 21 replaced the MPS bond estimate, which that measurement used, with a replay of the actual bond dimensions (`docs/adr/0025` Q7), but the MPS time ratio has not been re-measured since, the cost-correlation benchmark does not cover MPS, and the MPS work formula charges every gate at the peak bond cubed although the replay knows each gate's bond. `docs/planning/cost-model.md` still prints the Phase 11 table and the explanation written for the old estimate. Runtime observations are one floor per (engine, backend) and reach only single-engine candidates, because the runtime does not time regions, so a Factorized or CutAndRecombine overrun is refused rather than replanned (Phase 11 deferral). Planning time is reported nowhere, and planning memory is outside the ledger (`docs/adr/0026` section 11.2). Factorization uses the interaction graph's connected components; the cut search allows at most two cuts (`analysis::kMaxCuts`), expectations only, on the CPU.
+
+**Measured on 2026-11-02** (Intel Core Ultra 7 155H, 22 threads, 32 GB, Windows 11, CPU only; MENOS built from this branch against Qiskit Aer 0.17.2 and PennyLane Lightning 0.45.0, every simulator at its defaults, median of three runs after a warm-up; the comparison script is not checked in). Correctness: exact statevectors agreed with both to fidelity 1.000000000000, a 50-term expectation to 5e-16, and noisy counts at 200,000 shots were within sampling distance of Aer's density-matrix probabilities. Structure: MENOS was 5–19× faster than Aer on Clifford circuits of 50–1,000 qubits, 190× faster on a circuit of two independent 12-qubit blocks (the factorized plan), and ran a 40-qubit low-entanglement circuit as MPS in 0.23 s where Aer's automatic method chose statevector and failed on memory. Two gaps, with different causes:
+- *Planning cost.* A 20-qubit, depth-10 expectation of 50 Pauli terms took 4.7 s against Aer's 0.27 s, of which execution was 0.33 s and planning 4.4 s: the tensor-network candidate's elimination search ran until it hit the job's memory budget and was then refused. The same circuit as a counts job planned in 2 ms. This is item 2.
+- *Dense throughput.* On dense random circuits of 20–24 qubits and depth 20, MENOS was 1.5–2× slower than Aer with every thread, and 6× slower single-threaded at 22 qubits (21.4 s against 3.5 s). Planning was 2 ms there. Aer's binary applies cost-based gate fusion (active in every dense run) and an AVX2 kernel; MENOS applies every gate as its own pass over the state, compiled for baseline x86-64 with no SIMD path. These are items 7 and 8; fusion is a recorded Phase 15 deferral (`docs/adr/0019` section 6).
+
+**Candidate items (proposed), in the recommended order.**
+1. **Measure before modelling.** Add MPS to `cost_model_correlation_benchmark` over several circuit families (not only the H/T/CX layers of Phase 11), on the current bond replay; record actual over predicted per engine in the ADR; refine the MPS work formula to per-gate bonds from the replay only if the measurement calls for it; replace the Phase 11 table in `docs/planning/cost-model.md` with the new one.
+2. **Report and bound planning cost.** `plan_seconds` on `Result` and on the `explain()` `actual` line, measured around `plan_job`; a separately named planning-memory peak (`docs/adr/0026` section 11.2) if the owner places it here rather than in Phase 23. Bound the tensor-network elimination search: stop it as soon as the partial contraction cost exceeds the cheapest feasible candidate already in hand (the search then refuses the candidate with that reason), and cap its node count or time by a figure derived from the measurement above, not invented. A refused tensor-network candidate must cost milliseconds, not seconds, and `explain()` must say why it stopped.
+3. **Per-region observations.** Time each region in the factorized and cut executors, attribute the observation per (engine, backend), and let a multi-region overrun replan through the existing Phase 11 path instead of being refused. Observations can only raise a figure, as today.
+4. **Ranking rule** (owner decision, see below). Options: (a) work units, as today; (b) predicted seconds when the job carries a time budget, work units otherwise; (c) predicted seconds always. Under (c) the chosen plan varies with calibration, which differs about 1.5× between processes. An uncertainty band on a prediction is in scope only with a measured basis per engine; no invented constant.
+5. **Planning budget and reuse.** A planning time budget, if a caller needs one, and cached structural analysis for repeated circuits (as in `run_batch`): estimates may be cached, feasibility is re-checked against the fresh memory figures every `plan_job`.
+6. **Structural plans.** Separator discovery beyond connected components and more than two cuts, only if a workload needs them, with the search's own time and memory counted in the candidate's cost.
+7. **Gate fusion in the dense CPU engine** (added 2026-11-02; deferred from Phase 15, `docs/adr/0019` section 6, whose four requirements stand). Combine runs of neighbouring gates acting on at most k qubits into one k-qubit matrix before the sweep, so the state is streamed once per fused block instead of once per gate. The window k is the owner's and is measured, not assumed (Aer's default is 5; in MENOS k ≥ 3 runs on the generic kernel). Fusion changes the rounding, so fused results equal the unfused path within `src/common/tolerance.h`, not bitwise: the Phase 21 bitwise baseline (`tests/memory/data`) is regenerated for the fused path, or fusion is opt-in, an owner decision at kickoff. The cost model charges the fused circuit (fewer sweeps, denser matrices), the Phase 11 safe boundary becomes the fused block and `completed` counts fused blocks, `explain()` prints the fusion outcome (blocks, window, gates absorbed), and the unfused path stays as the oracle. Step 1 is a benchmark showing the sweep count is the bound before any fusion code, as the Phase 15 process required.
+8. **SIMD kernels for the dense CPU engine** (added 2026-11-02; after item 7, because fusion changes which matrix sizes matter). The CPU kernels (`src/kernels/cpu/dense_kernels.cpp`) are built for baseline x86-64 with no `-march`/`/arch` flag and no intrinsics. Vectorise across amplitudes, several state indices per instruction, never across a sum, with contraction kept off (`src/kernels/CMakeLists.txt`), so every lane performs the same correctly rounded operations in the same order as the scalar code and results stay bitwise identical to the generic kernel, pinned by a test on every thread count. Runtime dispatch on `cpuid` between the baseline, AVX2 and optionally AVX-512 paths, each in its own translation unit compiled with that target's flag (MSVC `/arch:AVX2` only on that unit), because the wheels must still run on any x86-64. Expected, to be measured in step 1: once the state exceeds the last-level cache the sweep is memory-bandwidth bound, so the gain is largest for small n and for the k ≥ 3 blocks fusion creates, and smaller at 20+ qubits.
+
+**Owner decisions needed.** The ranking rule (item 4); whether items 5 and 6 are in scope; the factor each time model must meet against measurement, per engine; which circuit families the gate measures; which of the `docs/adr/0026` section 11 items land here; for item 7, the fusion window k, whether fusion is on by default or opt-in, and whether the Phase 21 bitwise baseline is regenerated; for item 8, whether an AVX-512 path is built and tested at all (no machine in the verification set has been shown to have it).
+
+**Acceptance gate (proposed).** Every engine's time model is measured on the correlation benchmarks over the owner's circuit families and actual over predicted is within the owner's factor, recorded in the ADR and in `docs/planning/cost-model.md`; `plan_seconds` is reported and tested, and the 50-term expectation case above plans in under a bound the owner sets from the measurement; fused dense results are within `src/common/tolerance.h` of the unfused path on the correlation benchmarks and the Phase 21 baseline circuits, and meet a dense speed-up target the owner sets from the step-1 baseline as same-run ratios (as in Phase 16); the SIMD kernels are bitwise identical to the generic kernel on every thread count; a factorized overrun under a time budget replans with per-region observations rather than being refused, pinned by an injected-clock test; every existing `explain()` golden is unchanged for a job with no time budget (unless the owner chooses ranking (c), in which case the changed goldens are listed); results stay bitwise identical; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
+
+**Invariants to preserve.** `plan_job` is the only planner and the runtime never plans; an observation can only raise a cost figure; no tuning constant without a measured derivation; a job with no time budget keeps today's deterministic plan choice unless the owner decides otherwise at kickoff; the generic kernel stays the oracle, floating-point contraction stays off, every thread count gives bitwise-identical results (Phase 15), and the density-matrix and trajectory engines, which share the kernel, keep passing their tests unmodified.
+
+## Interoperability roadmap (Phases 19–20 complete; 25–30 proposed)
+
+**Status (2026-10-07): proposal only.** The owner asked for MENOS to work with other open-source quantum SDKs, both as frontends (other SDKs submit circuits to MENOS) and as backends (MENOS plans over external engines). Nothing in this section is approved. The owner sets the order, the scope and every threshold at each phase's kickoff. Every phase follows the usual process: an ADR, then plan mode, then owner approval, on a `phase-<N>-<slug>` branch. The roadmap comes after Phase 17 and does not renumber it. *Renumbered by the owner on 2026-10-13 from Phases 18–25 to Phases 19–26, when native Windows became Phase 18; the content is unchanged. Renumbered again by the owner on 2026-10-18: the memory roadmap became Phases 21–23, so the proposed Phases 21–26 became Phases 24–29 with their content unchanged (Stim 24, Cirq 25, adjoint differentiation 26, dynamic circuits 27, cuQuantum 28, further candidates 29). Renumbered a third time by the owner on 2026-11-02: a planner phase became Phase 24, after the memory roadmap, so Phases 24–29 became Phases 25–30 with their content unchanged (Stim 25, Cirq 26, adjoint differentiation 27, dynamic circuits 28, cuQuantum 29, further candidates 30). The Phase 19 and 20 records and their ADRs are kept as written: their "Phase 24" (dynamic circuits, `reset`) meant Phase 27 after the second renumbering and now means Phase 28.*
 
 ### Why
 
@@ -644,7 +672,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Every measurement type agrees with `default.qubit` on a fixture set within tolerance (exact) or by chi-square (counts); the parameter-shift gradient of a VQE fixture agrees with `default.qubit`; PennyLane's device test suite passes for the supported features; unsupported operations are refused by name; the Qiskit adapter's tests pass unmodified; `scripts/verify.sh` passes with the extra installed.
 
-### Phase 24: Stim engine for noisy Clifford circuits (backend) — PROPOSED
+### Phase 25: Stim engine for noisy Clifford circuits (backend) — PROPOSED
 
 **Goal.** Add Stim (Apache-2.0, C++) as a `SimulationEngine` for Clifford circuits with Pauli noise. Noisy stabilizer simulation was deferred in Phase 13 (`docs/adr/0017`). With this engine the planner can run error-correction-scale noisy Clifford circuits (thousands of qubits, millions of shots), which the density-matrix and trajectory engines cannot.
 
@@ -658,7 +686,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** On small fixtures, Stim counts agree with the Phase 12 density matrix by chi-square; noiseless results agree exactly with `StabilizerEngine`; non-Clifford or non-Pauli circuits are never sent to Stim; the planner chooses Stim for a large noisy-Clifford fixture that no other engine can run within budget, and `explain()` says why; `scripts/verify.sh` passes.
 
-### Phase 25: Cirq frontend — PROPOSED
+### Phase 26: Cirq frontend — PROPOSED
 
 **Goal.** A Cirq simulator (`menos.cirq.MENOSSimulator`, implementing `cirq.SimulatesSamples` and `cirq.SimulatesExpectationValues`) that converts Cirq circuits directly. Cirq's own QASM export is OpenQASM 2, which loses some gates and parameters, so a direct converter is more faithful.
 
@@ -666,7 +694,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Agreement with `cirq.Simulator` on a fixture set (tolerance for exact outputs, chi-square for samples); refused constructs tested; `scripts/verify.sh` passes with the extra installed.
 
-### Phase 26: Adjoint differentiation — PROPOSED
+### Phase 27: Adjoint differentiation — PROPOSED
 
 **Goal.** Gradients of expectation values in one forward and one backward pass, for the dense CPU and CUDA engines. Parameter-shift needs 2 circuits per parameter. Adjoint differentiation is what users of PennyLane's `lightning.qubit` expect, and it makes MENOS practical for variational workloads.
 
@@ -674,7 +702,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Adjoint gradients agree with parameter-shift and with finite differences within tolerance on a fixture set; the speed-up over parameter-shift is measured and recorded; `scripts/verify.sh` passes.
 
-### Phase 27: Dynamic circuits — PROPOSED
+### Phase 28: Dynamic circuits — PROPOSED
 
 **Goal.** Mid-circuit measurement, reset, and classical feed-forward (`if` on measured bits). Qiskit, OpenQASM 3, PennyLane (`qml.measure`, `qml.cond`) and Cirq all express these, and the frontends above must refuse them until this phase.
 
@@ -684,7 +712,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Agreement with Aer's dynamic-circuit support on a fixture set (teleportation, active reset, repeat-until-success); existing static-circuit results unchanged; `scripts/verify.sh` passes.
 
-### Phase 28: NVIDIA cuQuantum engines (backend) — PROPOSED
+### Phase 29: NVIDIA cuQuantum engines (backend) — PROPOSED
 
 **Goal.** cuStateVec and cuTensorNet as additional CUDA engines, competing with MENOS's own CUDA dense engine and CPU tensor-network engine on cost. Phase 8's engine stays closed and stays as the oracle; this adds engines beside it and does not reopen it.
 
@@ -692,14 +720,14 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Differential agreement with the existing engines; measured crossovers recorded; planner changes recorded; GPU tests that actually execute; `scripts/verify.sh` passes.
 
-### Phase 29: Further frontends and engines (candidates) — PROPOSED
+### Phase 30: Further frontends and engines (candidates) — PROPOSED
 
 The owner chooses from these at kickoff, using what Phases 19–28 have shown:
 
 1. **pytket** (Quantinuum TKET) backend.
 2. **Amazon Braket** local-simulator interface.
 3. **MQT** (Munich Quantum Toolkit) integration, for example its decision-diagram simulator as an engine for highly structured circuits.
-4. **Stim circuit import with detector sampling**, if it was not in Phase 24.
+4. **Stim circuit import with detector sampling**, if it was not in Phase 25.
 5. **A plugin registry for third-party engines and frontends**, only if at least two frontends and two external engines exist and show a common shape.
 
 ### Contributing a frontend or an engine

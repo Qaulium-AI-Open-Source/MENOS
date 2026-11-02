@@ -132,7 +132,7 @@ Whichever is adopted, the bytes that land in the result are the same bytes, so t
 - Gate fusion; diagonal and permutation kernels (Phase 16 deferrals, each needing its own ADR).
 - The generic kernel's two `cudaMemcpyToSymbol` per gate for k ≥ 3.
 - Host→device pinned transfers: the only host→device bytes are 16 per execution and the gate matrices, which go through constant memory or kernel arguments.
-- Tiered memory, host-offloaded or unified-memory states (Phase 23); multi-GPU; cuQuantum (Phase 28, licence decision first); ROCm; CUDA on Windows.
+- Tiered memory, host-offloaded or unified-memory states (Phase 23); multi-GPU; cuQuantum (Phase 29 since the 2026-11-02 renumbering, licence decision first); ROCm; CUDA on Windows.
 - A CPU-side allocation pool; any change to the CPU engines.
 
 ## 8. Risks
