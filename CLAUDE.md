@@ -10,7 +10,7 @@ The authoritative plan is `docs/BUILD_PLAN.md`. Read the current phase specifica
 
 ## Current phase
 
-**Phase 20 is COMPLETE: the owner instructed on 2026-10-17 that its gate be marked passed once every criterion passed, and it was recorded passed on 2026-10-18, on the evidence in `docs/adr/0024` section 10 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `5da898e`), recorded in section 10.7. Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is COMPLETE (gate accepted 2026-10-18 on the evidence on `7fa38ce`, `docs/adr/0022` section 10.4). Phases 12–17 are COMPLETE. On 2026-10-18 the owner placed the memory roadmap (Phases 21–23: memory accounting and copy removal, CUDA memory efficiency, tiered VRAM/RAM/disk memory) next in `docs/BUILD_PLAN.md`; Phase 21 is NOT STARTED and starts only on the owner's instruction. The rest of the interoperability roadmap, renumbered to Phases 24–29, is a proposal only, and the owner sets its order and scope.**
+**Phase 21 is COMPLETE: the owner passed its gate on 2026-11-02, ruling that the criterion 4 benchmark misses do not count against it, on the evidence in `docs/adr/0025` sections 10.5–10.6 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `9b8833c`). Phase 20 is COMPLETE (gate recorded passed 2026-10-18, `docs/adr/0024` section 10.7). Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is COMPLETE (gate accepted 2026-10-18 on the evidence on `7fa38ce`, `docs/adr/0022` section 10.4). Phases 12–17 are COMPLETE. On 2026-10-18 the owner placed the memory roadmap (Phases 21–23: memory accounting and copy removal, CUDA memory efficiency, tiered VRAM/RAM/disk memory) next in `docs/BUILD_PLAN.md`. Phase 22 (CUDA memory efficiency) was started by the owner on 2026-10-31 on branch `phase-22-cuda-memory-efficiency`, which merges after this branch. Phase 23 is NOT STARTED. The rest of the interoperability roadmap, renumbered to Phases 24–29, is a proposal only, and the owner sets its order and scope.**
 
 Platform note (2026-10-02, `docs/adr/0014` section 17): the CUDA backend supports toolkits 12.0 and later. On the WSL machine (driver 566.14), only the `cuda12-dev`/`cuda12-release` presets reach the GPU; `scripts/lsan-wsl-libcuda.supp` suppresses, by path, a leak inside WSL's CUDA driver shim. Git inside WSL has no identity configured; commits use the repository's existing author.
 
@@ -121,6 +121,18 @@ Invariants:
 - Every refusal raises `MENOSDeviceUnsupportedError` (both `menos.UnsupportedFeatureError` and PennyLane's `DeviceError`) naming the construct, including `backprop`/`adjoint`/`device` derivatives, program capture and `qml.qjit`.
 - PennyLane's own Kraus matrices are used for channels; there is no per-channel convention table.
 - No shared frontend code is extracted, and `MENOSBackend.max_circuits` stays 1.
+
+## Phase 21
+
+**Memory accounting and copy removal.** Specification and gate: `docs/BUILD_PLAN.md`, Phase 21. Design: `docs/adr/0025`. The owner started the phase on 2026-10-20 and took every recommended option in section 9 the same day. Branch `phase-21-memory-accounting`, from `main` at `1f89192`. Implemented in `25fcef9`–`72d8f27`; verified on `9b8833c` (section 10.5). **COMPLETE (frozen): the owner passed the gate on 2026-11-02**, ruling that the criterion 4 misses do not count against it (section 10.6). Those misses are run-to-run variation in the gate-application benchmarks, and a 1–2% `DenseSample` slowdown whose cause is not identified; alignment explains at most about 1%.
+
+Invariants:
+- Every `estimated_peak_bytes` is an upper bound on the heap-tracker peak with no slack; device estimates equal the device ledger peak.
+- `Result::peak_host_bytes()` / `peak_device_bytes()` report the `MemoryLedger` of one execution attempt. `explain()` appends them to the `actual` line. It prints `device_bytes=` on CUDA candidates, and `device_available_bytes=` only when the plan has CUDA in it.
+- The statevector is moved into `Result`; `StateVector` uses the default allocator; the CUDA state is copied straight into the result; counts outcomes are stored as indices; the SVD owns its workspace (`zgesdd_` direct).
+- Free device memory is re-read at each `plan_job`.
+- Results are bitwise identical to the `1f89192` baseline (`tests/memory/data/baseline_{linux,windows}.json`).
+- On Windows the RSS check is reported, not asserted; the heap-tracker check is asserted on every platform.
 
 ## Definition of done
 
