@@ -220,7 +220,7 @@ assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
 )
 assert sorted(menos.__all__) == sorted(
     ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "run", "run_batch", "ReadoutMitigationOptions",
-     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "MenosError",
+     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "release_device_memory", "MenosError",
      "InvalidCircuitError", "UnsupportedFeatureError", "ResourceExceededError", "InternalError"]
 )
 assert sorted(n for n in dir(core.MitigatedResult) if not n.startswith("_")) == sorted(
