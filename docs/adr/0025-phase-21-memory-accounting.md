@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted; implemented; gate OPEN (verification deferred 2026-10-31).** The owner started Phase 21 on 2026-10-20 as the first phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), and the same day took the recommended option for every question in section 9. Branch `phase-21-memory-accounting`, from `main` at `1f89192`. Steps 1–4 of section 6 are implemented in `25fcef9`–`72d8f27` and measured in sections 10.1–10.4; `72d8f27` (2026-10-22) is the last code commit. Step 5 is unfinished: section 10.5 records no `scripts/verify.sh` or `scripts/verify-windows.ps1` run on `72d8f27`, and the criterion 4 benchmark re-run it promises has not been made (gate run 2, on `2b00040`, missed four of the 52 dense ratios). On 2026-10-31 the owner deferred that verification and the gate decision, and started Phase 22 (`docs/adr/0026`) on branch `phase-22-cuda-memory-efficiency` from `72d8f27`, so Phase 22 merges after Phase 21. **The Phase 21 gate is not passed.**
+**Accepted; implemented; gate PASSED (2026-11-02, on the owner's ruling).** The owner started Phase 21 on 2026-10-20 as the first phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), and the same day took the recommended option for every question in section 9. Branch `phase-21-memory-accounting`, from `main` at `1f89192`. Steps 1–4 of section 6 are implemented in `25fcef9`–`72d8f27` and measured in sections 10.1–10.4; `72d8f27` (2026-10-22) is the last code commit. On 2026-10-31 the owner deferred step 5 and the gate decision, and started Phase 22 (`docs/adr/0026`) on branch `phase-22-cuda-memory-efficiency` from `72d8f27`, so Phase 22 merges after Phase 21. Step 5 was completed on 2026-11-02 on `9b8833c`, which changes only documentation after `72d8f27` (section 10.5): `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0. Criterion 4 gate run 3 missed 7 of the 36 dense ratios. The owner ruled that these misses do not count against criterion 4 and that the gate is passed (section 10.6). **Phase 21 is COMPLETE.**
 
 Labels follow `docs/adr/0014`–`0024`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). In section 1 every figure is **[DERIVED] from reading the source at `1f89192`**: x64 release layouts (`sizeof(std::vector)` = 24, a `std::map` node header = 32 bytes), with malloc's per-block overhead not included. None of them has been measured yet. Step 1 of section 6 measures them before any code changes, and section 10 will record the results.
 
@@ -537,7 +537,7 @@ With the GPU hidden (`CUDA_VISIBLE_DEVICES=`), the four tests already passed the
 #### Criterion 4, gate run 1 and gate run 2 (`2b00040`)
 
 - **Gate run 1** (2026-10-21) was invalid: AC power was lost before the round-3 check, so `gate.sh` refused it.
-- **Gate run 2** (2026-10-21) was valid, on AC throughout. It failed four of the 52 dense ratios:
+- **Gate run 2** (2026-10-21) was valid, on AC throughout. It failed four of the 36 dense ratios (written as 52 until 2026-11-02; `gate_criteria.py` gates 6 dense benchmarks at 6 sizes each):
   - `DenseGateApplication/18`: 1.049
   - `DenseGateApplication/20`: 1.100
   - `DenseExpectationTerm/24`: 1.021
@@ -547,3 +547,77 @@ With the GPU hidden (`CUDA_VISIBLE_DEVICES=`), the four tests already passed the
 - **Alignment experiment.** Phase 21 dropped the statevector's 64-byte alignment (Q5), and `malloc` places it 16 bytes past a cache line at every size measured. A throwaway benchmark, not committed, ran the same multithreaded two-qubit kernel on a 64-byte-aligned and a 16-byte-offset buffer, interleaved in one binary, three runs each. The two agree within the run-to-run spread, about 3%, with neither consistently faster. For n = 20 the medians were 0.845, 0.821 and 0.827 ms aligned against 0.825, 0.830 and 0.837 ms offset. Alignment is not the cause.
 
 Criterion 4 is re-run on the final commit, recorded below.
+
+#### Verification on the final commit (`9b8833c`, 2026-11-02)
+
+`9b8833c` differs from `72d8f27`, the last code commit, only in `docs/BUILD_PLAN.md` and this ADR. Both runs used worktrees detached at `9b8833c`: `~/MENOS-phase21` in WSL and `C:\Users\janak\menos-phase21` on Windows. The machine was on AC power throughout.
+
+- **`scripts/verify.sh`** (WSL, `UV_PYTHON_PREFERENCE=only-managed`): exit 0, "all stages passed".
+  - CPU dev 749/749 and release 749/749. Dev skips the RSS fixtures under AddressSanitizer and `WallTimeReportTest.TwentyFourQubitsTwoHundredOperations`.
+  - Both CUDA presets 819/819. In the CUDA 13 preset the GPU tests skip, because driver 566.14 does not support that toolkit. In the `cuda12` preset they execute, and 2 tests skip (`CudaExecutionMonitorTest.TenAbandonsOfAnOversubscribingTotalNeverExhaustTheDevice`, `CudaBackendRequestTest.ForcedCudaWithoutAUsableDeviceIsUnsupported`).
+  - Python 556 passed and 2 deselected; wheel smoke test 2 passed.
+  - The documentation site was not built: `node`/`npm` are not installed in the WSL clone, as in the `2b00040` and `72d8f27` runs.
+- **`scripts/verify-windows.ps1`**: exit 0, "all stages passed".
+  - `windows-dev` (MSVC with ASan) 750/750 and `windows-release` 750/750.
+  - The RSS fixtures are reported, not asserted, on Windows (section 10.3), so they skip there. The heap-tracker check runs, with no slack.
+  - Python 556 passed and 2 deselected; wheel smoke test 2 passed in a clean venv.
+- **An earlier `verify.sh` run on `72d8f27`** (2026-10-23, `~/verify-72d8f27.log` in WSL) also exited 0, with 819/819 in its last CUDA stage. It had not been recorded here.
+
+### 10.6 Criterion 4, gate run 3, and the owner's ruling — [MEASURED], 2026-11-02
+
+**Gate run 3.** Run with `docs/benchmarks/phase-21-gate/scripts/gate.sh 3`. The only change was its `cd ~/MENOS` line, pointed at the `9b8833c` worktree, because the main WSL clone held uncommitted Phase 22 work. The run compared `9b8833c` with `1f89192` over three rounds, on AC before and after each. The result was **criterion 4: FAIL**.
+
+- `BM_MpsUnmonitored` passed at 0.995 (limit 1.05).
+- 29 of the 36 dense ratios passed. Every one-thread benchmark was at or below 1.009.
+- The 7 misses:
+
+| Benchmark | Base → head (ms) | Ratio | Per-round ratios |
+|---|---|---|---|
+| `DenseGateApplication/24` | 9.8306 → 10.0529 | 1.023 | 1.058, 1.062, 0.908 |
+| `DenseGateApplication/26` | 35.4984 → 36.3493 | 1.024 | 1.017, 1.074, 1.000 |
+| `DenseGateApplication1Q/18` | 0.2594 → 0.2728 | 1.051 | 1.008, 0.959, 1.087 |
+| `DenseSample/20` | 2.8364 → 2.8961 | 1.021 | 1.027, 1.034, 0.998 |
+| `DenseSample/22` | 11.7146 → 12.2096 | 1.042 | 0.992, 1.044, 1.064 |
+| `DenseSample/24` | 45.9062 → 47.4278 | 1.033 | 1.024, 1.040, 1.025 |
+| `DenseSample/26` | 180.3233 → 185.9606 | 1.031 | 1.032, 1.093, 1.005 |
+
+The gate-application misses change sign or size by 6–15% between rounds. They are a different set from gate run 2's (`DenseGateApplication/18` and `/20`, which passed here at 0.994 and 0.989). `DenseSample` was over 1.0 in 10 of its 12 round ratios from n = 20 to 26.
+
+**Two follow-up measurements**, neither committed.
+
+- **A: alignment.** This is a throwaway benchmark like section 10.5's, but timing `engines::dense::sample` (1024 shots, every qubit measured, the uniform state, seed 1) on a 64-byte-aligned buffer and on one offset by 16 bytes. 16 bytes is where `malloc` places `StateVector`'s data at every size measured. Both run in one binary, with Google Benchmark's random interleaving, three runs. Offset over aligned, per run:
+
+| n | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 20 | 1.010 | 1.006 | 1.005 |
+| 22 | 1.029 | 1.003 | 0.980 |
+| 24 | 0.998 | 1.012 | 0.995 |
+| 26 | 1.008 | 1.010 | 0.998 |
+
+  Alignment accounts for about 0–1%, within the run-to-run spread.
+- **B: `DenseSample` alone.** The gate's own two binaries, filtered to `BM_DenseSample/20–26`, over six rounds alternating which build ran first. Head against base, the median of all 60 repetitions per build as `gate_criteria.py` computes it:
+
+| n | Ratio |
+|---|---|
+| 20 | 1.018 |
+| 22 | 1.010 |
+| 24 | 1.017 |
+| 26 | 1.023 |
+
+  Per-round ratios ranged from 0.971 to 1.103.
+
+**Reading.** Measured on its own, the sampler at `9b8833c` is about 1–2% slower than at `1f89192`, at the edge of the 2% figure. The cause is not identified. Between the two commits, `sample_impl`'s O(2^n) scan is unchanged. It gained two `MemoryLedger::Charge` objects per call, which record nothing with no ledger installed, and a forwarding overload. Alignment explains at most about 1%. The gate-application misses are consistent with the run-to-run variation recorded in section 10.5.
+
+**Owner's ruling (2026-11-02).** The owner was shown gate run 3, measurements A and B, and the two verification results above. The owner ruled that the misses do not count against criterion 4: the gate-application misses as run-to-run variation, and the 1–2% sampling cost as accepted with its cause unmeasured. The owner ruled the Phase 21 gate passed. The 2% and 5% figures themselves are unchanged.
+
+**Criteria (section 9, Q9):**
+
+1. **Measurement on every engine and output kind, Linux and Windows.** Sections 10.1, 10.3 and 10.4. The fixture tests (`tests/memory/memory_accounting_test.cpp`) pass in every preset above: the RSS check is asserted on Linux and reported on Windows, and the heap-tracker check is asserted on both. CUDA runs in `cuda12-dev`/`cuda12-release`.
+2. **Peaks reduced to the targets.** Section 10.2. At n = 24 the statevector job's RSS Δ is 268 996 608 bytes on the CPU and 268 378 112 bytes on the CUDA host, both within 16·2^24 + 1 MiB = 269 484 032.
+3. **Bitwise identical to the `1f89192` baseline.** Section 10.2, plus the fixtures against `tests/memory/data/baseline_linux.json` and `baseline_windows.json`, which pass in every preset above.
+4. **No benchmark slowdown.** Not met as measured (gate run 3, and B at n = 26). Passed by the owner's ruling above.
+5. **Every feasibility change listed.** Section 10.3, Q8 table.
+6. **`Result` and `explain()` fields, C++ and Python, with tests.** Section 10.4. The tests pass in both verification runs.
+7. **`verify.sh` and `verify-windows.ps1` exit 0 on the final commit.** The previous subsection. Documentation is updated in this ADR, `docs/BUILD_PLAN.md`, `CLAUDE.md` and the changelog.
+
+**Phase 21 is COMPLETE.**

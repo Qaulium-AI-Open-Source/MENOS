@@ -23,6 +23,7 @@ MENOS was built in phases, each passing an acceptance gate before the next began
   A 24-qubit dense statevector job's peak fell from 537.6 MB to 269.0 MB.
 - **New `Result.peak_host_bytes` and `Result.peak_device_bytes`** (C++ and Python): the most memory the execution really held, measured by a memory ledger. `explain()` appends them to the `actual` line. It also shows each GPU candidate's `device_bytes` and, for a plan that uses the GPU, the `device_available_bytes` it was checked against.
 - **Free GPU memory is read again before each job**, not once per process.
+- **Known cost:** sampling counts from a dense CPU state of 20–26 qubits measured about 1–2% slower than before this phase. Gate application and expectation values are unchanged within run-to-run variation. The cause is not identified, and the owner accepted it at the gate (`docs/adr/0025` section 10.6).
 
 ## Phase 20: PennyLane device
 
