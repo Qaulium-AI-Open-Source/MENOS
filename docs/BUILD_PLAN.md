@@ -542,6 +542,8 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 **Owner decisions needed.** Which candidate plans are in scope; the disk location and size limit; whether NVIDIA cuStateVec (Phase 28, licence decision) is used here.
 
+**Candidates carried from the memory review of 2026-11-02** (`docs/adr/0026` section 11; each needs an owner decision at kickoff and is in Phase 23 only if the owner puts it there): a separately reported planning-memory peak; budget reservation at the allocation sites, as a runtime guarantee behind the estimates; a configurable cap on the retained device pool, and `ResourceExceeded` rather than `InternalError` when another process takes device memory between planning and allocation; a batch-level budget or a streaming `run_batch`. The thread-local ledger is an invariant to preserve, not work.
+
 **Acceptance gate (proposed).** Each tier runs a circuit too large for the tier above it; results bitwise identical to the in-memory dense engine on overlapping sizes; predicted time within a factor the owner sets of measured time; the planner picks a tier only when it is the cheapest feasible plan, shown in `explain()`; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
 
 ## Interoperability roadmap (Phases 19–20 complete; 24–29 proposed)

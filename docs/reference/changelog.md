@@ -8,6 +8,7 @@ MENOS was built in phases, each passing an acceptance gate before the next began
 - **The retained memory is counted and shown.** The planner counts it as available device memory, so no job is refused for memory that is waiting for it, and `explain()` prints it as `device_pool_bytes` beside `device_available_bytes`, with `pooled=false` on a device without memory-pool support (which falls back to `cudaMalloc`).
 - **New `release_device_memory()`** (C++ and Python) returns the pool's memory to the driver, for when another process needs the GPU.
 - **Measured and not adopted:** allocating the expectation partial sums once per execution saves 0.1–2.8% of a 100-term job; no page-locked device-to-host path beat the pageable copy on the development machine (WSL). Both are recorded in `docs/adr/0026` section 10.1.
+- **Documented:** what `memory_budget_bytes` and the two peak figures mean (execution buffers of one attempt, not process memory), and the memory review of 2026-11-02 (`docs/adr/0026` section 11): planning memory, budget reservation, the thread-local ledger, a cap on the retained pool and the plan-to-allocation race, and batch budgeting are recorded for a later phase.
 
 ## Phase 21: memory accounting and copy removal
 

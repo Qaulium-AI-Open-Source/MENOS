@@ -57,6 +57,16 @@ The same budget lets very different problems through:
 
 GPU memory is a separate budget; see [GPU Memory](/gpu/gpu-memory).
 
+## What the budget governs, and what the peak measures
+
+The budget and the reported peak are both about **execution buffers**. Neither is a measure of the process.
+
+- `memory_budget_bytes` is the figure `plan_job` checks each candidate's `estimated_peak_bytes` against. It decides which plan is chosen and whether a job is refused. It is not a cap on the process: MENOS reads no process-memory counter while running, and never stops or throttles a run for exceeding it.
+- `peak_host_bytes` and `peak_device_bytes` are the most the runtime's memory ledger saw charged at once during one execution attempt. The ledger counts the buffers that grow with the problem: states, scratch and SVD workspace, samplers and histograms, device buffers and the runtime's combination buffers. It leaves out the allocator's overhead, small fixed-size allocations, and everything allocated while planning, which includes two structures that grow with the circuit rather than the state: the tensor network's contraction-order analysis and the cut path's fragment circuits. The figure is not resident set size.
+- `run_batch` plans and budgets each circuit on its own and holds every result until it returns. The results already produced are not part of any later circuit's budget, so a batch can hold more than the budget even when each circuit fits it.
+
+So the estimate is an upper bound on the peak, and the peak is a lower bound on the process's own use. If you need a strict limit on process memory, enforce it outside MENOS; MENOS has no mechanism for it, and `ResourceExceeded` means the planner refused, not that such a limit was hit. The gaps and the options for closing them are recorded in `docs/adr/0026` section 11.
+
 ## Estimates are upper bounds, checked by measurement
 
 Each engine's estimate counts everything it holds at once: the state, scratch and working buffers, the SVD workspace, samplers and the counts histogram. Each container is charged with the allocator's own overhead. The estimate is an upper bound, not a prediction (since Phase 21).

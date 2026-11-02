@@ -127,7 +127,7 @@ RunOptions()
 | `shots` | `int` | `0` | Samples to draw. `0` requests no counts |
 | `want_statevector` | `bool` | `False` | Return the exact statevector |
 | `seed` | `int` | `0` | Seed for sampling |
-| `memory_budget_bytes` | `int` or `None` | `None` | Memory budget; `None` means 50% of physical memory |
+| `memory_budget_bytes` | `int` or `None` | `None` | The budget the planner checks each candidate's estimated peak against; `None` means 50% of physical memory. It selects plans and refuses jobs; it is not a process cap |
 | `expectation` | `Observable` or `None` | `None` | Observable to evaluate |
 | `time_budget_seconds` | `float` or `None` | `None` | Wall-clock budget for one execution attempt. Must be finite and > 0, otherwise `run` raises `InvalidCircuitError` |
 | `noise_method` | `NoiseMethod` | `NoiseMethod.Exact` | `Auto` lets a noisy counts request be sampled by [trajectories](/build/noise-models#trajectory-simulation) when cheaper; `Exact` keeps the density matrix |
@@ -151,7 +151,7 @@ At least one of counts (`shots > 0` with a measured circuit), a statevector, or 
 | `expectation_standard_error` | `float` or `None` | The measured standard error of a sampled expectation value; `None` for an exact one |
 | `exact` | `bool` | Whether nothing was approximated or sampled. `False` for a trajectory result |
 | `actual_state_bytes` | `int` | The state bytes the engine reports for the run |
-| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured by the runtime's memory ledger (Phase 21) |
+| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured by the runtime's memory ledger (Phase 21). Execution buffers only, not process memory: see [Memory Constraints](/planning/memory-constraints#what-the-budget-governs-and-what-the-peak-measures) |
 | `peak_device_bytes` | `int` | The same for CUDA device memory; `0` for a plan with no CUDA region (Phase 21) |
 | `execute_seconds` | `float` | Seconds executing the attempt that succeeded |
 | `sample_seconds` | `float` | Seconds sampling |
