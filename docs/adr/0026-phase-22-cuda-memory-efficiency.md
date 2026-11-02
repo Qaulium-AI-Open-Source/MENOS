@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted; section 9 answered (2026-10-31).** The owner took the recommended option for every question (answers recorded at the end of section 9). The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. The owner approved the implementation plan on 2026-10-31. Step 1 of section 6 (measure first, change nothing) is done and recorded in section 10.1; no engine, planner or runtime code has changed. The owner answered Q7–Q9 at the end of section 10.1 on 2026-10-31, taking every recommended option: item 1 is built, item 2 and item 3 are recorded as measured and not adopted, and the gate's criterion 2 is the 10× same-run allocation ratio.
+**Accepted; section 9 answered (2026-10-31).** The owner took the recommended option for every question (answers recorded at the end of section 9). The owner started Phase 22 on 2026-10-31 as the second phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), while the Phase 21 gate is still open: its final verification was deferred the same day (`docs/adr/0025`, Status). Branch `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`), because every change here builds on Phase 21's device ledger, its fresh free-memory read and its `device_bytes` accounting. Phase 22 therefore merges after Phase 21. The owner approved the implementation plan on 2026-10-31. Step 1 of section 6 (measure first, change nothing) is done and recorded in section 10.1; no engine, planner or runtime code has changed. The owner answered Q7–Q9 at the end of section 10.1 on 2026-10-31, taking every recommended option: item 1 is built, item 2 and item 3 are recorded as measured and not adopted, and the gate's criterion 2 is the 10× same-run allocation ratio. Steps 2–6 are done: the pool, the single zero fill, the accounting and the release call are built (`2f02d10`, merged in `5bf355a`; section 10.2), the gate runs are recorded (sections 10.3–10.4), and `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `e3619b3`, the final code (section 10.5). Section 10.6 lists every criterion with its evidence. **The gate is OPEN: it awaits the owner's decision and is not passed.**
 
 Labels follow `docs/adr/0014`–`0025`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). Every figure in section 1 is **[DERIVED] from reading the source at `72d8f27`** or quoted from an earlier ADR's measurement, and says which. Nothing in this ADR has been measured for Phase 22 yet; step 1 of section 6 measures first, and section 10 will record the results.
 
@@ -280,6 +280,82 @@ Built in `2f02d10` on the code of `72d8f27`, and merged with Phase 21's closure 
 **New symbols and their callers.** `DevicePool`/`device_pool()`: `DeviceBuffer`, `device_pool_bytes()`, `current_hardware_profile()`, `release_device_memory()`. `device_pool_bytes()`: `device_available_bytes()`, `current_hardware_profile()`. `HardwareProfile::cuda_device_pool_bytes`/`cuda_device_pooled` and `Plan::device_pool_bytes`/`device_pooled`: `plan_job()` and `Plan::explain()`. `release_device_memory()`: the public header, the Python binding, and `tests/api/cuda_memory_pool_test.cpp`.
 
 **Documentation** (step 6): `README.md`, `docs/reference/limitations.md` (the retained pool and the pageable copies), `docs/reference/changelog.md`, `docs/reference/python-api.md`, `docs/BUILD_PLAN.md`, `CLAUDE.md` and this ADR.
+
+### 10.3 Criterion 2: the allocation cycle from the pool — [MEASURED], 2026-11-02
+
+Two gate runs, a and b, of `docs/benchmarks/phase-22-gate/scripts/gate.sh` on `e3619b3` (the code of `5bf355a` plus the one-line snippet fix of section 10.5), `cuda12-release` with benchmarks in the WSL clone, on AC power before and after every tool (`run-*/power.log`). Outputs in `docs/benchmarks/phase-22-gate/run-a/` and `run-b/` (`memory.json`, `memory.log`); the development run on the `2f02d10` code, before the merge, is `docs/benchmarks/phase-22-baseline/cuda-memory-step2-run6.json`. Every figure is the median of 10 repetitions after a warm-up, interquartile range in brackets; the ratio is the same run's direct median over its pooled median.
+
+**Table (1) of `menos_cuda_memory_benchmark`: one allocate + zero fill + free cycle**, direct (`cudaMalloc` + `cudaMemset` + `cudaFree` + synchronise, what `DeviceBuffer` did until `2f02d10`) against pooled (`cudaMallocFromPoolAsync` + `cudaFreeAsync` + synchronise from the warm pool), microseconds; run a / run b / run 6:
+
+| n | direct, µs | pooled, µs | direct ÷ pooled | gate |
+|---|---|---|---|---|
+| 16 | 524 [492–551] / 539 [509–591] / 504 | 1.87 [1.86–1.88] / 1.02 [1.01–1.29] / 0.99 | 280 / 529 / 509 | — |
+| 18 | 566 [548–593] / 526 [515–551] / 593 | 0.89 [0.89–0.89] / 0.90 [0.90–0.92] / 0.99 | 635 / 581 / 599 | — |
+| 20 | 1 024 [1 016–1 038] / 1 021 [991–1 073] / 1 339 | 0.95 [0.91–0.95] / 0.91 [0.91–0.91] / 1.16 | **1 082 / 1 121 / 1 156** | ≥ 10: **met** |
+| 22 | 2 712 [2 650–2 775] / 2 660 [2 610–2 728] / 3 334 | 1.01 [1.00–1.01] / 1.63 [1.49–1.70] / 1.22 | **2 686 / 1 637 / 2 722** | ≥ 10: **met** |
+| 24 | 9 298 [9 122–9 405] / 9 100 [9 053–9 156] / 11 461 | 0.93 [0.92–0.93] / 0.93 [0.92–0.93] / 1.11 | **10 029 / 9 799 / 10 339** | ≥ 10: **met** |
+| 26 | 35 970 [35 890–36 170] / 35 720 [35 680–35 860] / 42 032 | 0.96 [0.96–0.97] / 1.01 [1.01–1.02] / 2.24 | 37 312 / 35 491 / 18 797 | — |
+
+The `DeviceBuffer` cycle as shipped (allocate from the pool, the ledger charge, release to the pool, synchronise) is 1.02–2.14 µs in run a and 1.09–1.24 µs in run b at every size. The zero fill the constructor no longer does (`memset_only_seconds`) is 68 / 46 µs at n = 20, 381 / 344 µs at n = 22, 1 156 / 1 135 µs at n = 24 and 5.1 / 5.6 ms at n = 26.
+
+**What the saving is worth, from the same runs' table (4)** (`CudaDenseEngine::execute` on the crossover circuit, statevector output, median seconds; run a / run b): n = 16: 0.0088 / 0.0123; 18: 0.0182 / 0.0226; 20: 0.0641 / 0.0649; 22: 0.268 / 0.267; 24: 1.137 / 1.098; 26: 4.98 / 4.89. The direct cycle as a share of that execution (`allocation_saving_share_of_statevector`): 5.9 / 4.4% at n = 16, 3.1 / 2.3% at 18, 1.6 / 1.6% at 20, 1.0 / 1.0% at 22, 0.8 / 0.8% at 24, 0.7 / 0.7% at 26: the same picture as the step-1 conclusions (section 10.1). The absolute execution times are not comparable with section 10.1's (the n = 24 statevector was 1.15–2.13 s there and 1.10–1.14 s here): the GPU's clock state differs between sessions, which is why the criterion is a same-run ratio.
+
+**Criterion 1** (the step-1 measurements as same-run ratios with spread) is section 10.1, five runs. **Criterion 3** (page-locked transfers not adopted, with the measurement) is section 10.1's table (3) and conclusion 3: in all five runs, at every size from n = 20 to 26, neither `cudaHostRegister` in place (its registration alone cost 1.3–1.6 ms at n = 20) nor two-chunk pinned staging at 4, 16 or 64 MiB beat the pageable `cudaMemcpy`, so `copy_to_host` is unchanged. The transfer table of both gate runs says the same (`memory.json`, `transfer`).
+
+### 10.4 Criterion 6: the recalibrated device rate and the crossover — [MEASURED], 2026-11-02
+
+Section 1.3 predicted that the calibrated `device_work_units_per_second` would rise, because the calibration's work probe times `engine.execute()` end to end, allocation and the two fills included. The same gate runs measured it: `menos_cuda_crossover_benchmark` (10 repeats per point) on the last commit before the pool, `766f9df`, built in the worktree `~/MENOS-766f9df`, and then on `e3619b3`, one after the other in each run (`run-*/crossover-before.*` and `crossover-after.*`). Each process calibrates afresh, so each line is one calibration.
+
+| Calibration | run a, before → after | run b, before → after |
+|---|---|---|
+| device rate (work units/s) | 7.42e9 → 1.00e10 (+35%) | 8.97e9 → 9.74e9 (+9%) |
+| launch overhead (µs) | 36.5 → 36.3 | 34.5 → 25.9 |
+| host rate (work units/s) | 1.31e9 → 1.36e9 | 1.32e9 → 1.21e9 |
+| H2D / D2H (GB/s) | 3.08 / 3.15 → 3.10 / 3.18 | 3.11 / 3.19 → 3.09 / 3.17 |
+
+The device rate rises in both runs, as predicted; the size of the rise (9–35%) is inside the run-to-run spread of this figure (the Phase 16 gate measured 4.64e9–7.49e9 on this GPU, `docs/adr/0020` section 12), so the pool's share of it cannot be separated from the clock state. No planner constant changed: the rate is the calibration's own measurement, and `plan_job` reads it as before.
+
+**Forced CPU/CUDA crossover**, CPU ÷ CUDA end to end including transfers (CPU on all threads), before → after, run a / run b:
+
+| n | statevector | expectation |
+|---|---|---|
+| 14 | 0.85 → 0.98 / 0.83 → 1.11 | 0.53 → 0.74 / 0.79 → 0.45 |
+| 16 | 1.56 → 2.32 / 2.46 → 1.98 | 1.82 → 2.60 / 2.65 → 2.15 |
+| 18 | 2.55 → 2.47 / 2.55 → 2.64 | 2.18 → 2.88 / 2.61 → 2.67 |
+| 20 | 1.57 → 1.68 / 1.77 → 1.68 | 1.72 → 1.84 / 1.84 → 1.86 |
+| 22 | 1.71 → 1.65 / 1.68 → 1.65 | 1.95 → 2.03 / 1.97 → 2.00 |
+| 24 | 1.72 → 1.89 / 1.75 → 1.88 | 2.09 → 2.29 / 2.16 → 2.28 |
+
+The crossover stays between n = 14 and n = 16 in both output modes, before and after. At n = 24 the CUDA time itself moved by 1.160 → 1.135 s and 1.153 → 1.151 s (statevector), 2% and 0.2%, which is what removing a 9 ms allocation cycle and a 1.1 ms fill from a 1.15 s execution can give; the larger rise in the ratio there (1.72 → 1.89, 1.75 → 1.88) is the CPU side slowing during the run (2.00 → 2.14 s, 2.02 → 2.17 s), not the pool. Below n = 20 the two runs move in opposite directions by more than the pool's whole saving, which is the GPU clock variation `docs/adr/0020` section 10.4 describes.
+
+**The planner's own choice** (`docs/benchmarks/phase-22-gate/scripts/planner_choice.sh`, Phase 16's `planner_choice.cpp.txt` unchanged: `menos::preview` on the crossover circuit family, statevector output, a fresh calibration per process, three repetitions alternating before and after, `planner_choice.log`): region 0 is `dense backend=cpu` at n = 10–14 and `dense backend=cuda` at n = 16–26 in every one of the six runs. The planner's crossover did not move.
+
+### 10.5 Criterion 7: verification on the final code — [MEASURED], 2026-11-02
+
+The code under the gate is `5bf355a` (the `2f02d10` implementation merged with Phase 21's closure, `aa14168`, which changed only documentation). Every commit after it on the branch changes documentation only, and none adds or changes a code block that `python/tests/test_docs_snippets.py` executes.
+
+- **`scripts/verify.sh` on `5bf355a`** (WSL clone `~/MENOS`, `UV_PYTHON_PREFERENCE=only-managed`, log `~/verify-5bf355a.log`): dev 749/749 and release 749/749, then **FAILED at pytest** with 556 passed, 1 failed, 2 deselected. The failure was `test_snippet_runs[reference/python-api.md#2]`: the snippet in `docs/reference/python-api.md` that asserts `menos.__all__` exactly had not been updated for `release_device_memory` in `2f02d10`. `e3619b3` adds the one name to that snippet and changes nothing else. The stages after pytest did not run in that attempt.
+- **`scripts/verify.sh` on `e3619b3`** (same clone, log `~/verify-e3619b3.log`): **exit 0, "all stages passed"**. Tool versions: GCC 15.2.0 for the CPU presets, CMake 4.2.3, clang-format and clang-tidy 21.1.8, Python 3.14.4, uv 0.12.21; CUDA 13.3 (V13.3.73) for the `cuda-*` presets and CUDA 12.4 (V12.4.131) with g++-13 for the `cuda12-*` presets; RTX 4060 Laptop GPU, compute capability 8.9, driver 566.14.
+  - dev 749/749 (skips: `WallTimeReportTest.TwentyFourQubitsTwoHundredOperations` and the RSS fixtures under AddressSanitizer) and release 749/749.
+  - Python 557 passed, 2 deselected (five minutes); the wheel built, installed into a clean venv, and its smoke test passed 2/2 (including the PennyLane entry point). The documentation site was not built: `node`/`npm` are not installed in the WSL clone, as in every Phase 21 run.
+  - `cuda-dev` 828/828 and `cuda-release` 828/828 with every GPU test skipping, because driver 566.14 does not run a CUDA 13 build.
+  - `cuda12-dev` 828/828 (skips: the wall-time test, `CudaExecutionMonitorTest.TenAbandonsOfAnOversubscribingTotalNeverExhaustTheDevice`, `CudaBackendRequestTest.ForcedCudaWithoutAUsableDeviceIsUnsupported`) and `cuda12-release` 828/828 (the latter two skips): **the GPU tests execute**. In both presets the five `CudaDevicePoolTest` cases, the four `CudaMemoryPoolTest` cases, the four `CudaPeakMemoryTest` cases, the `CpuCudaDifferentialTest` suite, the `CudaExecutionMonitorTest` replan and abandon cases, and the `dense_cuda_*` memory fixtures report `Passed`.
+- A first attempt at the gate script before these runs failed at configure because it named a dependency cache that does not exist in this clone, and the stale cache entries made the `cuda12-release` configure of a `verify.sh` run fail the same way; the entries were cleared and that run discarded. Neither touched a source file.
+- **`scripts/verify-windows.ps1` on `e3619b3`** (worktree `C:\Users\janak\menos-phase22`, MSVC 14.50.35717 from Visual Studio 18 Build Tools, CMake 4.2.3-msvc3, Ninja 1.12.1, uv 0.12.21, OpenBLAS 0.3.34; logs `C:\Users\janak\verify-windows-e3619b3*.log`): **exit 0, "all stages passed"** on the second run. `windows-dev` (MSVC with AddressSanitizer) 750/750 (skips: the wall-time test and, as on every Windows run since Phase 21, the RSS fixtures, which are reported, not asserted there) and `windows-release` 750/750; Python 557 passed, 2 deselected; the wheel built and its smoke test passed 2/2 in a clean venv. No CUDA code is compiled on Windows, so the pool is absent there and `release_device_memory()` is the empty function. The first run failed one test in `windows-dev`, `ReadoutMitigationRunTest.NoReadoutErrorGivesTheRawDistributionWithGammaOne`, with AddressSanitizer reporting "out of memory: allocator is trying to allocate 0x200002f bytes" inside the CPU calibration's 32 MiB bandwidth buffer (`hardware_profile.cpp:89`): the script runs ctest with one job per logical processor (22) and the machine was under memory pressure at that moment; the test does not touch Phase 22 code, and the identical run that followed passed 750/750.
+
+### 10.6 The gate, criterion by criterion — [MEASURED], 2026-11-02
+
+| Criterion (section 9, Q4 as amended by Q9) | Evidence | Status |
+|---|---|---|
+| 1. The step-1 measurements recorded as same-run ratios with spread | Section 10.1, five runs, `docs/benchmarks/phase-22-baseline/` | met |
+| 2. Allocation + zero fill + free at least 10× cheaper from the pool than direct at n = 20, 22, 24, same run | Section 10.3: 1 082 / 1 121 / 1 156× at n = 20, 2 686 / 1 637 / 2 722× at 22, 10 029 / 9 799 / 10 339× at 24 (gate runs a, b and development run 6) | met |
+| 3. Page-locked transfers: the record of their non-adoption with the measurement | Section 10.1 table (3) and conclusion 3; the gate runs' transfer tables agree (section 10.3) | met |
+| 4. The pool's retained memory counted in the device feasibility check and printed by `explain()`; the release call works; the fallback works | Section 10.2 (the code) and 10.5: `CudaMemoryPoolTest.APlanThatNeedsExactlyTheRetainedMemoryIsFeasible`, `ThePlanCountsAndExplainPrintsTheRetainedPool`, `ReleaseDeviceMemoryEmptiesThePool`, `CudaDevicePoolTest.AvailableBytesCountTheRetainedPool`, `TheFallbackAllocatesFromTheDriverAndRetainsNothing`, all executed and passed in `cuda12-dev` and `cuda12-release` | met |
+| 5. Every count, statevector and expectation in the Phase 21 fixture set bitwise identical to the `1f89192` baseline | Section 10.5: the `MemoryFixtureTest.OutputsMatchTheBaselineAndMemoryIsReported` fixtures, CPU and `dense_cuda_*`, against `tests/memory/data/baseline_linux.json` (and `baseline_windows.json` on Windows), plus `CpuCudaDifferentialTest` and `CudaDevicePoolTest.APooledStateIsInitializedExactlyAsBefore`, all passed | met |
+| 6. The planner change (recalibrated device rate, any crossover shift) recorded | Section 10.4: device rate 7.42e9 → 1.00e10 and 8.97e9 → 9.74e9 work units/s; the forced crossover stays between n = 14 and 16; the planner's choice is identical in six runs | met |
+| 7. GPU tests execute in the `cuda12-*` presets; `scripts/verify.sh` (WSL) and `scripts/verify-windows.ps1` exit 0 on the final commit; documentation updated; every new symbol has a production caller and tests | Section 10.5 (both scripts exit 0 on `e3619b3`, the final code); section 10.2 (documentation; callers and tests of every new symbol) | met |
+
+The gate decision is the owner's. Nothing here marks the phase complete.
 
 ## 11. Recorded deferrals from the memory review — [MENOS], 2026-11-02
 

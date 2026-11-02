@@ -461,7 +461,7 @@ Written on 2026-10-13 from `docs/adr/0022` (owner answers in its section 9).
 
 ADR `docs/adr/0022` first, then plan mode and owner approval (both done on 2026-10-13). Windows verification runs through `scripts/verify-windows.ps1`; Linux verification stays `scripts/verify.sh` in the WSL clone.
 
-## Memory roadmap (Phases 21–23) — Phase 21 COMPLETE, Phase 22 STARTED, Phase 23 NOT STARTED
+## Memory roadmap (Phases 21–23) — Phase 21 COMPLETE, Phase 22 IMPLEMENTED (gate open), Phase 23 NOT STARTED
 
 **Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18). **Update (2026-10-31):** the owner deferred Phase 21's final verification and gate decision, and started Phase 22 (`docs/adr/0026`) on branch `phase-22-cuda-memory-efficiency` from Phase 21's head, so Phase 22 merges after Phase 21. This sets aside "current phase only" for the two memory phases, as it was for Phases 18 and 19. Neither gate is passed.
 
@@ -505,7 +505,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 **Acceptance gate (proposed).** Estimate ≥ measured peak on a fixture set covering every engine and output kind; the peak of the statevector and counts paths reduced by a measured amount; every count, statevector and expectation bitwise identical to before; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
 
-### Phase 22: CUDA memory efficiency — STARTED (2026-10-31)
+### Phase 22: CUDA memory efficiency — IMPLEMENTED, gate open (2026-11-02)
 
 *The owner started this phase on 2026-10-31, with the Phase 21 gate open. Design: `docs/adr/0026`; the owner answered its section 9 the same day, taking every recommended option, and approved the implementation plan. Branch: `phase-22-cuda-memory-efficiency`, from `phase-21-memory-accounting` at `9b8833c` (code unchanged since `72d8f27`). The owner decisions and the gate below supersede the proposal text where they differ.*
 
@@ -519,6 +519,8 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 5. Every count, statevector and expectation in the Phase 21 fixture set bitwise identical to the `1f89192` baseline.
 6. The planner change (recalibrated device rate, any crossover shift) recorded.
 7. GPU tests execute in the `cuda12-*` presets; `scripts/verify.sh` (WSL) and `scripts/verify-windows.ps1` exit 0 on the final commit; documentation updated; every new symbol has a production caller and tests.
+
+**Verification record (2026-11-02).** Steps 2–6 of `docs/adr/0026` section 6 are done. The pool, the single zero fill, the accounting, `explain()`'s two new fields and `release_device_memory()` are implemented in `2f02d10` and merged with Phase 21's closure in `5bf355a`; `e3619b3` adds `release_device_memory` to the `python-api.md` export snippet, the one test failure of the first `verify.sh` run, and is the final code. Evidence: section 10.2 (the code, its tests and callers), 10.3 (criterion 2: the allocation cycle is 1 082–1 156× cheaper from the pool at n = 20, 1 637–2 722× at 22 and 9 799–10 339× at 24, three runs), 10.4 (criterion 6: the device rate recalibrates 9–35% higher; the forced and the planned crossover do not move), 10.5 (criterion 7: `scripts/verify.sh` exit 0 in WSL with the GPU tests executing in both `cuda12-*` presets, `scripts/verify-windows.ps1` exit 0, both on `e3619b3`) and 10.6 (every criterion with its evidence). **The gate is OPEN: it awaits the owner's decision.** Phase 22 is not complete.
 
 **Goal.** Less time spent allocating and copying on the GPU, using only CUDA runtime features MENOS already links (CUDA 12.0 and later). No new library.
 

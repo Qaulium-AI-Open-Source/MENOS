@@ -1,0 +1,67 @@
+== MENOS-766f9df 766f9df rep 1
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+== MENOS e3619b3 rep 1
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+== MENOS-766f9df 766f9df rep 2
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+== MENOS e3619b3 rep 2
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+== MENOS-766f9df 766f9df rep 3
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+== MENOS e3619b3 rep 3
+ n  engine/backend of region 0
+10  engine=dense backend=cpu
+12  engine=dense backend=cpu
+14  engine=dense backend=cpu
+16  engine=dense backend=cuda
+18  engine=dense backend=cuda
+20  engine=dense backend=cuda
+22  engine=dense backend=cuda
+24  engine=dense backend=cuda
+26  engine=dense backend=cuda
+exit=0

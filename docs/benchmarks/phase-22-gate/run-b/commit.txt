@@ -1,0 +1,1 @@
+e3619b3 Add release_device_memory to the python-api.md export snippet

@@ -1,0 +1,66 @@
+environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+2026-11-02T09:31:23+00:00
+Running build/cuda12-release/benchmarks/menos_cuda_memory_benchmark
+Run on (22 X 2995.2 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x11)
+  L1 Instruction 64 KiB (x11)
+  L2 Unified 2048 KiB (x11)
+  L3 Unified 24576 KiB (x1)
+Load Average: 1.09, 2.05, 2.07
+***WARNING*** ASLR is enabled, the results may have unreproducible noise in them.
+
+=== MENOS CUDA memory benchmark (Phase 22) ===
+environment      : environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+GPU              : NVIDIA GeForce RTX 4060 Laptop GPU (compute capability 8.9, 24 SMs, 8585216000 bytes total)
+repetitions      : 10 per point after a warm-up; medians unless stated
+
+== (0) facts ==
+runtime version          : 12040
+driver version           : 12070
+memory pools supported   : 1
+host register supported  : 1
+default pool threshold   : 0 bytes
+
+== (1) allocation: cudaMalloc + cudaMemset + cudaFree against a warm pool (microseconds, medians) ==
+  n       bytes        direct   memset only        pooled  d/pooled   saved/cycle  DeviceBuffer
+ 16     1048576        538.86         24.34          1.02   528.58x        537.84          1.24
+ 18     4194304        525.60         29.67          0.90   580.87x        524.69          1.09
+ 20    16777216       1020.89         46.28          0.91  1121.42x       1019.98          1.11
+ 22    67108864       2660.13        343.68          1.62  1637.21x       2658.51          1.12
+ 24   268435456       9100.17       1134.55          0.93  9799.35x       9099.24          1.10
+ 26  1073741824      35717.87       5602.40          1.01 35490.73x      35716.86          1.12
+pool reserved after the sweep: 1073741824 bytes
+
+== (2) the expectation scratch per term at n = 20 (microseconds, medians over 100 terms) ==
+bookkeeping today                           479.86
+bookkeeping, allocation pooled               47.21
+copy into reused scratch                     31.48
+whole expectation_of_term, |0>              775.68
+whole expectation_of_term, dense            717.87
+one H gate                                  245.05
+H gate then term, minus the gate            760.14
+term in execute()'s own sequence            696.43
+removable share of a |0> term                57.8%
+
+== (3) device-to-host of the state (milliseconds, medians; GB/s of the median) ==
+  n   pageable    GB/s   register   reg copy  reg total    GB/s  staged 4M    GB/s  staged16M    GB/s  staged64M    GB/s
+ 20      2.713    6.18      0.833      3.488      5.145    3.26      3.268    5.13      3.494    4.80      3.568    4.70
+ 22     10.752    6.24      2.179     13.377     17.744    3.78     22.223    3.02     22.065    3.04     24.190    2.77
+ 24     82.571    3.25      7.937     94.094    113.779    2.36     88.220    3.04     84.749    3.17     86.287    3.11
+ 26    329.771    3.26     29.562    370.611    432.959    2.48    349.902    3.07    338.729    3.17    333.286    3.22
+
+== (4) CudaDenseEngine::execute end to end (seconds, medians) and the share (1)-(3) could remove ==
+  n gates    statevec  exp 1 term     exp 100  alloc/sv memset/sv    d2h/sv  alloc/e1  per term
+ 16   147    0.012312    0.012277    0.068066     4.37%     0.20%     0.00%     4.38%     563.5
+ 18   165    0.022554    0.020001    0.081892     2.33%     0.13%     0.00%     2.62%     625.2
+ 20   183    0.064880    0.061612    0.134281     1.57%     0.07%     4.18%     1.66%     734.0
+ 22   201    0.266981    0.241150    0.356437     1.00%     0.13%     4.03%     1.10%    1164.5
+ 24   219    1.097790    0.987920    1.295856     0.83%     0.10%     7.52%     0.92%    3110.5
+ 26   237    4.890930    4.355887    5.367761     0.73%     0.11%     6.74%     0.82%   10221.0
+
+JSON written     : /home/janakiram/MENOS/build/phase22-gate/run-b/memory.json
+---------------------------------------------------------------------------
+Benchmark                                 Time             CPU   Iterations
+---------------------------------------------------------------------------
+BM_CudaMemoryReport/iterations:1 ERROR OCCURRED: 'report-only benchmark: see the printed tables'
