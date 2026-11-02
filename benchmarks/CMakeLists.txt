@@ -93,6 +93,21 @@ target_link_libraries(menos_monitor_overhead_benchmark PRIVATE
 )
 target_compile_options(menos_monitor_overhead_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 23 step 1 (docs/adr/0027 section 4), CPU side: scratch-disk bandwidth
+# through explicit and mapped I/O, the pass counts of the chunked executor's
+# greedy rule, and the in-memory dense engine as the competitor. Platform
+# code (pread/pwrite, mmap; ReadFile/WriteFile, CreateFileMapping) lives in
+# the benchmark only; src/ gains its own in step 2.
+add_executable(menos_tiered_memory_benchmark
+    tiered_memory_benchmark.cpp
+    menos_benchmark_main.cpp
+)
+target_link_libraries(menos_tiered_memory_benchmark PRIVATE
+    menos_engines_dense menos_ir menos_common menos_benchmark_environment benchmark::benchmark
+    nlohmann_json::nlohmann_json  # MENOS_TIERED_MEMORY_JSON output
+)
+target_compile_options(menos_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
 if(MENOS_ENABLE_CUDA)
     # The CPU/CUDA crossover benchmark (docs/BUILD_PLAN.md Phase 10).
     add_executable(menos_cuda_crossover_benchmark
@@ -148,6 +163,22 @@ if(MENOS_ENABLE_CUDA)
         nlohmann_json::nlohmann_json  # MENOS_CUDA_MEMORY_JSON output
     )
     target_compile_options(menos_cuda_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+    # Phase 23 step 1 (docs/adr/0027 section 4), CUDA side: chunk-sized
+    # transfers from pageable, pinned and registered memory, a window copied
+    # in and out around gate sweeps, copy/compute overlap on two streams,
+    # managed memory beyond device memory, and the in-VRAM engine as the
+    # competitor. Same linkage as menos_cuda_memory_benchmark.
+    add_executable(menos_cuda_tiered_memory_benchmark
+        cuda_tiered_memory_benchmark.cpp
+        menos_benchmark_main.cpp
+    )
+    target_link_libraries(menos_cuda_tiered_memory_benchmark PRIVATE
+        menos_kernels_cuda menos_engines_dense_cuda menos_ir menos_plan
+        menos_benchmark_environment benchmark::benchmark
+        nlohmann_json::nlohmann_json  # MENOS_CUDA_TIERED_JSON output
+    )
+    target_compile_options(menos_cuda_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
     # Phase 17 step 4a (docs/adr/0021 section 5): every CPU/CUDA assignment of
     # a Factorized plan's regions, and one fragment-sized evaluation on each

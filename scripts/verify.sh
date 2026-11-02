@@ -251,6 +251,10 @@ if [ -x "$cuda_nvcc" ]; then
         || fail "build factorized backend benchmark"
     cmake --build --preset cuda-release --target menos_cuda_kernel_benchmark -j"$(nproc)" \
         || fail "build cuda kernel benchmark"
+    cmake --build --preset cuda-release --target menos_cuda_memory_benchmark -j"$(nproc)" \
+        || fail "build cuda memory benchmark"
+    cmake --build --preset cuda-release --target menos_cuda_tiered_memory_benchmark -j"$(nproc)" \
+        || fail "build cuda tiered memory benchmark"
 
     echo "== clang-tidy (CUDA benchmarks) =="
     # Now that build/cuda-release has both CUDA and benchmarks configured, the
