@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; section 9 open.** The owner started Phase 23 on 2026-11-02 as the third phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), the same day Phase 22's gate was accepted (`docs/adr/0026` section 10.7). Branch `phase-23-tiered-memory`, from `phase-22-cuda-memory-efficiency` at `0282ded`. No code has changed. Steps 2–6 of section 6 wait for the owner's answers to section 9 and for the approved implementation plan.
+**Accepted; section 9 answered (2026-11-02).** The owner started Phase 23 on 2026-11-02 as the third phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), the same day Phase 22's gate was accepted (`docs/adr/0026` section 10.7). Branch `phase-23-tiered-memory`, from `phase-22-cuda-memory-efficiency` at `0282ded`. No code has changed. The owner answered section 9 the same day, taking the recommended option for every question (recorded at the end of section 9). Step 1 of section 6 (measure first) begins once the implementation plan is approved; steps 2–6 follow its report.
 
 Labels follow `docs/adr/0014`–`0026`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). Every figure in section 1 is **[DERIVED] from reading the source at `0282ded`** or quoted from an earlier ADR's measurement; nothing in this document has been measured for this phase yet. Step 1 of section 6 measures before anything is built.
 
@@ -187,6 +187,10 @@ With L local qubits and the greedy rule above, the pass count is a function of t
   
   The step-1 materiality rule of section 6 is yours to confirm or replace.
 - **Q10 — The chunk seam's surface.** (a, recommended) An internal field of the engine request set by tests and the benchmark, not on `RunOptions`, so the public API carries nothing a user should not set. (b) A documented `RunOptions::tier_chunk_qubits` for users who want to tune the chunk size.
+
+### Owner answers (2026-11-02)
+
+**(a) to every question, Q1–Q10.** In the owner's words: the chunked executor and the disk tier are in scope, host-offloaded execution is conditional on the Q4 benchmark, unified memory is measurement-only (Q1); `RunOptions::scratch_directory`, defaulting to the system temporary directory, with a reservation of 5% of the volume's capacity or 8 GiB (Q2); lazy disk measurement, at most 1 GiB written, exposed through `explain()` (Q3); the host-offloaded tier must beat the in-memory CPU engine at n = 29 on a correlation-benchmark family (Q4); reach-only tier selection, and no job that runs today changes its plan (Q5); transfer/compute overlap deferred, measured and recorded only (Q6); prediction within 2× of measurement on the same run, and the step-1 rule at 100 gates in 30 minutes at the smallest size a tier reaches (Q7); `ResourceExceeded` on the device race is in, the planning-memory peak moves to Phase 24, and reservation, the pool cap and the batch budget are deferred (Q8); the gate is the six criteria of Q9 (Q9); the chunk seam is an internal engine field, not on `RunOptions` (Q10).
 
 ## 10. Gate evidence
 
