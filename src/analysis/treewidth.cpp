@@ -280,14 +280,55 @@ public:
         }
         return d;
     }
-    [[nodiscard]] std::size_t common(std::size_t a, std::size_t b) const {
+    // The words [first, last) of a's row hold every one of its bits: first is
+    // its lowest non-zero word and last is one past its highest. {0, 0} for an
+    // empty row.
+    struct WordRange {
+        std::size_t first;
+        std::size_t last;
+    };
+    [[nodiscard]] WordRange nonzero_range(std::size_t a) const {
+        const std::uint64_t* r = row(a);
+        std::size_t first = 0;
+        while (first < words_ && r[first] == 0) {
+            ++first;
+        }
+        if (first == words_) {
+            return {0, 0};
+        }
+        std::size_t last = words_;
+        while (r[last - 1] == 0) {
+            --last;
+        }
+        return {first, last};
+    }
+    // |N(a) & N(b)|, given `b_range`, the non-zero range of b's row
+    // (nonzero_range). Every word of b's row outside it is zero, so its AND
+    // with a's row is zero too: summing over the range alone gives the same
+    // integer as summing over the whole row, in time proportional to the span
+    // of b's neighbours rather than to the graph's size.
+    [[nodiscard]] std::size_t common(std::size_t a, std::size_t b, WordRange b_range) const {
         std::size_t c = 0;
         const std::uint64_t* ra = row(a);
         const std::uint64_t* rb = row(b);
-        for (std::size_t w = 0; w < words_; ++w) {
+        for (std::size_t w = b_range.first; w < b_range.last; ++w) {
             c += static_cast<std::size_t>(std::popcount(ra[w] & rb[w]));
         }
         return c;
+    }
+    // Calls f(u) for every neighbour u of a, in ascending order of u, given
+    // a's non-zero range.
+    template <typename F>
+    void for_each_neighbor_in(std::size_t a, WordRange range, F&& f) const {
+        const std::uint64_t* r = row(a);
+        for (std::size_t w = range.first; w < range.last; ++w) {
+            std::uint64_t word = r[w];
+            while (word != 0) {
+                const auto bit = static_cast<std::size_t>(std::countr_zero(word));
+                f(w * 64 + bit);
+                word &= word - 1;
+            }
+        }
     }
     // Calls f(u) for every neighbour u of a, in ascending order of u.
     template <typename F>
@@ -335,11 +376,12 @@ private:
 [[gnu::target_clones("popcnt", "default")]]
 #endif
 std::size_t compute_fill(const BitAdjacency& adjacency, std::size_t v) {
+    const BitAdjacency::WordRange range = adjacency.nonzero_range(v);
     std::size_t k = 0;
     std::size_t twice_edges = 0;
-    adjacency.for_each_neighbor(v, [&](std::size_t a) {
+    adjacency.for_each_neighbor_in(v, range, [&](std::size_t a) {
         ++k;
-        twice_edges += adjacency.common(a, v);
+        twice_edges += adjacency.common(a, v, range);
     });
     return k * (k - 1) / 2 - twice_edges / 2;
 }
