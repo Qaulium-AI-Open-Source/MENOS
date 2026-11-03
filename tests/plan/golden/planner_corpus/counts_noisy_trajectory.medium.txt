@@ -1,0 +1,16 @@
+MENOS EXECUTION REPORT
+circuit    qubits=12 clbits=12 operations=288 depth=36 global_phase=0
+noise      channels=66 readout_errors=0
+light_cone qubits 12->12 operations 288->288
+candidate 0strategy=direct_dense feasible=false winner=false reason="operation 13 is a noise channel; this engine simulates pure states only"
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 13 is a noise channel; this engine simulates pure states only"
+candidate 2strategy=direct_mps feasible=false winner=false reason="operation 13 is a noise channel; this engine simulates pure states only"
+candidate 3strategy=direct_density_matrix feasible=true winner=false peak_bytes=268468480 work_units=22968012800
+candidate 4strategy=direct_trajectory feasible=true winner=true peak_bytes=115200 work_units=3620864000
+strategy   direct_trajectory (approximate)
+region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11] engine=trajectory backend=cpu
+trajectory n=1000 from shots (one shot per trajectory) (statistical, not exact)
+estimated  state_bytes=115200 work_units=3620864000
+--- plan fields not printed by explain() ---
+region 0: operations=288 observable_terms=0 state_bytes=115200 work_units=3620864000 global_to_local_size=12
+reduced_circuit: qubits=12 operations=288
