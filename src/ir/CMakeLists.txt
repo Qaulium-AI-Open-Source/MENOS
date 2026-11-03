@@ -6,6 +6,7 @@ add_library(menos_ir STATIC
     validate.cpp
     final_writes.cpp
     noise.cpp
+    fuse_diagonal.cpp
 )
 
 target_include_directories(menos_ir PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)

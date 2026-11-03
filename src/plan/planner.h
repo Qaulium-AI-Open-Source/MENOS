@@ -21,4 +21,14 @@ namespace menos::plan {
                             const HardwareProfile& hardware_profile,
                             const RuntimeObservations& observations = {});
 
+// The plan `cached` (a Direct* plan plan_job computed for a job of the same
+// structure, see plan/plan_cache.h) with its operations' parameter values
+// replaced by job_spec's. Runs the light-cone pass on job_spec's circuit --
+// the one step between the job and a Direct region's operations -- and
+// requires the result to match the cached reduced circuit operation for
+// operation in kind, opcode and operands (InternalError otherwise: the
+// cache key was wrong). Everything else in the plan is structural and is
+// copied as is.
+[[nodiscard]] Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec);
+
 }  // namespace menos::plan

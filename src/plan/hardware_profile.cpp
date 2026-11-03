@@ -250,6 +250,19 @@ HardwareProfile calibrate_hardware() {
     return profile;
 }
 
+const HardwareProfile& hardware_profile_for(bool time_budgeted) {
+#ifdef MENOS_ENABLE_CUDA
+    static_cast<void>(time_budgeted);
+    return calibrated_hardware_profile();
+#else
+    if (time_budgeted) {
+        return calibrated_hardware_profile();
+    }
+    static const HardwareProfile kDetected = detect_hardware_profile();
+    return kDetected;
+#endif
+}
+
 const HardwareProfile& calibrated_hardware_profile() {
     // Function-local static: measured once, on first use, then reused for the
     // process lifetime. Not the "global mutable state" CLAUDE.md forbids --

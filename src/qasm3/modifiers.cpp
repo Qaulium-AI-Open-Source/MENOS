@@ -58,6 +58,7 @@ GateOp inverse_of(const GateOp& op) {
         case Opcode::RZ:
         case Opcode::P:
         case Opcode::CP:
+        case Opcode::RZZ:
             out.params[0] = -op.params[0];
             return out;
         case Opcode::U:

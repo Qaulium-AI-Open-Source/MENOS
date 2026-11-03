@@ -36,6 +36,7 @@ _GATES = {
     "CZ": lambda w: qml.CZ(w[:2]),
     "SWAP": lambda w: qml.SWAP(w[:2]),
     "ControlledPhaseShift": lambda w: qml.ControlledPhaseShift(0.83, wires=w[:2]),
+    "IsingZZ": lambda w: qml.IsingZZ(1.37, wires=w[:2]),
     "Toffoli": lambda w: qml.Toffoli(w[:3]),
 }
 

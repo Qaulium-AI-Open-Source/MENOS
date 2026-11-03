@@ -92,6 +92,18 @@ inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
 // absence is a decision rather than an oversight.
 [[nodiscard]] const HardwareProfile& calibrated_hardware_profile();
 
+// The profile a job should be planned against. A job without a time budget
+// on a CPU-only build never reads the calibrated rates: plan_job uses them
+// only to turn work units into seconds (the budget check, est_seconds in a
+// budgeted explain()) and to choose the dense candidate's backend when a
+// CUDA device is present. For such a job this returns the detected profile
+// (memory facts only, rates zero, measured once), so the process never runs
+// the calibration microbenchmarks -- whose two 32 MiB buffers were the
+// largest allocation of a small job, 64 MiB of peak RSS for a figure it
+// never used. A budgeted job, or any job on a CUDA build, gets
+// calibrated_hardware_profile() exactly as before.
+[[nodiscard]] const HardwareProfile& hardware_profile_for(bool time_budgeted);
+
 // The measurement itself, exposed so tests can check it directly rather than
 // only through the cache. Runs the microbenchmarks every call. Both are
 // deadline-bounded, so this returns in roughly 30 ms on any build.

@@ -160,6 +160,10 @@ struct EngineExecutionRequest {
     // built directly (calibration, benchmarks, tests) measures and exercises
     // the configuration jobs run in rather than silently running on one.
     std::uint32_t max_threads = common::default_thread_count();
+    // RunOptions::fuse_diagonal_gates (src/ir/fuse_diagonal.h). Read by the
+    // CPU dense engine only; every other engine applies the operations as
+    // given. Off unless the job asked for it.
+    bool fuse_diagonal_gates = false;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
@@ -240,7 +244,21 @@ struct EngineEstimateRequest {
     // 0 for every other engine, and the trajectory engine reports 0 as
     // infeasible rather than costing an empty run.
     std::uint64_t trajectories = 0;
+    // Branch-and-bound bound (planning speed only, never a result change).
+    // When set below its default, the caller already holds a feasible
+    // alternative costing exactly this many work units, so an engine whose
+    // estimate() builds its figure up incrementally MAY stop as soon as its
+    // running total is strictly greater than this, returning
+    // CostEstimate::feasible = false with a reason that starts with
+    // kPrunedReasonPrefix. Strictly greater: running totals only grow, so such
+    // a candidate could never have been strictly cheaper than the alternative,
+    // and ties already go to the earlier-enumerated candidate. An engine may
+    // ignore the field; the default never prunes.
+    std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max();
 };
+
+// Prefix of every infeasible_reason produced by the bound above.
+inline constexpr std::string_view kPrunedReasonPrefix = "pruned by branch-and-bound";
 
 // A simulation engine: something that can estimate the cost of, and
 // execute, a region (docs/BUILD_PLAN.md Phase 4). The planner sees

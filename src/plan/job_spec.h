@@ -58,6 +58,8 @@ struct JobSpec {
     // thread, so a JobSpec built anywhere other than menos::run (batch,
     // mitigation, tests) gets RunOptions' default rather than one thread.
     std::uint32_t max_threads = common::default_thread_count();
+    // RunOptions::fuse_diagonal_gates, read by the CPU dense engine only.
+    bool fuse_diagonal_gates = false;
     // A forced backend (RunOptions::backend has the semantics, docs/adr/0021
     // section 2). Unset: the planner chooses, as before.
     std::optional<Backend> backend = std::nullopt;

@@ -504,7 +504,12 @@ TEST(ReplanTest, TheMonitorFiresOnRealHardwareWhenThePredictionIsOrdersOfMagnitu
     }
 
     const RunOptions unbudgeted{.shots = 64, .want_statevector = false, .seed = 5};
-    const Plan preview_plan = preview(circuit, unbudgeted);
+    // The model's prediction, read from a plan that carries a (generous)
+    // budget: only a budgeted job is planned against the calibrated profile
+    // (plan::hardware_profile_for), so only its candidates carry seconds.
+    RunOptions generously_budgeted = unbudgeted;
+    generously_budgeted.time_budget_seconds = 1e9;
+    const Plan preview_plan = preview(circuit, generously_budgeted);
     const double predicted = winner_of(preview_plan).estimated_seconds;
     ASSERT_GT(predicted, 0.0);
 

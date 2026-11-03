@@ -37,6 +37,7 @@ GATE_MAP: dict[str, Opcode] = {
     "CZ": Opcode.CZ,
     "SWAP": Opcode.SWAP,
     "ControlledPhaseShift": Opcode.CP,
+    "IsingZZ": Opcode.RZZ,
     "Toffoli": Opcode.CCX,
 }
 

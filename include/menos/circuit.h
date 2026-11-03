@@ -34,6 +34,7 @@ enum class Opcode {
     CZ,
     SWAP,
     CP,
+    RZZ,
     CCX,
     Unitary,
     Measure,

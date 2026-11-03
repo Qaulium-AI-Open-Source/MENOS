@@ -87,6 +87,14 @@ struct RunOptions {
     // caught by the run-time monitor like any other overrun (replanned, or
     // ResourceExceeded); no estimate is scaled by the cap.
     std::optional<std::uint32_t> max_threads = std::nullopt;
+    // Fuse runs of consecutive diagonal gates (RZ, RZZ, CP, CZ, S, T, ...)
+    // into one diagonal unitary per block of at most kMaxUnitaryQubits qubits
+    // before the CPU dense engine applies them (src/ir/fuse_diagonal.h). A
+    // QAOA cost layer of n + n(n-1)/2 gates becomes a handful of passes. The
+    // result is exact up to rounding but NOT bitwise identical to the unfused
+    // run, and the CUDA engine does not fuse, so with this on a CPU run is no
+    // longer bitwise identical to a CUDA run of the same job. Off by default.
+    bool fuse_diagonal_gates = false;
     // The machine to run on (Phase 17, docs/adr/0021 section 2). A request, not
     // a preference: it is honoured or the job is refused, never quietly
     // replaced.
@@ -131,5 +139,21 @@ struct RunOptions {
 // namespace does not compile (a namespace and any other entity cannot
 // share a name visible in the same scope).
 [[nodiscard]] Plan preview(const Circuit& circuit, const RunOptions& options);
+
+// run() and preview() reuse a plan across calls whose jobs differ only in
+// gate parameter values (a variational loop re-runs one circuit structure
+// with new angles): the plan is keyed on the job's structure and the
+// options, never on the angles, and a job the key cannot cover is planned
+// afresh (src/plan/plan_cache.h states the exact scope). The reused plan is
+// the plan plan_job would compute for the new angles, so results and
+// explain() are unchanged; only the planning time is saved.
+struct PlanCacheStats {
+    std::uint64_t hits;      // run()/preview() calls served from the cache
+    std::uint64_t misses;    // planned and stored
+    std::uint64_t bypasses;  // planned and not stored (uncacheable job or plan)
+};
+[[nodiscard]] PlanCacheStats plan_cache_stats();
+// Empties the cache and zeroes the statistics.
+void plan_cache_clear();
 
 }  // namespace menos

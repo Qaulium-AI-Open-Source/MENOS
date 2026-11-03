@@ -116,6 +116,60 @@ std::size_t segment_of(const std::vector<std::size_t>& qubit_cuts, std::size_t o
 
 std::optional<CutPlan> build_cut_plan_for(const Circuit& circuit, const std::vector<WireCut>& cuts);
 
+namespace {
+
+// The size of the widest fragment build_cut_plan_for(circuit, cuts) would
+// return, or nullopt exactly when it would return nullopt -- the same
+// disjoint-set grouping and the same two rejections, without copying any
+// operation into a fragment. find_cut_plan compares candidate cuts by this
+// figure and builds the full plan only for a candidate that becomes the best,
+// instead of building (and discarding) a full plan for every candidate.
+std::optional<std::size_t> widest_fragment_for(const Circuit& circuit,
+                                               const std::vector<WireCut>& cuts) {
+    const std::vector<std::vector<std::size_t>> per_qubit = cuts_by_qubit(circuit, cuts);
+    std::vector<std::size_t> offsets(circuit.num_qubits() + 1, 0);
+    for (std::uint32_t q = 0; q < circuit.num_qubits(); ++q) {
+        offsets[q + 1] = offsets[q] + per_qubit[q].size() + 1;
+    }
+    const std::size_t node_count = offsets[circuit.num_qubits()];
+    DisjointSet sets(node_count);
+    const std::vector<Operation>& ops = circuit.operations();
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        const std::vector<QubitId>* operands = operands_of(ops[i]);
+        if (operands == nullptr || operands->empty()) {
+            return std::nullopt;
+        }
+        const std::size_t first =
+            offsets[(*operands)[0]] + segment_of(per_qubit[(*operands)[0]], i);
+        for (const QubitId q : *operands) {
+            sets.unite(first, offsets[q] + segment_of(per_qubit[q], i));
+        }
+    }
+    std::vector<std::size_t> fragment_size(node_count, 0);
+    std::size_t fragments = 0;
+    for (std::size_t node = 0; node < node_count; ++node) {
+        if (fragment_size[sets.find(node)]++ == 0) {
+            ++fragments;
+        }
+    }
+    if (fragments < 2) {
+        return std::nullopt;
+    }
+    // Two segments of one qubit in one fragment are refused, as there.
+    for (std::uint32_t q = 0; q < circuit.num_qubits(); ++q) {
+        for (std::size_t a = offsets[q]; a < offsets[q + 1]; ++a) {
+            for (std::size_t b = a + 1; b < offsets[q + 1]; ++b) {
+                if (sets.find(a) == sets.find(b)) {
+                    return std::nullopt;
+                }
+            }
+        }
+    }
+    return *std::max_element(fragment_size.begin(), fragment_size.end());
+}
+
+}  // namespace
+
 // Builds the fragment decomposition induced by `cuts`, or nullopt when the
 // result is not usable for Phase 9 (fewer than two fragments, or a fragment
 // holding two segments of one qubit).
@@ -266,17 +320,17 @@ std::optional<CutPlan> find_cut_plan(const Circuit& circuit, std::size_t max_cut
     std::optional<CutPlan> best;
     std::size_t best_widest = 0;
     const auto consider = [&](const std::vector<WireCut>& cuts) {
-        std::optional<CutPlan> plan = build_cut_plan_for(circuit, cuts);
-        if (!plan.has_value()) {
+        const std::optional<std::size_t> widest = widest_fragment_for(circuit, cuts);
+        if (!widest.has_value()) {
             return;
         }
-        std::size_t widest = 0;
-        for (const CutFragment& fragment : plan->fragments) {
-            widest = std::max(widest, fragment.local_to_global.size());
-        }
-        if (!best.has_value() || widest < best_widest ||
-            (widest == best_widest && cuts.size() < best->cuts.size())) {
-            best_widest = widest;
+        if (!best.has_value() || *widest < best_widest ||
+            (*widest == best_widest && cuts.size() < best->cuts.size())) {
+            std::optional<CutPlan> plan = build_cut_plan_for(circuit, cuts);
+            common::ensure(plan.has_value(),
+                           "find_cut_plan: widest_fragment_for accepted a cut that "
+                           "build_cut_plan_for refused");
+            best_widest = *widest;
             best = std::move(plan);
         }
     };

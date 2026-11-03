@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <complex>
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "menos/simulation_engine.h"
 
 namespace menos::plan {
 namespace {
@@ -470,7 +472,9 @@ TEST(PlanJobExpectationTest, TightBudgetLeavesDirectTensorNetworkTheOnlyFeasible
 // gate, and no qubit-count rule that would exclude or privilege this engine.
 TEST(PlanJobExpectationTest, TensorNetworkLosesToACheaperCandidateOnCost) {
     // One RZ on one qubit: Pauli propagation costs 2 work units, the
-    // contraction costs more, and both are feasible. Cost alone decides.
+    // contraction costs more, and both are feasible. Cost alone decides. With
+    // branch and bound the contraction's costing stops as soon as it passes
+    // the cheaper candidate, and explain() says so.
     Circuit circuit(1, 0);
     circuit.append(Opcode::RZ, {0}, {0.5});
     const Observable obs{{{one_qubit_z(), {1.0, 0.0}}}};
@@ -495,11 +499,135 @@ TEST(PlanJobExpectationTest, TensorNetworkLosesToACheaperCandidateOnCost) {
     }
     ASSERT_NE(tn, nullptr);
     ASSERT_NE(pauli, nullptr);
+    ASSERT_TRUE(pauli->feasible);
+    EXPECT_FALSE(tn->feasible);
+    EXPECT_EQ(tn->infeasible_reason.rfind(kPrunedReasonPrefix, 0), 0U) << tn->infeasible_reason;
+    EXPECT_EQ(plan.strategy, Strategy::DirectPauli);
+    EXPECT_FALSE(tn->is_winner);
+}
+
+TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsCostedInFull) {
+    // The same job with a (generous) time budget: branch and bound is off,
+    // because a candidate cheaper in work units could still be rejected on
+    // seconds, so the contraction keeps its full figure, as before.
+    Circuit circuit(1, 0);
+    circuit.append(Opcode::RZ, {0}, {0.5});
+    const Observable obs{{{one_qubit_z(), {1.0, 0.0}}}};
+    const JobSpec job{.circuit = circuit,
+                      .shots = 0,
+                      .want_statevector = false,
+                      .seed = 0,
+                      .memory_budget_bytes = 1'000'000,
+                      .expectation = obs,
+                      .time_budget_seconds = 1e12};
+    const HardwareProfile hw{.total_memory_bytes = 1'000'000,
+                             .memory_bandwidth_bytes_per_second = 1.0,
+                             .work_units_per_second = 1.0};
+    const Plan plan = plan_job(job, hw);
+
+    const CandidateSummary* tn = nullptr;
+    const CandidateSummary* pauli = nullptr;
+    for (const CandidateSummary& c : plan.candidates) {
+        if (c.strategy == Strategy::DirectTensorNetwork) {
+            tn = &c;
+        }
+        if (c.strategy == Strategy::DirectPauli) {
+            pauli = &c;
+        }
+    }
+    ASSERT_NE(tn, nullptr);
+    ASSERT_NE(pauli, nullptr);
     ASSERT_TRUE(tn->feasible) << "the contraction is feasible here; it simply is not cheapest";
     ASSERT_TRUE(pauli->feasible);
     EXPECT_LT(pauli->estimated_work_units, tn->estimated_work_units);
     EXPECT_EQ(plan.strategy, Strategy::DirectPauli);
     EXPECT_FALSE(tn->is_winner);
+}
+
+// Branch and bound must never change the plan: on random expectation jobs the
+// winner and its figures are the same with pruning on (no time budget) and
+// off (a time budget so large it rejects nothing).
+TEST(PlanJobExpectationTest, BranchAndBoundNeverChangesTheWinner) {
+    std::uint64_t state = 0x9E3779B97F4A7C15ULL;
+    const auto next = [&state]() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return state;
+    };
+    const Opcode one_qubit[] = {Opcode::H, Opcode::RX, Opcode::RZ, Opcode::T, Opcode::S};
+    const Opcode two_qubit[] = {Opcode::CX, Opcode::CZ, Opcode::CP};
+    std::size_t pruned_seen = 0;
+    for (int trial = 0; trial < 40; ++trial) {
+        const auto n = static_cast<std::uint32_t>(2 + next() % 6);
+        Circuit circuit(n, 0);
+        const std::size_t num_ops = 4 + next() % 30;
+        for (std::size_t i = 0; i < num_ops; ++i) {
+            if (next() % 3 == 0) {
+                const auto a = static_cast<QubitId>(next() % n);
+                auto b = static_cast<QubitId>(next() % n);
+                if (a == b) {
+                    b = static_cast<QubitId>((a + 1) % n);
+                }
+                const Opcode op = two_qubit[next() % 3];
+                if (op == Opcode::CP) {
+                    circuit.append(op, {a, b}, {0.3});
+                } else {
+                    circuit.append(op, {a, b});
+                }
+            } else {
+                const Opcode op = one_qubit[next() % 5];
+                const auto q = static_cast<QubitId>(next() % n);
+                if (op == Opcode::RX || op == Opcode::RZ) {
+                    circuit.append(op, {q}, {0.7});
+                } else {
+                    circuit.append(op, {q});
+                }
+            }
+        }
+        Observable obs;
+        const std::size_t num_terms = 1 + next() % 6;
+        for (std::size_t t = 0; t < num_terms; ++t) {
+            PauliString p;
+            p.num_qubits = n;
+            p.x_words = {next() & ((std::uint64_t{1} << n) - 1)};
+            p.z_words = {next() & ((std::uint64_t{1} << n) - 1)};
+            obs.terms.emplace_back(p, std::complex<double>{1.0, 0.0});
+        }
+        JobSpec job{.circuit = circuit,
+                    .shots = 0,
+                    .want_statevector = false,
+                    .seed = 0,
+                    .memory_budget_bytes = 1ULL << 30,
+                    .expectation = obs};
+        const HardwareProfile hw{.total_memory_bytes = 1ULL << 30,
+                                 .memory_bandwidth_bytes_per_second = 1e30,
+                                 .work_units_per_second = 1e30};
+        const Plan pruned = plan_job(job, hw);
+        job.time_budget_seconds = 1e30;
+        const Plan full = plan_job(job, hw);
+
+        EXPECT_EQ(pruned.strategy, full.strategy) << "trial " << trial;
+        EXPECT_EQ(pruned.estimated_work_units, full.estimated_work_units) << "trial " << trial;
+        ASSERT_EQ(pruned.candidates.size(), full.candidates.size());
+        for (std::size_t i = 0; i < full.candidates.size(); ++i) {
+            const CandidateSummary& p = pruned.candidates[i];
+            const CandidateSummary& f = full.candidates[i];
+            EXPECT_EQ(p.is_winner, f.is_winner) << "trial " << trial << " candidate " << i;
+            if (p.infeasible_reason.rfind(kPrunedReasonPrefix, 0) == 0) {
+                ++pruned_seen;
+                // A pruned candidate was either infeasible anyway or strictly
+                // dearer than the winner.
+                EXPECT_TRUE(!f.feasible || f.estimated_work_units > full.estimated_work_units)
+                    << "trial " << trial << " candidate " << i;
+            } else {
+                EXPECT_EQ(p.feasible, f.feasible) << "trial " << trial << " candidate " << i;
+                EXPECT_EQ(p.estimated_work_units, f.estimated_work_units)
+                    << "trial " << trial << " candidate " << i;
+            }
+        }
+    }
+    EXPECT_GT(pruned_seen, 0U) << "the random jobs never exercised pruning";
 }
 
 // ---------------------------------------------------------------------------

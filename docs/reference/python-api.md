@@ -106,7 +106,7 @@ Circuit.global_phase: float          # read/write, default 0.0
 
 ## `Opcode`
 
-The named gates: `X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP CCX`. See [Supported Gates](/reference/supported-gates).
+The named gates: `X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX`. See [Supported Gates](/reference/supported-gates).
 
 ## `RunOptions`
 
@@ -125,9 +125,19 @@ RunOptions()
 | `noise_method` | `NoiseMethod` | `NoiseMethod.Exact` | `Auto` lets a noisy counts request be sampled by [trajectories](/build/noise-models#trajectory-simulation) when cheaper; `Exact` keeps the density matrix |
 | `expectation_precision` | `float` or `None` | `None` | Target standard error of the expectation value. Finite and `> 0`, and requires `expectation`. Lets a noisy expectation be sampled by trajectories |
 | `max_threads` | `int` or `None` | `None` | Most CPU threads for gate application. `None` means every hardware thread; a value above the hardware count is treated as it; `0` raises `InvalidCircuitError`. Results are bit-for-bit identical for every value |
+| `fuse_diagonal_gates` | `bool` | `False` | Fuse each run of consecutive diagonal gates (`rz rzz cp cz s t ...`) into one diagonal unitary per block of at most 5 qubits before the CPU dense engine applies them. Exact up to rounding (within `1e-12`), but not bit-for-bit identical to the unfused run, and a CUDA run never fuses; off by default |
 | `backend` | `Backend` or `None` | `None` | `None`: the planner chooses. `Backend.Cpu` or `Backend.Cuda` forces one (Phase 17); see [Forcing a backend](/planning/backend-selection#forcing-a-backend). A CUDA request that cannot be honoured raises `UnsupportedFeatureError` or `ResourceExceededError`, never runs on the CPU |
 
 At least one of counts (`shots > 0` with a measured circuit), a statevector, or an expectation must be requested. All fields are read/write.
+
+## `plan_cache_stats` and `plan_cache_clear`
+
+```text
+menos._core.plan_cache_stats() -> {"hits": int, "misses": int, "bypasses": int}
+menos._core.plan_cache_clear() -> None
+```
+
+`run` reuses a plan across calls whose jobs differ only in gate parameter values: a variational loop that rebinds angles plans once. The plan is keyed on the circuit's structure and the options, never on the angles; a job the key cannot cover (a time budget, a noise channel, a two-qubit rotation within `1e-8` of an angle where it degenerates, such as `rzz(0)`) is planned afresh and counted as a bypass, as is a plan whose winner is `factorized` or `cut_and_recombine`. The reused plan is the plan the planner would compute for the new angles; results and `explain()` are unchanged.
 
 ## `Backend`
 
@@ -198,14 +208,14 @@ assert sig(core.from_qasm3) == (
 
 assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
     ["shots", "want_statevector", "seed", "memory_budget_bytes", "expectation", "time_budget_seconds",
-     "noise_method", "expectation_precision", "max_threads", "backend"]
+     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "backend"]
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
      "actual_state_bytes", "execute_seconds", "sample_seconds", "replans", "explain"]
 )
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
-    "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP CCX".split()
+    "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX".split()
 )
 assert sorted(menos.__all__) == sorted(
     ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "run", "run_batch", "ReadoutMitigationOptions",
@@ -224,4 +234,5 @@ assert defaults.memory_budget_bytes is None and defaults.time_budget_seconds is 
 assert defaults.expectation is None
 assert defaults.noise_method == menos.NoiseMethod.Exact and defaults.expectation_precision is None
 assert defaults.max_threads is None
+assert defaults.fuse_diagonal_gates is False
 ```

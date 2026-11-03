@@ -140,6 +140,7 @@ NB_MODULE(_core, m) {
         .value("CZ", menos::Opcode::CZ)
         .value("SWAP", menos::Opcode::SWAP)
         .value("CP", menos::Opcode::CP)
+        .value("RZZ", menos::Opcode::RZZ)
         .value("CCX", menos::Opcode::CCX);
     // Unitary and Measure are deliberately not exposed here: Python reaches
     // them only via Circuit.append_unitary/append_measure, matching the
@@ -204,6 +205,7 @@ NB_MODULE(_core, m) {
         // application. None = every hardware thread; 0 raises InvalidCircuitError.
         // Results do not depend on it. The Qiskit adapters do not set it.
         .def_rw("max_threads", &menos::RunOptions::max_threads)
+        .def_rw("fuse_diagonal_gates", &menos::RunOptions::fuse_diagonal_gates)
         // Phase 17 (docs/adr/0021 section 2): None = the planner chooses (the
         // default); Backend.Cpu or Backend.Cuda forces one, and a request that
         // cannot be honoured raises rather than falling back.
@@ -246,6 +248,15 @@ NB_MODULE(_core, m) {
         .def("explain", &menos::Result::explain);
 
     m.def("run", &menos::run, "circuit"_a, "options"_a);
+    m.def("plan_cache_stats", []() {
+        const menos::PlanCacheStats s = menos::plan_cache_stats();
+        nb::dict d;
+        d["hits"] = s.hits;
+        d["misses"] = s.misses;
+        d["bypasses"] = s.bypasses;
+        return d;
+    });
+    m.def("plan_cache_clear", &menos::plan_cache_clear);
 
     // Phase 19 (docs/adr/0023): OpenQASM 3 import. menos.from_qasm3 wraps it so
     // that inputs may be None.
