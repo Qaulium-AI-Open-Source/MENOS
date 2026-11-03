@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const EXCLUDED_TOP = new Set(['adr', 'node_modules', '.vitepress', 'public', 'scripts'])
-const EXCLUDED_FILES = new Set(['BUILD_PLAN.md'])
+const EXCLUDED_FILES = new Set(['BUILD_PLAN.md', 'ARCHITECTURE_NOTES.md'])
 
 function pages(dir = root, out = []) {
   for (const name of readdirSync(dir)) {
