@@ -1108,17 +1108,19 @@ Plan plan_job(const JobSpec& job_spec,
 }
 
 Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec) {
-    common::ensure(cached.regions.size() == 1 && cached.reduced_circuit.has_value(),
-                   "reparameterize_direct_plan: not a Direct plan");
+    if (cached.regions.size() != 1 || !cached.reduced_circuit.has_value()) {
+        throw common::InternalError("reparameterize_direct_plan: not a Direct plan");
+    }
+    const Circuit& cached_circuit = *cached.reduced_circuit;
     const bool want_counts = job_spec.shots > 0;
     const std::vector<QubitId> support = compute_light_cone_support(
         job_spec.circuit, job_spec.want_statevector, want_counts, job_spec.expectation);
     analysis::LightConeResult reduced = analysis::compute_light_cone(job_spec.circuit, support);
 
     const std::vector<Operation>& fresh = reduced.reduced_circuit.operations();
-    const std::vector<Operation>& stale = cached.reduced_circuit->operations();
+    const std::vector<Operation>& stale = cached_circuit.operations();
     common::ensure(
-        reduced.reduced_circuit.num_qubits() == cached.reduced_circuit->num_qubits() &&
+        reduced.reduced_circuit.num_qubits() == cached_circuit.num_qubits() &&
             fresh.size() == stale.size(),
         "reparameterize_direct_plan: reduced circuit shape differs from the cached plan");
     for (std::size_t i = 0; i < fresh.size(); ++i) {

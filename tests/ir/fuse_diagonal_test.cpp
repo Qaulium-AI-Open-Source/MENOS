@@ -63,6 +63,7 @@ std::vector<Complex> random_state(std::uint32_t n, std::mt19937_64& rng) {
     return s;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): before and after fusion.
 void expect_same_action(const std::vector<Operation>& original,
                         const std::vector<Operation>& fused,
                         std::uint32_t n,

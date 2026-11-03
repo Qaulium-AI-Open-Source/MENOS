@@ -109,10 +109,14 @@ std::uint64_t work_lower_bound(const analysis::LineGraphSize& size) {
 }
 
 // The estimate returned when the caller's branch-and-bound bound is passed.
+// costed_terms is a term count and reached_work_units a work figure: the two
+// are never interchangeable, and both call sites name them.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 CostEstimate pruned_estimate(const EngineEstimateRequest& request,
                              std::size_t costed_terms,
                              std::uint64_t reached_work_units,
                              bool from_floor) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     const std::string reached = reached_work_units == kNoPruneBound
                                     ? std::string("more than 2^64")
                                     : std::to_string(reached_work_units);

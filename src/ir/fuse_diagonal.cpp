@@ -76,6 +76,9 @@ DiagonalGate diagonal_of(const Operation& op) {
         op);
 }
 
+// block is the current fusion block and more the candidate's operands; the
+// result is the size of their union, so it is symmetric in the two anyway.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 std::size_t distinct_qubits_with(const std::vector<QubitId>& block,
                                  const std::vector<QubitId>& more) {
     std::size_t extra = 0;

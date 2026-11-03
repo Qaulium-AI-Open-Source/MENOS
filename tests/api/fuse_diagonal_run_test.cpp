@@ -11,6 +11,7 @@ namespace {
 
 // A QAOA-shaped circuit: H layer, then p layers of RZZ on every pair, RZ on
 // every qubit and RX on every qubit.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n qubits, p layers.
 Circuit qaoa(std::uint32_t n, int layers, std::mt19937_64& rng) {
     std::uniform_real_distribution<double> angle(-3.0, 3.0);
     Circuit circuit(n, 0);
@@ -61,8 +62,11 @@ TEST(FuseDiagonalRunTest, FusedAndUnfusedRunsAgree) {
         const Result b = run(circuit, on);
         ASSERT_EQ(a.plan().strategy, Strategy::DirectDense);
         ASSERT_EQ(b.plan().strategy, Strategy::DirectDense);
+        ASSERT_TRUE(a.statevector().has_value() && b.statevector().has_value());
+        // NOLINTBEGIN(bugprone-unchecked-optional-access): asserted above.
         const std::vector<std::complex<double>>& sa = *a.statevector();
         const std::vector<std::complex<double>>& sb = *b.statevector();
+        // NOLINTEND(bugprone-unchecked-optional-access)
         ASSERT_EQ(sa.size(), sb.size());
         for (std::size_t i = 0; i < sa.size(); ++i) {
             EXPECT_NEAR(std::abs(sa[i] - sb[i]), 0.0, 1e-12) << "n=" << n << " i=" << i;
@@ -71,8 +75,13 @@ TEST(FuseDiagonalRunTest, FusedAndUnfusedRunsAgree) {
         RunOptions eoff{.shots = 0, .want_statevector = false, .seed = 1, .expectation = all_zz(n)};
         RunOptions eon = eoff;
         eon.fuse_diagonal_gates = true;
-        const std::complex<double> ea = *run(circuit, eoff).expectation_value();
-        const std::complex<double> eb = *run(circuit, eon).expectation_value();
+        const Result ra = run(circuit, eoff);
+        const Result rb = run(circuit, eon);
+        ASSERT_TRUE(ra.expectation_value().has_value() && rb.expectation_value().has_value());
+        // NOLINTBEGIN(bugprone-unchecked-optional-access): asserted above.
+        const std::complex<double> ea = *ra.expectation_value();
+        const std::complex<double> eb = *rb.expectation_value();
+        // NOLINTEND(bugprone-unchecked-optional-access)
         EXPECT_NEAR(std::abs(ea - eb), 0.0, 1e-12) << "n=" << n;
     }
 }
@@ -85,8 +94,13 @@ TEST(FuseDiagonalRunTest, OffByDefaultAndIdenticalWhenRepeated) {
     const Circuit circuit = qaoa(5, 1, rng);
     const RunOptions options{.shots = 0, .want_statevector = true, .seed = 1};
     EXPECT_FALSE(options.fuse_diagonal_gates);
-    const auto a = *run(circuit, options).statevector();
-    const auto b = *run(circuit, options).statevector();
+    const Result ra = run(circuit, options);
+    const Result rb = run(circuit, options);
+    ASSERT_TRUE(ra.statevector().has_value() && rb.statevector().has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): asserted above.
+    const auto a = *ra.statevector();
+    const auto b = *rb.statevector();
+    // NOLINTEND(bugprone-unchecked-optional-access)
     EXPECT_EQ(a, b);
 }
 
