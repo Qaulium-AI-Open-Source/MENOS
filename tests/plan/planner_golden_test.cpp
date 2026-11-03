@@ -10,53 +10,15 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <format>
 #include <fstream>
 #include <sstream>
 #include <string>
 
-#include "common/error.h"
-#include "plan/planner.h"
+#include "plan_fingerprint.h"
 #include "planner_corpus.h"
 
 namespace menos {
 namespace {
-
-// explain() plus what it leaves out: each region's operation count, observable
-// term count and estimates, and the reduced circuit's size.
-std::string plan_fingerprint(const Plan& plan) {
-    std::string out = plan.explain();
-    out += "--- plan fields not printed by explain() ---\n";
-    for (std::size_t i = 0; i < plan.regions.size(); ++i) {
-        const Region& region = plan.regions[i];
-        out += std::format(
-            "region {}: operations={} observable_terms={} state_bytes={} "
-            "work_units={} global_to_local_size={}\n",
-            i,
-            region.operations.size(),
-            region.observable.has_value() ? region.observable->terms.size() : 0,
-            region.estimated_state_bytes,
-            region.estimated_work_units,
-            region.global_to_local.size());
-    }
-    out += std::format("reduced_circuit: {}\n",
-                       plan.reduced_circuit.has_value()
-                           ? std::format("qubits={} operations={}",
-                                         plan.reduced_circuit->num_qubits(),
-                                         plan.reduced_circuit->operations().size())
-                           : std::string("none"));
-    return out;
-}
-
-std::string outcome_of(const planner_corpus::CorpusJob& job) {
-    try {
-        return plan_fingerprint(plan::plan_job(job.spec, job.hardware));
-    } catch (const common::ResourceExceeded& e) {
-        return std::string("THROWS ResourceExceeded: ") + e.what() + "\n";
-    } catch (const common::UnsupportedFeature& e) {
-        return std::string("THROWS UnsupportedFeature: ") + e.what() + "\n";
-    }
-}
 
 // The jobs whose Release plan_job takes over 0.25 s (bench/BASELINE.md). A
 // Debug ASan+UBSan build is one to two orders of magnitude slower, which would
@@ -92,7 +54,7 @@ TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
         if (!update && !checked_in_this_build(job.name)) {
             continue;
         }
-        const std::string actual = outcome_of(job);
+        const std::string actual = planner_corpus::outcome_of(job);
         const std::filesystem::path path = golden_path(job.name);
         if (update) {
             std::filesystem::create_directories(path.parent_path());
