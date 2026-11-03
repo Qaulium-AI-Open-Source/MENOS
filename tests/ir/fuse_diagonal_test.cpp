@@ -1,8 +1,8 @@
-#include <algorithm>
 #include "ir/fuse_diagonal.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <complex>
 #include <cstdint>
 #include <random>
