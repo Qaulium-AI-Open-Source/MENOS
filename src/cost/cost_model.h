@@ -31,8 +31,17 @@ struct EngineChoice {
     std::size_t engine_index;
     CostEstimate estimate;
 };
+//
+// If `estimates` is given, it receives every engine's estimate as costed
+// here, in engine order. An engine costed after a feasible one was found was
+// costed under that engine's work units as a prune bound: its estimate is
+// then either the estimate the unbounded request gives, or, if it was
+// stopped, infeasible with a reason starting with kPrunedReasonPrefix
+// (EngineEstimateRequest::prune_above_work_units). The result is the same
+// either way.
 [[nodiscard]] EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engines,
-                                                const EngineEstimateRequest& request);
+                                                const EngineEstimateRequest& request,
+                                                std::vector<CostEstimate>* estimates = nullptr);
 
 // The DirectDense/DirectStabilizer/DirectPauli/DirectMPS candidate:
 // `engine` runs the whole circuit as one region. want_expectation/

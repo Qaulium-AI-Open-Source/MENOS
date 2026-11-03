@@ -5,6 +5,7 @@
 #include <string>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 #include "common/checked_math.h"
 #include "common/error.h"
@@ -70,18 +71,29 @@ Operation remap(const Operation& op, const std::vector<QubitId>& global_to_local
 // that is infeasible for this region -- explain()'s per-region "why"
 // (docs/BUILD_PLAN.md Phase 4: mixed-engine and 99%-Clifford-plus-T
 // cases). Empty when there is only one engine to choose from.
+//
+// `estimates` is what pick_cheapest_engine costed for each engine. The
+// reasons reported are the unbounded request's, as they always were: an
+// engine's estimate there is the unbounded one unless the engine was stopped
+// by the prune bound, and only such an engine is costed again here, without
+// the bound (pick_cheapest_engine's contract, cost/cost_model.h).
 std::string describe_engine_choice(std::span<const SimulationEngine* const> engines,
                                    std::size_t winner_index,
-                                   const EngineEstimateRequest& request) {
+                                   const EngineEstimateRequest& request,
+                                   const std::vector<CostEstimate>& estimates) {
     if (engines.size() <= 1) {
         return "";
     }
+    common::ensure(estimates.size() == engines.size(),
+                   "describe_engine_choice: one estimate per engine expected");
     std::string reason(engines[winner_index]->name());
     for (std::size_t i = 0; i < engines.size(); ++i) {
         if (i == winner_index) {
             continue;
         }
-        const CostEstimate estimate = engines[i]->estimate(request);
+        const bool pruned = !estimates[i].feasible &&
+                            estimates[i].infeasible_reason.starts_with(kPrunedReasonPrefix);
+        const CostEstimate estimate = pruned ? engines[i]->estimate(request) : estimates[i];
         if (!estimate.feasible) {
             reason += " (" + std::string(engines[i]->name()) +
                       " rejected: " + estimate.infeasible_reason + ")";
@@ -181,14 +193,15 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
                                             region_observable,
                                             accuracy_policy,
                                             budget_bytes};
-        const cost::EngineChoice choice = cost::pick_cheapest_engine(engines, request);
+        std::vector<CostEstimate> estimates;
+        const cost::EngineChoice choice = cost::pick_cheapest_engine(engines, request, &estimates);
         common::ensure(choice.estimate.feasible,
                        "build_factorized_regions: no engine is feasible for a component the "
                        "winning Factorized candidate already costed as feasible -- internal "
                        "invariant violated");
         region.engine = engines[choice.engine_index]->engine_id();
         region.engine_selection_reason =
-            describe_engine_choice(engines, choice.engine_index, request);
+            describe_engine_choice(engines, choice.engine_index, request, estimates);
         region.estimated_state_bytes = choice.estimate.estimated_peak_bytes;
         region.estimated_work_units = choice.estimate.estimated_work_units;
     }

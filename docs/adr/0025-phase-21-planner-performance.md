@@ -326,6 +326,42 @@ Equivalence:
 - the differential test, 2000 seeds, plus a sweep of 50,000 seeds
   (60000–109999) — all identical to the frozen planner.
 
+### 10.3 (e) No re-costing in `describe_engine_choice`
+
+For each Factorized region, `build_factorized_regions` picks the cheapest
+engine (`pick_cheapest_engine`). `describe_engine_choice` then re-estimated
+every losing engine, without a prune bound, only to report the infeasible
+ones. `pick_cheapest_engine` now optionally hands back the estimate it made
+for each engine, and `describe_engine_choice` reuses them.
+
+Why the reported reasons cannot change:
+- An engine costed under a prune bound gives exactly the unbounded estimate
+  unless it was stopped. The contract of
+  `EngineEstimateRequest::prune_above_work_units` allows only one deviation:
+  an infeasible result whose reason starts with `kPrunedReasonPrefix`.
+- Only the tensor network reads the bound. Its bounded and unbounded searches
+  are the same search, except that the bounded one can stop.
+- So only an engine pruned there is costed again without the bound. Every
+  other engine's estimate is reused as it is.
+
+In expectation_factorized jobs the costly engine, the tensor network, is
+usually the pruned one, so it is still re-costed and those jobs gain nothing.
+
+| Job | Before ((b)) | After | Speed-up | Runs |
+|---|---|---|---|---|
+| counts_factorized/medium | 949 µs | 806 µs | 1.18x | focused, 30 reps each side (`e_reuse_estimates_focused.compare.txt`); full run 1.16x |
+| counts_factorized/large | 4045 µs | 3575 µs | 1.13x | focused; full run 1.13x |
+| every other job | | | 0.97–1.04x | within noise (`e_reuse_estimates.compare.txt`) |
+
+The gain is small and confined to one family. It was kept because it repeats
+across three runs (full, focused, and the fastest repetitions of the full
+run). No job is slower than the gate's limit.
+
+Equivalence:
+- golden 45/45, cost tests 13/13;
+- the differential test, 2000 seeds, plus a sweep of 50,000 seeds
+  (110000–159999) — all identical to the frozen planner.
+
 ## 11. Investigations the owner asked for (2026-11-03) — [MEASURED] / [DERIVED], nothing implemented
 
 ### 11.1 Costing cheaper candidates before the tensor network
