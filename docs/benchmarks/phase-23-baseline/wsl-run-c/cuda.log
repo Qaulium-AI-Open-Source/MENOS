@@ -1,0 +1,71 @@
+environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+2026-11-03T19:41:13+00:00
+Running build/cuda12-release/benchmarks/menos_cuda_tiered_memory_benchmark
+Run on (22 X 2995.2 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x11)
+  L1 Instruction 64 KiB (x11)
+  L2 Unified 2048 KiB (x11)
+  L3 Unified 24576 KiB (x1)
+Load Average: 1.99, 9.31, 9.96
+***WARNING*** ASLR is enabled, the results may have unreproducible noise in them.
+
+=== MENOS tiered memory benchmark, CUDA side (Phase 23 step 1) ===
+environment      : environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+GPU              : NVIDIA GeForce RTX 4060 Laptop GPU (compute capability 8.9, 24 SMs, 8585216000 bytes total, 7443841024 free)
+repetitions      : 10 per point (3 for managed sweeps) after a warm-up; medians
+
+== (0) facts ==
+runtime / driver version : 12040 / 12070
+managed memory           : 1
+concurrent managed access: 0
+pageable memory access   : 0
+
+== (1) chunk transfers (milliseconds, medians; GB/s of the median) ==
+  GiB source            H2D    GB/s        D2H    GB/s
+    1 pageable       352.95    3.04     342.32    3.14
+    1 pinned         342.81    3.13     338.18    3.18
+    1 registered     355.75    3.02     339.17    3.17
+    2 pageable       694.51    3.09     675.96    3.18
+    2 pinned         673.98    3.19     664.37    3.23
+    2 registered     707.00    3.04     666.20    3.22
+
+== (2) a window copied in, k one-qubit gates, copied out (milliseconds, medians) ==
+  GiB   k source       in+k+out    k alone     copies  cp/gate
+    1   1 pageable       709.43      33.92     675.51    19.91
+    1   1 pinned         694.46      33.92     660.54    19.47
+    1  10 pageable       864.02     188.88     675.14    35.74
+    1  10 pinned         869.48     188.88     680.60    36.03
+    1  25 pageable      1107.84     350.60     757.24    54.00
+    1  25 pinned        1097.00     350.60     746.40    53.22
+    2   1 pageable      1427.18      64.07    1363.11    21.28
+    2   1 pinned        1399.57      64.07    1335.50    20.85
+    2  10 pageable      1737.39     291.27    1446.12    49.65
+    2  10 pinned        1706.13     291.27    1414.86    48.58
+    2  25 pageable      2090.15     699.89    1390.26    49.66
+    2  25 pinned        2064.21     699.89    1364.32    48.73
+
+== (3) a pinned copy on a second stream against memsets on the first (milliseconds, medians) ==
+work only           50.53
+copy only          342.95
+sequential         393.24
+concurrent         344.15
+overlap gain        49.08
+
+== (4) cudaMallocManaged beyond device memory, one-qubit sweeps (seconds, medians) ==
+  n        bytes outcome           sweep resident/2^28
+ 28   4294967296 resident         0.1139 (resident reference)
+ 29   8589934592 ok               4.3329     0.2278
+ 30  17179869184 host budget 
+
+== (5) CudaDenseEngine::execute in VRAM, crossover circuit and an empty circuit (seconds, medians; expectation output, no copy back) ==
+  n gates     circuit       empty    per gate
+ 26   237      4.1936      0.0153    0.017630
+ 27   246      8.6651      0.0305    0.035100
+ 28   255     17.9218      0.0583    0.070053
+
+JSON written     : build/phase23-baseline/wsl-run-c/cuda.json
+---------------------------------------------------------------------------------
+Benchmark                                       Time             CPU   Iterations
+---------------------------------------------------------------------------------
+BM_CudaTieredMemoryReport/iterations:1 ERROR OCCURRED: 'report-only benchmark: see the printed tables'

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted; section 9 answered (2026-11-02).** The owner started Phase 23 on 2026-11-02 as the third phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), the same day Phase 22's gate was accepted (`docs/adr/0026` section 10.7). Branch `phase-23-tiered-memory`, from `phase-22-cuda-memory-efficiency` at `0282ded`. No code has changed. The owner answered section 9 the same day, taking the recommended option for every question (recorded at the end of section 9). Step 1 of section 6 (measure first) begins once the implementation plan is approved; steps 2–6 follow its report.
+**Accepted; section 9 answered (2026-11-02); step 1 measured (2026-11-04), awaiting the owner's step-1 decisions.** The owner started Phase 23 on 2026-11-02 as the third phase of the memory roadmap (`docs/BUILD_PLAN.md`, "Memory roadmap (Phases 21–23)"), the same day Phase 22's gate was accepted (`docs/adr/0026` section 10.7). Branch `phase-23-tiered-memory`, from `phase-22-cuda-memory-efficiency` at `0282ded`. The owner answered section 9 the same day, taking the recommended option for every question (recorded at the end of section 9), and approved the implementation plan. Step 1 of section 6 (measure first) is done: the benchmarks are `88294be`, the measurements and the predictions are section 10.1, and nothing under `src/` has changed. Section 10.1 ends with the decisions the owner takes before step 2: Q4 (the host-offloaded tier, recommended "measured, not built"), the disk tier under the Q7 rule (passes), and two corrections to section 1.
 
 Labels follow `docs/adr/0014`–`0026`: **[MEASURED]**, **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9). Every figure in section 1 is **[DERIVED] from reading the source at `0282ded`** or quoted from an earlier ADR's measurement; nothing in this document has been measured for this phase yet. Step 1 of section 6 measures before anything is built.
 
@@ -194,4 +194,114 @@ With L local qubits and the greedy rule above, the pass count is a function of t
 
 ## 10. Gate evidence
 
-*(To be written as the steps are done. Section 10.1 will hold the step-1 measurements.)*
+### 10.1 Step 1: the measurements (2026-11-03 to 2026-11-04) — [MEASURED]
+
+**Record.** `docs/benchmarks/phase-23-baseline/`: the JSON and logs of every run, the run scripts (`scripts/phase23-step1.sh`, `scripts/phase23-step1-ext4.sh`, `scripts/phase23-step1.ps1`), the pass-count driver `scripts/pass_counts_at_gate_sizes.cpp` with its output in `analysis/`, and `scripts/summarise.py`, which regenerates every table below from the JSON. Benchmarks `benchmarks/tiered_memory_benchmark.cpp` and `benchmarks/cuda_tiered_memory_benchmark.cpp` at `88294be` (the Windows tree also carried two uncommitted comment-only edits to `src/common/observable_restrict.cpp` and `src/plan/hardware_profile.h`, recorded in each `commit.txt`; neither is compiled into the benchmark's work). Medians within a run; the spread below is min–max across runs; every ratio is same-run.
+
+**Machine.** Intel Core Ultra 7 155H (22 threads), 32 GB; NVIDIA GeForce RTX 4060 Laptop GPU, 8.59 GB total, 7.44 GB free (WSL: driver 566.14, runtime 12.4, GCC 13.4 for the CUDA tree and GCC 15.2 for the CPU tree, both Release); Samsung PM9A1 NVMe 1 TB (`MZVL21T0HDLU`), drive C: NTFS, 723 GiB, 250 GiB free; the WSL ext4 virtual disk on the same drive. Host budget: 15.85 GiB on Windows (half of 31.7 GiB physical), 11.73 GiB in WSL (half of its 23.5 GiB). AC power at every checkpoint of every run that counts; one Windows run was invalidated by the AC rule (the charger came out mid-run) and re-run.
+
+**Runs.** WSL `wsl-run-a/b/c` (CUDA side then CPU side, 28–31 min each); Windows `win-run-a/b/c` (CPU side, 13–14 min each, scratch on drive C:); WSL `wsl-ext4-run-a/b/c` (CPU side again with the scratch on the ext4 volume). The first three WSL CPU runs let the benchmark default to `std::filesystem::temp_directory_path()`, which this WSL mounts as a 12 GB **tmpfs**: their disk rows are RAM-backed and are kept as the memory-copy reference; the ext4 runs are the WSL disk figures.
+
+#### (i) Disk: a 2 GiB scratch file written and read in chunks (GB/s)
+
+Windows, NTFS, drive C: (3 runs; the read is after the write of the same file, and Windows has no cache-drop call, so reads through the cache may be cached; unbuffered reads bypass it):
+
+| chunk | path | write | write + flush | read |
+|---|---|---|---|---|
+| 256 MiB | explicit buffered | 1.44–1.57 | 1.41–1.53 | 4.80–4.97 |
+| 256 MiB | explicit unbuffered | 4.69–4.74 | 4.68–4.72 | 6.07–6.09 |
+| 256 MiB | mapped | 2.20 | 1.46 | 15.7–16.6 (page cache) |
+| 1 GiB | explicit buffered | 1.52–1.55 | 1.51–1.54 | 4.86–5.03 |
+| 1 GiB | explicit unbuffered | 4.60–4.71 | 4.59–4.70 | 5.98–6.03 |
+| 2 GiB | explicit buffered | 1.51–1.55 | 1.50–1.54 | 4.83–5.05 |
+| 2 GiB | explicit unbuffered | 4.62–4.66 | 4.60–4.64 | 5.98–6.00 |
+
+WSL, ext4 virtual disk (3 runs; reads after `posix_fadvise(DONTNEED)`):
+
+| chunk | path | write | write + flush (`fsync`) | read |
+|---|---|---|---|---|
+| 256 MiB | explicit buffered | 4.51–4.67 | 2.34–2.39 | 4.33–4.40 |
+| 256 MiB | explicit unbuffered (`O_DIRECT`) | 4.47–4.56 | 4.42–4.50 | 6.41–6.49 |
+| 256 MiB | mapped | 4.48–4.63 | 2.32–2.37 | 18.6–19.0 (page cache) |
+| 1 GiB | explicit buffered | 4.48–4.56 | 2.33–2.35 | 3.71–4.29 |
+| 1 GiB | explicit unbuffered | 4.77–4.81 | 4.71–4.75 | 6.58–6.75 |
+| 2 GiB | explicit buffered | 4.50–4.55 | 2.33–2.36 | 3.15–4.39 |
+| 2 GiB | explicit unbuffered | 4.86–4.93 | 4.81–4.87 | 6.78–6.81 |
+
+WSL, tmpfs (3 runs, RAM-backed, the memory-copy reference): explicit write 3.7–4.1, read 5.0–5.3; mapped write 2.6–2.7, read 18.6–18.9.
+
+Findings: on NTFS the unbuffered explicit path (`FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH`) writes **3.0–3.3× faster** than the buffered one, whose cost is the cache manager's copy, and reads 20–25% faster; on ext4 the buffered write lands in the page cache at the same rate as the unbuffered one but its `fsync` doubles the cost (2.3–2.4 GB/s to durable), and the buffered read after the cache is dropped is 30–50% slower than `O_DIRECT`. The mapped path is the slowest durable writer on both and its read figure is the page cache, not the disk. The unbuffered bandwidth is flat from 256 MiB to 2 GiB chunks (within 3% on NTFS, 8% on ext4). **Decision for step 2 (plan decision 7's condition is met): the scratch file uses unbuffered explicit I/O on both platforms, with chunks of at least 256 MiB.** At these figures a pass at n = 31 (32 GiB written, 32 GiB read) costs **13.1–13.2 s on Windows and 12.3–12.5 s on the WSL ext4 volume**, against a tmpfs (memory-copy) floor of 15–16 s for the buffered path's two copies.
+
+#### (ii) PCIe under WSL: chunk transfers, windows, overlap (3 runs)
+
+| chunk | source | host → device GB/s | device → host GB/s |
+|---|---|---|---|
+| 1 GiB | pageable | 3.05 | 3.14 |
+| 1 GiB | pinned (`cudaHostAlloc`) | 3.05–3.13 | 3.18–3.19 |
+| 1 GiB | registered (`cudaHostRegister`) | 2.99–3.02 | 3.17 |
+| 2 GiB | pageable | 3.08–3.09 | 3.17–3.19 |
+| 2 GiB | pinned | 3.10–3.19 | 3.23 |
+| 2 GiB | registered | 3.04–3.06 | 3.22 |
+
+Pinned memory gains 0–3% and registered memory loses 1–2% against pageable under WSL: **not adopted** (the same finding as `docs/adr/0026` section 10.1 for the device→host direction). A 2 GiB window copied in and out costs 1.33–1.45 s, which is 21 one-qubit gates on the resident window when the gate figure includes the first launch (k = 1) and 48–51 when it does not (k = 10, 25); a 1 GiB window costs 0.66–0.76 s, 19–20 and 35–54 gates. Overlap: a 1 GiB pinned copy on a second stream against eight memsets on the first ran in 343–347 ms concurrent against 393–396 ms sequential, that is the whole 50 ms of work hid under the copy and the copy is the bound; recorded under Q6, not built. A pass of the host-offloaded tier at n = 29 (8 GiB each way) costs **5.48–5.50 s**; at n = 31, 21.9–22.0 s, which is section 1.2's 22 s.
+
+#### (iii) `cudaMallocManaged` beyond device memory under WSL (3 runs)
+
+n = 29 (8 GiB on a device with 7.44 GB free): allocates and a one-qubit sweep completes, in 4.26–4.40 s against 0.227–0.235 s for the resident 2^28 sweep scaled by 2, that is **18.7–19.0× slower than resident**; a windowed pass (5.5 s) is cheaper than one managed sweep whenever a pass carries two or more gates. n = 30 exceeds the WSL host budget and was not attempted. The device reports `concurrentManagedAccess = 0` and `pageableMemoryAccess = 0` under WSL. Measurement-only per Q1; nothing is built on it.
+
+#### (iv) Pass counts of the greedy rule (analysis, no execution)
+
+The benchmark's own table (n = 28, 30, 32, 34; `wsl-run-*/cpu.log` section 2) and the driver's rows at the gate sizes (`analysis/passes-gate-sizes.txt`; its n = 28 rows equal the benchmark's). Every family has g_max = 2. Fewest passes over L and w with L + w within the window the tier can hold:
+
+| family | n | gates | global gates | passes, whole circuit | passes, first 100 operations |
+|---|---|---|---|---|---|
+| crossover | 29 | 264 | 45 | 13 (L = 24, w = 4) | 5 |
+| crossover | 31 | 282 | 54 | 18 (L = 25, w = 4) | 6 |
+| ladder | 29 | 342 | 60 | 18 (L = 24, w = 4) | 4 |
+| ladder | 31 | 366 | 72 | 20 (L = 25, w = 4) | 5 |
+| random pairs | 29 | 200 | 46 | 5 (L = 24, w = 4) | 2 |
+| random pairs | 31 | 200 | 43 | 6 (L = 25, w = 4) | 2 |
+| QFT-like | 29 | 435 | 135 | 33 (L = 24, w = 4) | 4 |
+| QFT-like | 31 | 496 | 171 | 42 (L = 25, w = 4) | 5 |
+
+(Window limits: L + w ≤ 28 for the host-offloaded tier, a 4 GiB window in 7.44 GB of free VRAM; L + w ≤ 29 for the disk tier, an 8 GiB window beside the outputs in the 15.85 GiB budget.) A wider window with smaller chunks always wins here: at n = 31 the crossover family needs 24 passes with (L = 27, w = 2), 22 with (26, 3) and 18 with (25, 4). Section 3.2's estimate of 12 passes for the crossover family at n = 31, L = 28 measures 15 at w = 2 (and 1 at w = 3). **The chunk-size rule of plan decision 6 should therefore prefer the smallest L whose window fills the budget, not the largest L**: the executor chooses (L, w) by minimum pass count under the window limit, which the pass plan computes exactly.
+
+#### (v) The in-memory engines on the crossover circuit (per-gate seconds, circuit minus empty circuit over gates)
+
+| n | CPU, Windows (3 runs) | CPU, WSL (3 runs) | CUDA in VRAM, WSL (3 runs) |
+|---|---|---|---|
+| 26 | 0.0338–0.0344 | 0.0340–0.0360 | 0.0176–0.0180 |
+| 27 | 0.0658–0.0676 | 0.0680–0.0759 | 0.0351–0.0481 |
+| 28 | 0.1300–0.1343 | 0.1397–0.1546 | 0.0701–0.0971 |
+| 29 | 0.2631–0.2692 | 0.2683–0.2974 | does not fit (8 GiB) |
+| 30 | does not fit the budget | does not fit the budget | does not fit |
+
+The CPU engine moves 60–66 GB/s of state per gate on both platforms; the device is 1.6–2.0× faster per gate, same run (its clock varies between runs, as `docs/adr/0020` records). **Correction to section 1.1:** n = 30 (a 16 GiB state) does not fit the 15.85 GiB default budget on this machine, so n = 29 is the largest in-memory dense job on both platforms, and the smallest size the disk tier reaches is n = 30, not 31. The gate run of criterion 1 stays at n = 31 (the stricter figure, chosen by the owner in Q9); the Q7 rule is applied below at n = 31, which bounds n = 30 from above.
+
+#### Predictions — [DERIVED] from the figures above, same run
+
+**Q4, the host-offloaded tier at n = 29.** Model: passes × (8 GiB / host→device + 8 GiB / device→host, 2 GiB pageable) + gates × (2 × the n = 28 in-VRAM per-gate figure), against the measured in-memory CPU crossover circuit at n = 29 of the same run, and gates × the CPU per-gate figure for the other families.
+
+| family | predicted seconds (runs a, b, c) | CPU in memory (same runs) | ratio |
+|---|---|---|---|
+| crossover | 123, 108, 108 | 79, 82, 74 (measured) | 1.32–1.54× |
+| ladder | 165, 147, 147 | 98, 102, 92 | 1.44–1.68× |
+| random pairs | 66, 55, 55 | 57, 59, 54 | 0.93–1.15× |
+| QFT-like | 266, 242, 242 | 125, 129, 117 | 1.87–2.13× |
+
+A pass must carry 35–59 gates to pay for its transfer (5.5 s against 0.15–0.19 s saved per gate); the families carry 6–40. The tier is predicted **slower than the in-memory CPU engine on three families and indistinguishable from it on random pairs** (0.93–1.15×, inside the run-to-run spread of the device figure). Q4(a) requires both a prediction and a step-1 run that show a win; neither does. **Recommendation: record the host-offloaded tier as measured and not build it (Q4), unless the owner takes Q4(b) for machines whose RAM exceeds their VRAM by more.** Section 1.2's conclusion stands with worse numbers for the tier: the measured break-even is 35–59 gates per pass, not 25.
+
+**Q7, the disk tier at n = 31 (100 gates in 30 minutes).** Model: passes × (32 GiB / write+flush + 32 GiB / read, 1 GiB unbuffered chunks) + gates × (4 × the n = 29 CPU per-gate figure), same run. Applied three ways: the family's first 100 operations, the family's passes scaled to 100 gates, and one pass per gate (the worst case the rule can meet).
+
+| platform | seconds per pass | seconds per gate at n = 31 | 100 gates, families (first 100 ops / scaled) | 100 gates, one pass per gate |
+|---|---|---|---|---|
+| Windows (3 runs) | 13.1–13.2 | 1.05–1.08 | 2.2–3.1 min / 2.4–3.7 min | 23.6–23.8 min |
+| WSL ext4 (3 runs) | 12.3–12.5 | 1.07–1.08 | 2.2–3.0 min / 2.4–3.6 min | 22.3–22.6 min |
+
+Whole family circuits at n = 31 on Windows: crossover 8.9–9.0 min (282 gates, 18 passes), ladder 10.8–11.0 min, random pairs 4.8–4.9 min, QFT-like 17.9–18.1 min. With buffered I/O the pass would cost 29–30 s and the worst case 50–51 min, which is why the unbuffered path is the decision above. **The disk tier passes the Q7 rule on every family and in the one-pass-per-gate worst case; it is built (step 2).** These same-run predictions are the criterion-3 figures the gate run compares against (within 2×).
+
+**Section 1 checked.** PCIe 3.05–3.23 GB/s against section 1.2's 3.1; a host-offloaded pass at n = 31 of 22 s as stated; a CPU gate at n = 31 extrapolates to 1.05–1.19 s (section 1.2 said about 1.8) and a device gate to 0.56–0.78 s (said about 1.0); the disk's sequential bandwidth, which section 1.2 left unmeasured, is 4.6–4.7 GB/s written and 6.0–6.1 GB/s read on NTFS. No measurement contradicts section 1; the corrections are the budget bound of (v) and the pass-count preference of (iv).
+
+**WSL virtual disk.** `ext4.vhdx` was 57 993 592 832 bytes before and after the three Windows runs (they write to NTFS) and **62 255 005 696 bytes after the three ext4 runs** (`analysis/wsl-vhd-size.txt`): the scratch files were deleted and ext4 reports the space free, but the virtual disk does not shrink, so a disk-tier job run inside WSL grows the `.vhdx` by up to the file size the first time that space is touched. A limitation to document in step 6; the disk tier's intended home on this machine is drive C: from native Windows.
+
+**Stop.** Step 1 ends here. The owner decides Q4 (the recommendation is "measured, not built"), confirms the disk tier under the Q7 rule, and confirms the two corrections before step 2 begins.
