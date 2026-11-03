@@ -9,6 +9,24 @@ target_include_directories(menos_benchmark_environment PUBLIC ${CMAKE_CURRENT_SO
 target_link_libraries(menos_benchmark_environment PUBLIC menos_plan)
 target_compile_options(menos_benchmark_environment PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 21 step 1 (docs/adr/0025 section 5): plan_job latency and heap
+# traffic over the fixed planner corpus shared with the golden-plan test, and
+# a cold-calibration probe run once per fresh process by bench/run_calibration.sh.
+add_executable(menos_planner_benchmark
+    planner_benchmark.cpp
+    counting_allocator.cpp
+    menos_benchmark_main.cpp
+)
+target_include_directories(menos_planner_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_planner_benchmark PRIVATE
+    menos_plan menos_benchmark_environment benchmark::benchmark
+)
+target_compile_options(menos_planner_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+add_executable(menos_calibration_probe calibration_probe.cpp)
+target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
+target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
 add_executable(menos_dense_gate_application_benchmark
     dense_gate_application_benchmark.cpp
     menos_benchmark_main.cpp
