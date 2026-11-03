@@ -2,11 +2,14 @@
 
 ## Status
 
-**Draft (2026-11-03), step 0.** The owner started Phase 21 on 2026-11-03.
-Its scope is `plan_job` latency plus the one-time hardware calibration, and
-it is placed ahead of the memory roadmap (now Phases 22–24). Section 9 lists
-the owner decisions still open. No source, build or test file has changed in
-this phase yet.
+**Draft (2026-11-03), step 1 done.** Section 9 items 2–6 answered by the
+owner on 2026-11-03. The owner started Phase 21 on 2026-11-03. Its scope is
+`plan_job` latency plus the one-time hardware calibration, and it is placed
+ahead of the memory roadmap (now Phases 22–24). Step 1 added the benchmark,
+the fixed corpus, the golden plan files and `bench/BASELINE.md`; no shipped
+source file has changed for performance yet. Section 9 item 1 (gate targets)
+is still open. perf was unavailable (`kernel.perf_event_paranoid=4`), so the
+profile was taken with a gdb sampling profiler (`bench/tools/`).
 
 Labels follow `docs/adr/0014`–`0024`: **[MEASURED]**, **[DERIVED]**,
 **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision,
@@ -144,7 +147,19 @@ risk with no measurement yet).
 - **Overlap with Phase 22** (copy removal). Copy reduction here is limited to
   planner-internal scratch unless the owner decides otherwise.
 
-## 9. Owner decisions — [OPEN]
+## 9. Owner decisions
+
+**Answered by the owner on 2026-11-03** (items 2–6 below; item 1 stays open until the baseline exists):
+
+- **Q2, equivalence oracle:** both. A frozen, test-only copy of the planner from `d89dde3`, in a separate namespace and not part of the shipped library, for randomized differential testing of plans and `explain()`. Plus golden `explain()` files for the fixed benchmark corpus (recorded in step 1: `tests/plan/golden/planner_corpus/`, checked by `tests/plan/planner_golden_test.cpp`).
+- **Q3, tools:** valgrind, heaptrack and ninja may be installed as system tools, never as project dependencies.
+- **Q5, calibration:** nothing changes in step 1; cold calibration is measured first. Any later change must keep the derived constants within an accuracy bound agreed after the baseline, and must keep plans identical. Caching the result is preferred over shortening probe windows.
+- **Q6, release:** the version is decided after the work: 1.2.1 if the API is unchanged and nothing is added, 1.3.0 only if something user-visible is added. CI builds and tests on every push and pull request; the benchmark runs on demand only.
+- **Build location:** natively on Linux in this repository; the stale WSL note in CLAUDE.md is updated.
+- **Q4, Rust:** deferred unless the profile shows a tight numeric kernel.
+- **Step 2 order of attack**, to be confirmed by the profile: (a) memoise the min-fill search per qubit set; (b) replace the linear-scan vertex choice with a heap (lazy deletion or indexed), with tie-breaking identical to the current scan; (c) cache the SVD per cut and skip gate-matrix construction for single-qubit ops. Circuit-copy removal is left to Phase 22. Each change is its own commit with before/after numbers; anything that does not measurably help is reverted.
+
+The questions as originally asked (2026-11-03):
 
 1. **Gate targets.** Set from the step-1 baseline, as in Phases 15 and 16.
 2. **Equivalence oracle (§6).** A frozen test-only copy of the pre-phase
