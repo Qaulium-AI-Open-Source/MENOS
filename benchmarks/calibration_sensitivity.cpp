@@ -108,8 +108,9 @@ int main(int argc, char** argv) {
             ++cases;
             if (outcomes.size() > 1) {
                 ++varying;
-                std::cout << job.name << " budget="
-                          << (budget.has_value() ? std::to_string(*budget) + "s" : "none") << ":";
+                const std::string budget_text =
+                    budget.has_value() ? std::to_string(budget.value_or(0.0)) + "s" : "none";
+                std::cout << job.name << " budget=" << budget_text << ":";
                 for (const auto& [o, n] : outcomes) {
                     std::cout << "  [" << o << "] x" << n;
                 }

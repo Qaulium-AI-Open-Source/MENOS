@@ -81,8 +81,8 @@ void cache_hit_benchmark(benchmark::State& state, const CorpusJob& job) {
 
 // Built once, kept alive for the whole run: the benchmarks hold references.
 const std::vector<CorpusJob>& corpus() {
-    static const std::vector<CorpusJob> jobs = menos::planner_corpus::planner_corpus();
-    return jobs;
+    static const std::vector<CorpusJob> kJobs = menos::planner_corpus::planner_corpus();
+    return kJobs;
 }
 
 const bool kRegistered = [] {
