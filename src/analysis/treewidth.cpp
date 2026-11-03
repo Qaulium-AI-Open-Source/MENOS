@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <queue>
 #include <set>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/checked_math.h"
@@ -448,6 +451,23 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         fill[v] = compute_fill(adjacency, v);
     }
 
+    // The next vertex is the remaining one with the smallest fill, ties to the
+    // lowest index. A min-heap of (fill, vertex) pairs orders exactly that way:
+    // std::pair compares fill first, then vertex. Entries are never updated in
+    // place. A vertex whose fill changes gets a new entry, and an entry is
+    // skipped when it is popped if its vertex is eliminated or its fill is no
+    // longer the vertex's current fill. Every remaining vertex always has an
+    // entry holding its current fill, so the first entry that survives those
+    // checks is the vertex the linear scan over every remaining vertex chose.
+    using HeapEntry = std::pair<std::size_t, std::size_t>;
+    std::vector<HeapEntry> heap_storage;
+    heap_storage.reserve(graph.num_nodes);
+    for (std::size_t v = 0; v < graph.num_nodes; ++v) {
+        heap_storage.emplace_back(fill[v], v);
+    }
+    std::priority_queue<HeapEntry, std::vector<HeapEntry>, std::greater<>> heap(
+        std::greater<>{}, std::move(heap_storage));
+
     EliminationOrder result;
     result.order.reserve(graph.num_nodes);
     result.per_step_degree.reserve(graph.num_nodes);
@@ -459,21 +479,14 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
 
     for (std::size_t step = 0; step < graph.num_nodes; ++step) {
         std::size_t best_vertex = 0;
-        std::size_t best_fill = std::numeric_limits<std::size_t>::max();
         bool found = false;
-
-        for (std::size_t v = 0; v < graph.num_nodes; ++v) {
-            if (eliminated[v]) {
-                continue;
-            }
-            // Strict less-than: iterating v in increasing order and only
-            // replacing best_vertex on a strictly smaller fill count
-            // means ties resolve to the lowest vertex index,
-            // deterministically (never hash order).
-            if (!found || fill[v] < best_fill) {
-                best_fill = fill[v];
+        while (!heap.empty()) {
+            const auto [entry_fill, v] = heap.top();
+            heap.pop();
+            if (!eliminated[v] && entry_fill == fill[v]) {
                 best_vertex = v;
                 found = true;
+                break;
             }
         }
 
@@ -530,7 +543,11 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
             adjacency.for_each_neighbor(nb, mark);
         }
         for (const std::size_t v : affected) {
-            fill[v] = compute_fill(adjacency, v);
+            const std::size_t updated = compute_fill(adjacency, v);
+            if (updated != fill[v] && !eliminated[v]) {
+                fill[v] = updated;
+                heap.emplace(updated, v);
+            }
             is_affected[v] = false;
         }
     }

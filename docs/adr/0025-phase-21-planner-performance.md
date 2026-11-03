@@ -280,6 +280,52 @@ Equivalence: golden 45/45; differential test 2000 seeds (Release), 60 seeds
 (Debug ASan), plus one extra sweep of 50,000 seeds (10000–59999) in Release,
 all identical to the frozen planner.
 
+### 10.2 (b) Heap for the min-fill vertex choice
+
+Each elimination step chose its vertex by scanning every remaining vertex
+for the smallest fill, keeping the lowest index on ties: O(V) per step, O(V²)
+per search. The dense search now keeps a min-heap of (fill, vertex) pairs
+(`std::priority_queue` with `std::greater<>`). A pair compares fill first and
+then vertex, which is exactly the scan's order, ties included.
+- A vertex whose fill changes gets a new entry. No entry is ever updated in
+  place.
+- A popped entry is skipped if its vertex has been eliminated, or if its fill
+  is no longer the vertex's current fill.
+- Every remaining vertex therefore always has one entry holding its current
+  fill, so the first entry that survives is the vertex the scan picked.
+
+The sparse fallback (over 23000 nodes) keeps the linear scan. That makes the
+existing `DenseAndSparseMinFillAgreeOnRandomGraphs` unit test an independent
+oracle for the heap, and it passes.
+
+**Machine noise.** During this measurement, an unrelated process on the
+machine used about 65% of a core (a uvicorn server, not part of MENOS), and
+the desktop was busy too. The first alternating run had before-side spreads
+of 100–350% (`b_heap_noisy.compare.txt`). The re-run, pinned to one core with
+`taskset -c 6` (`b_heap.compare.txt`), still varies by 5–9% on jobs this
+change cannot affect: statevector and counts jobs never run min-fill. Their
+0.91–1.00x are noise. The figures below come from the pinned re-run. They
+agree with the noisy run's fastest repetitions: 2.27x, 1.45x and 1.5x on the
+same jobs.
+
+| Job | Before ((d)) | After | Speed-up |
+|---|---|---|---|
+| expectation_factorized/large (gate) | 8942 ms | 3900 ms | 2.29x |
+| expectation_ising_budgeted/large (gate) | 1115 ms | 792 ms | 1.41x |
+| expectation_{z_all,ising,heisenberg,random_paulis}/large | 47–49 ms | 34–35 ms | 1.37–1.41x |
+| expectation_factorized/medium | 270 ms | 181 ms | 1.49x |
+| expectation_random_pairs_controlled/large | 410 ms | 303 ms | 1.35x |
+| expectation_cut/large | 20.6 ms | 15.4 ms | 1.34x |
+
+No job is slower than the gate's limit.
+
+Equivalence:
+- golden 45/45;
+- analysis unit tests 50/50, including the dense-versus-sparse oracle and
+  the constructed tie case;
+- the differential test, 2000 seeds, plus a sweep of 50,000 seeds
+  (60000–109999) — all identical to the frozen planner.
+
 ## 11. Investigations the owner asked for (2026-11-03) — [MEASURED] / [DERIVED], nothing implemented
 
 ### 11.1 Costing cheaper candidates before the tensor network
