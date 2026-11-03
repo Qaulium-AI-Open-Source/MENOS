@@ -279,3 +279,102 @@ attacks the other share of the same loop.
 Equivalence: golden 45/45; differential test 2000 seeds (Release), 60 seeds
 (Debug ASan), plus one extra sweep of 50,000 seeds (10000–59999) in Release,
 all identical to the frozen planner.
+
+## 11. Investigations the owner asked for (2026-11-03) — [MEASURED] / [DERIVED], nothing implemented
+
+### 11.1 Costing cheaper candidates before the tensor network
+
+In expectation_factorized/large the tensor-network candidate (index 4) is
+costed before Factorized (index 5). No feasible candidate exists yet when it
+is costed, so its bound is unbounded, and the baseline profile put 85% of the
+job's time there.
+- Costing Factorized first, while keeping the candidates' printed order, would
+  give a bound of 2105344 work units. The tensor network's running total would
+  cross that bound early, and the candidate would be **pruned**.
+- **`explain()` would not stay byte-identical.** Today the golden file prints
+  `candidate 4strategy=direct_tensor_network feasible=true ...
+  work_units=3580198848`. Pruned, that line would carry a "pruned by
+  branch-and-bound" reason instead. Printing the full figure means computing
+  it, and that is the cost being saved.
+- The winner, and every other candidate line, would be unchanged.
+- **[DERIVED]:** this is possible only by relaxing invariant 2 for pruned
+  candidates' lines. That is an owner decision.
+
+### 11.2 Why a time budget turns branch-and-bound off
+
+From `planner.cpp:379–394` and `apply_time_budget` (`planner.cpp:316`):
+- **Why it is off.** The time check runs after enumeration. A candidate with
+  fewer work units can still be rejected on seconds, so the work-unit
+  incumbent at enumeration time may not survive. Pruning a later candidate
+  against it would then be unsound.
+- **Pruning can stay on soundly in a CPU-only job.** There,
+  `apply_time_budget` depends only on the candidate's own figures and on
+  observations already known when planning starts (`floor_for`). So each
+  candidate's time check can be applied as soon as it is pushed, and the
+  incumbent taken over the candidates that are feasible *and* within the
+  budget.
+  - Selection is fewest work units among feasible candidates, so a
+    candidate stopped above such an incumbent can never win.
+  - The plan and winner would be identical.
+- **Where it stays off.** Two figures are set only after enumeration: the
+  CUDA dense-backend step and Factorized's per-region mixed seconds. Jobs
+  where either applies (CUDA calibrated, or backend = cuda) keep pruning off.
+- **Cost:** as in 11.1, `explain()` changes. Pruned candidates print the
+  pruned reason in place of their figures and `est_seconds`. For example, in
+  expectation_ising_budgeted/large the cut_and_recombine line, and the tensor
+  network's memory reason, would become pruned reasons.
+- Again an owner decision on invariant 2.
+
+### 11.3 Why a plan-cache hit costs more than planning (statevector_brickwork/medium)
+
+- **Method:** gdb sampling of `cache_hit/statevector_brickwork/medium`, 635
+  samples (`bench/raw/profiles/cache_hit_statevector_brickwork_medium.stacks.gz`).
+- **Breakdown of a hit:**
+
+  | Share | Where |
+  |---|---|
+  | 22.5% | `Plan plan = cached` (`planner.cpp:1147`): copies the cached plan, including its operation list and reduced circuit |
+  | 17.5% | lines 1148–1149: overwrites the copies just made with the fresh operations and circuit, and destroys the stale ones |
+  | 20.9% | `compute_light_cone`: the fresh reduced circuit (needed) |
+  | ~17% | `std::operator+`, `std::to_string` and the string destructor: the `common::ensure` message, built eagerly for every operation in the structural loop (`planner.cpp:1140–1142`) even when nothing differs |
+  | 3.9% | `plan_cache_key` |
+  | <1% | hash lookup |
+  | 16.1% | destroying the returned plan, outside `plan_job_cached` (a fresh plan pays this too) |
+
+- **[DERIVED]:** about 57% of a hit is work that does not need to happen:
+  - the eager error message;
+  - the copy of the stale operation lists, which are immediately overwritten.
+- Removing both changes no plan and no `explain()` output. That would bring
+  the hit to roughly 50 µs against 96 µs for planning (an estimate, not
+  measured).
+- The plan-cache lookup is in scope (section 2). The second fix is a copy
+  removal, which the owner left to Phase 22. Whether it belongs here is the
+  owner's decision.
+
+### 11.4 Can calibration's run-to-run variation change the chosen plan?
+
+**Where calibration is used.** The planner reads it in two places only:
+- estimated seconds, which matter only against a time budget;
+- the CPU-versus-CUDA comparisons, in a CUDA build.
+
+A job with no time budget in a CPU build is never affected. Its plan does
+not depend on calibration at all, and such a job does not calibrate.
+
+**Measurement.** `benchmarks/calibration_sensitivity.cpp` plans every
+fixed-corpus job once per measured calibration sample, under 8 time budgets
+(none, and 1 ms to 1000 s): 360 (job, budget) cases.
+
+| Samples | Cases whose outcome depends on the sample | What changes |
+|---|---|---|
+| 20 CPU samples (`calibration_cpu.csv`) | 6 of 360 | plan ↔ `ResourceExceeded` only: a candidate near the budget is in for some samples and out for others |
+| 20 CUDA samples (`calibration_cuda.csv`, CUDA build) | 11 of 360 | plan ↔ `ResourceExceeded` only (5 of them are dense-on-CUDA jobs at a 10 s budget) |
+
+Raw results: `bench/raw/calibration_sensitivity_{cpu,cuda}.txt`.
+
+**Findings:**
+- In this corpus, no case changes strategy or CPU/CUDA backend between
+  samples, and no unbudgeted case varies.
+- **[DERIVED]:** in general, though, a change of strategy or backend is
+  possible. It needs two candidates whose estimated seconds (or CPU and CUDA
+  times) are within the calibration spread of each other, or of the budget.
+  The corpus simply has no such pair.

@@ -1,0 +1,12 @@
+statevector_brickwork/large budget=10.000000s:  [direct_dense cuda] x17  [refused (ResourceExceeded)] x3
+counts_brickwork/large budget=10.000000s:  [direct_dense cuda] x17  [refused (ResourceExceeded)] x3
+expectation_z_all/large budget=10.000000s:  [direct_dense cuda] x17  [refused (ResourceExceeded)] x3
+expectation_ising/large budget=10.000000s:  [direct_dense cuda] x4  [refused (ResourceExceeded)] x16
+expectation_ising_budgeted/large budget=10.000000s:  [direct_dense cuda] x4  [refused (ResourceExceeded)] x16
+counts_random_pairs/small budget=0.001000s:  [direct_dense cpu] x19  [refused (ResourceExceeded)] x1
+expectation_random_pairs_controlled/small budget=0.001000s:  [direct_dense cpu] x19  [refused (ResourceExceeded)] x1
+expectation_random_pairs_controlled/medium budget=1.000000s:  [direct_mps cpu] x13  [refused (ResourceExceeded)] x7
+expectation_random_pairs_controlled/large budget=10.000000s:  [direct_mps cpu] x19  [refused (ResourceExceeded)] x1
+counts_factorized/large budget=0.001000s:  [factorized cpu cpu cpu cpu cpu cpu cpu cpu] x13  [refused (ResourceExceeded)] x7
+counts_noisy_trajectory/large budget=100.000000s:  [direct_trajectory cpu] x19  [refused (ResourceExceeded)] x1
+20 samples; 11 of 360 (job, budget) cases change outcome with the sample

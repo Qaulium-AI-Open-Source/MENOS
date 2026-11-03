@@ -27,6 +27,12 @@ add_executable(menos_calibration_probe calibration_probe.cpp)
 target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
 target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 21 owner question 4: does calibration noise change the chosen plan?
+add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
+target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_calibration_sensitivity PRIVATE menos_plan)
+target_compile_options(menos_calibration_sensitivity PRIVATE ${MENOS_WARNING_FLAGS})
+
 add_executable(menos_dense_gate_application_benchmark
     dense_gate_application_benchmark.cpp
     menos_benchmark_main.cpp
