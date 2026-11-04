@@ -6,7 +6,10 @@
 #include <gtest/gtest.h>
 
 #include <complex>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include "crossover_circuit.h"
@@ -30,6 +33,22 @@ Circuit ladder(std::uint32_t n) {
 
 std::span<const Operation> ops(const Circuit& circuit) {
     return circuit.operations();
+}
+
+// The plan a choice must have produced.
+const PassPlan& require(const std::optional<PassPlan>& chosen) {
+    if (!chosen.has_value()) {
+        throw std::logic_error("no pass plan was chosen");
+    }
+    return *chosen;
+}
+
+std::vector<std::complex<double>> identity_matrix(std::size_t dimension) {
+    std::vector<std::complex<double>> m(dimension * dimension, {0.0, 0.0});
+    for (std::size_t i = 0; i < dimension; ++i) {
+        m[i * dimension + i] = {1.0, 0.0};
+    }
+    return m;
 }
 
 TEST(PassPlanTest, ACircuitWithNoGateHasNoPass) {
@@ -100,13 +119,7 @@ TEST(PassPlanTest, EveryGateGlobalGivesOnePassPerGateWhenTheWindowHoldsOne) {
 TEST(PassPlanTest, AGateWithMoreGlobalOperandsThanTheWindowHoldsIsReported) {
     // A 5-qubit unitary with all five operands global.
     Circuit circuit(8, 0);
-    const std::vector<std::complex<double>> identity = [] {
-        std::vector<std::complex<double>> m(32 * 32, {0.0, 0.0});
-        for (std::size_t i = 0; i < 32; ++i) {
-            m[i * 32 + i] = {1.0, 0.0};
-        }
-        return m;
-    }();
+    const std::vector<std::complex<double>> identity = identity_matrix(32);
     circuit.append_unitary({3, 4, 5, 6, 7}, identity);
     const PassPlan small = build_pass_plan(ops(circuit), 8, 3, 7);  // w = 4
     EXPECT_TRUE(small.window_too_small);
@@ -174,16 +187,16 @@ TEST(PassPlanTest, ChoosesTheChunkSizeWithTheFewestPassesLargerOnATie) {
     const Circuit at31 = benchmarks::make_crossover_circuit(31);
     const std::optional<PassPlan> chosen = choose_pass_plan(ops(at31), 31, 29, false);
     ASSERT_TRUE(chosen.has_value());
-    EXPECT_EQ(chosen->chunk_qubits, 25U);
-    EXPECT_EQ(chosen->window_qubits, 29U);
-    EXPECT_EQ(chosen->pass_count(), 18U);
+    EXPECT_EQ(require(chosen).chunk_qubits, 25U);
+    EXPECT_EQ(require(chosen).window_qubits, 29U);
+    EXPECT_EQ(require(chosen).pass_count(), 18U);
 
     // A window holding the whole state is one pass at the largest chunk.
     const Circuit small = benchmarks::make_crossover_circuit(12);
     const std::optional<PassPlan> whole = choose_pass_plan(ops(small), 12, 12, false);
     ASSERT_TRUE(whole.has_value());
-    EXPECT_EQ(whole->chunk_qubits, 12U);
-    EXPECT_EQ(whole->pass_count(), 1U);
+    EXPECT_EQ(require(whole).chunk_qubits, 12U);
+    EXPECT_EQ(require(whole).pass_count(), 1U);
 
     // Below the preferred minimum every chunk size competes: the window of
     // 2^8 on a 12-qubit crossover circuit.
@@ -201,8 +214,8 @@ TEST(PassPlanTest, ChoosesTheChunkSizeWithTheFewestPassesLargerOnATie) {
             break;
         }
     }
-    EXPECT_EQ(tiny->pass_count(), fewest);
-    EXPECT_EQ(tiny->chunk_qubits, at);
+    EXPECT_EQ(require(tiny).pass_count(), fewest);
+    EXPECT_EQ(require(tiny).chunk_qubits, at);
 }
 
 TEST(PassPlanTest, AChunkPairRequirementRulesOutTheWholeWindowAsOneChunk) {
@@ -211,23 +224,17 @@ TEST(PassPlanTest, AChunkPairRequirementRulesOutTheWholeWindowAsOneChunk) {
     // Without the requirement the whole window is one chunk, one pass.
     const std::optional<PassPlan> free = choose_pass_plan(ops(circuit), 6, 6, false);
     ASSERT_TRUE(free.has_value());
-    EXPECT_EQ(free->chunk_qubits, 6U);
+    EXPECT_EQ(require(free).chunk_qubits, 6U);
     // With it, the chunk is at most half the window.
     const std::optional<PassPlan> paired = choose_pass_plan(ops(circuit), 6, 6, true);
     ASSERT_TRUE(paired.has_value());
-    EXPECT_EQ(paired->chunk_qubits, 5U);
-    EXPECT_EQ(paired->pass_count(), 1U);
+    EXPECT_EQ(require(paired).chunk_qubits, 5U);
+    EXPECT_EQ(require(paired).pass_count(), 1U);
 }
 
 TEST(PassPlanTest, NoChunkSizeFitsAGateWiderThanTheWindowsGlobals) {
     Circuit circuit(8, 0);
-    const std::vector<std::complex<double>> identity = [] {
-        std::vector<std::complex<double>> m(32 * 32, {0.0, 0.0});
-        for (std::size_t i = 0; i < 32; ++i) {
-            m[i * 32 + i] = {1.0, 0.0};
-        }
-        return m;
-    }();
+    const std::vector<std::complex<double>> identity = identity_matrix(32);
     circuit.append_unitary({3, 4, 5, 6, 7}, identity);
     // A window of 2^7 holds at most 2^4 chunks of 2^3, or 2^7 chunks of 1
     // amplitude: with L = 0 every operand is global, w = 7 >= 5, so it fits.
@@ -241,24 +248,18 @@ TEST(PassPlanTest, ChunksBelowThePreferredMinimumAreTriedOnlyWhenNothingAboveFit
     // L >= 24 the window has at most 3 global qubits, so the plan falls back
     // to L = 21, where w = 6 holds the gate.
     Circuit circuit(30, 0);
-    const std::vector<std::complex<double>> identity = [] {
-        std::vector<std::complex<double>> m(64 * 64, {0.0, 0.0});
-        for (std::size_t i = 0; i < 64; ++i) {
-            m[i * 64 + i] = {1.0, 0.0};
-        }
-        return m;
-    }();
+    const std::vector<std::complex<double>> identity = identity_matrix(64);
     circuit.append_unitary({24, 25, 26, 27, 28, 29}, identity);
     const std::optional<PassPlan> plan = choose_pass_plan(ops(circuit), 30, 27, false);
     ASSERT_TRUE(plan.has_value());
-    EXPECT_EQ(plan->chunk_qubits, 21U);
-    EXPECT_EQ(plan->pass_count(), 1U);
+    EXPECT_EQ(require(plan).chunk_qubits, 21U);
+    EXPECT_EQ(require(plan).pass_count(), 1U);
     // A gate the preferred sizes do fit keeps them.
     Circuit easy(30, 0);
     easy.append(Opcode::CX, {28, 29});
     const std::optional<PassPlan> preferred = choose_pass_plan(ops(easy), 30, 27, false);
     ASSERT_TRUE(preferred.has_value());
-    EXPECT_EQ(preferred->chunk_qubits, 25U);
+    EXPECT_EQ(require(preferred).chunk_qubits, 25U);
 }
 
 }  // namespace

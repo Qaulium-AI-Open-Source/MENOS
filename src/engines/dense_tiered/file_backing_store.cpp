@@ -197,19 +197,18 @@ void FileBackingStore::write(std::uint64_t chunk,
                              std::span<const std::complex<double>> from) const {
     common::ensure(chunk < chunk_count() && from.size() == chunk_amplitudes_,
                    "FileBackingStore::write: not a whole chunk");
-    // The write API takes a non-const pointer; the data is only read.
-    transfer(chunk * chunk_bytes(),
-             const_cast<std::complex<double>*>(
-                 from.data()),  // NOLINT(cppcoreguidelines-pro-type-const-cast)
-             chunk_bytes(),
-             /*writing=*/true);
+    transfer(chunk * chunk_bytes(), from.data(), chunk_bytes(), /*writing=*/true);
 }
 
 void FileBackingStore::transfer(std::uint64_t offset,
-                                void* data,
+                                const void* data,
                                 std::size_t bytes,
                                 bool writing) const {
-    auto* cursor = static_cast<unsigned char*>(data);
+    // The read path writes into the caller's buffer, which read() passed as
+    // the non-const span it holds; the write path only reads. One pointer
+    // type serves both because the platform calls take void pointers.
+    auto* cursor = static_cast<unsigned char*>(
+        const_cast<void*>(data));  // NOLINT(cppcoreguidelines-pro-type-const-cast)
     std::size_t done = 0;
     while (done < bytes) {
         const std::size_t piece = std::min(bytes - done, kMaxPieceBytes);

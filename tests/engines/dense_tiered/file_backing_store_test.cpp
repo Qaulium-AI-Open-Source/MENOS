@@ -37,8 +37,8 @@ public:
         auto address = reinterpret_cast<std::uintptr_t>(storage_.data());  // NOLINT
         const std::uintptr_t aligned = (address + FileBackingStore::kAlignment - 1) &
                                        ~std::uintptr_t{FileBackingStore::kAlignment - 1};
-        span_ =
-            std::span<Complex>(storage_.data() + (aligned - address) / sizeof(Complex), amplitudes);
+        const std::size_t skip = static_cast<std::size_t>(aligned - address) / sizeof(Complex);
+        span_ = std::span<Complex>(storage_.data() + skip, amplitudes);
     }
     [[nodiscard]] std::span<Complex> span() {
         return span_;

@@ -44,12 +44,23 @@ namespace {
 
 using Complex = std::complex<double>;
 
+// Draws straight from the engine's standardised output, not through the
+// standard distributions, whose sequences differ between standard libraries:
+// the circuits below must be the same on every platform, so the chunk and
+// window seams a test chooses fit their gates everywhere.
+std::uint64_t below(std::mt19937_64& rng, std::uint64_t bound) {
+    return rng() % bound;
+}
+
+double angle_of(std::mt19937_64& rng) {
+    return static_cast<double>(rng() >> 11) * (6.283185307179586 / 9007199254740992.0);
+}
+
 // A random single-qubit unitary, exactly unitary by construction.
 std::vector<Complex> random_1q_unitary(std::mt19937_64& rng) {
-    std::uniform_real_distribution<double> angle(0.0, 6.283185307179586);
-    const double a = angle(rng);
-    const double b = angle(rng);
-    const double c = angle(rng);
+    const double a = angle_of(rng);
+    const double b = angle_of(rng);
+    const double c = angle_of(rng);
     const Complex eb = std::polar(1.0, b);
     const Complex ec = std::polar(1.0, c);
     return {Complex{std::cos(a), 0.0}, -eb * std::sin(a), ec * std::sin(a), eb * ec * std::cos(a)};
@@ -70,33 +81,38 @@ std::vector<Complex> kron(const std::vector<Complex>& a, const std::vector<Compl
     return m;
 }
 
+// k distinct qubits of n, a Fisher-Yates prefix.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 std::vector<QubitId> distinct_qubits(std::uint32_t n, std::size_t k, std::mt19937_64& rng) {
     std::vector<QubitId> all(n);
     for (std::uint32_t q = 0; q < n; ++q) {
         all[q] = q;
     }
-    std::shuffle(all.begin(), all.end(), rng);
+    for (std::size_t i = 0; i < k; ++i) {
+        const std::size_t j = i + static_cast<std::size_t>(below(rng, n - i));
+        std::swap(all[i], all[j]);
+    }
     all.resize(k);
     return all;
 }
 
 // A random circuit over every gate shape the executor remaps: one-, two-
 // and three-operand named gates, and two- and five-operand unitaries.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Circuit random_circuit(std::uint32_t n, int gates, std::uint64_t seed) {
     std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<int> kind(0, 11);
-    std::uniform_real_distribution<double> angle(0.0, 6.283185307179586);
+    const auto angle = [&rng]() { return angle_of(rng); };
     Circuit circuit(n, n);
     for (int g = 0; g < gates; ++g) {
-        switch (kind(rng)) {
+        switch (below(rng, 12)) {
             case 0:
                 circuit.append(Opcode::H, distinct_qubits(n, 1, rng));
                 break;
             case 1:
-                circuit.append(Opcode::RX, distinct_qubits(n, 1, rng), {angle(rng)});
+                circuit.append(Opcode::RX, distinct_qubits(n, 1, rng), {angle()});
                 break;
             case 2:
-                circuit.append(Opcode::RZ, distinct_qubits(n, 1, rng), {angle(rng)});
+                circuit.append(Opcode::RZ, distinct_qubits(n, 1, rng), {angle()});
                 break;
             case 3:
                 circuit.append(Opcode::T, distinct_qubits(n, 1, rng));
@@ -106,7 +122,7 @@ Circuit random_circuit(std::uint32_t n, int gates, std::uint64_t seed) {
                 circuit.append(Opcode::CX, distinct_qubits(n, 2, rng));
                 break;
             case 6:
-                circuit.append(Opcode::CP, distinct_qubits(n, 2, rng), {angle(rng)});
+                circuit.append(Opcode::CP, distinct_qubits(n, 2, rng), {angle()});
                 break;
             case 7:
                 circuit.append(Opcode::SWAP, distinct_qubits(n, 2, rng));
@@ -145,10 +161,12 @@ std::vector<std::pair<QubitId, ClbitId>> all_targets(std::uint32_t n) {
     return targets;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Observable random_observable(std::uint32_t n, int terms, std::mt19937_64& rng) {
     const std::uint64_t all = (std::uint64_t{1} << n) - 1;
-    std::uniform_int_distribution<std::uint64_t> pick(0, all);
+    const auto pick = [&rng, all]() { return below(rng, all + 1); };
     Observable observable;
+    observable.terms.reserve(3 + static_cast<std::size_t>(terms));
     // Z-only, X-only, a single high X bit (pairs every chunk with another),
     // and random Y-bearing terms.
     observable.terms.emplace_back(PauliString{n, {0}, {all}}, Complex{1.0, 0.0});
@@ -157,7 +175,7 @@ Observable random_observable(std::uint32_t n, int terms, std::mt19937_64& rng) {
         PauliString{n, {std::uint64_t{1} << (n - 1)}, {std::uint64_t{1} << (n - 1)}},
         Complex{-0.25, 0.0});
     for (int i = 0; i < terms; ++i) {
-        observable.terms.emplace_back(PauliString{n, {pick(rng)}, {pick(rng)}}, Complex{0.1, 0.0});
+        observable.terms.emplace_back(PauliString{n, {pick()}, {pick()}}, Complex{0.1, 0.0});
     }
     return observable;
 }
@@ -283,7 +301,7 @@ TEST(DiskDenseEngineTest, EveryThreadCountGivesTheSameBytes) {
     const Observable observable = random_observable(n, 3, rng);
     const Outputs expected = run_in_memory(circuit, 500, &observable, 0.0, 1);
     for (const std::uint32_t threads : {1U, 2U, 3U, common::default_thread_count()}) {
-        const Outputs actual = run_on_disk(circuit, 500, &observable, 0.0, threads, 8, 12);
+        const Outputs actual = run_on_disk(circuit, 500, &observable, 0.0, threads, 8, 13);
         expect_same_outputs(expected, actual, "threads=" + std::to_string(threads));
     }
 }
@@ -366,12 +384,12 @@ TEST(DiskDenseEngineTest, EstimateReportsThePlanAndBoundsTheLedger) {
         .bitstring_width = n,
         .is_sole_region = true,
         .tier_chunk_qubits = 6,
-        .tier_window_qubits = 9,
+        .tier_window_qubits = 11,
     };
     const CostEstimate estimate = engine.estimate(estimate_request);
     ASSERT_TRUE(estimate.feasible) << estimate.infeasible_reason;
     EXPECT_EQ(estimate.tier.chunk_qubits, 6U);
-    EXPECT_EQ(estimate.tier.window_qubits, 9U);
+    EXPECT_EQ(estimate.tier.window_qubits, 11U);
     EXPECT_EQ(estimate.tier.file_bytes, (std::uint64_t{1} << n) * sizeof(Complex));
     EXPECT_GT(estimate.tier.passes, 1U);
     // The initial write, two per pass, the sampling read, one or two per term.
@@ -392,11 +410,11 @@ TEST(DiskDenseEngineTest, EstimateReportsThePlanAndBoundsTheLedger) {
         const common::MemoryLedger::Scope scope(ledger);
         const std::vector<std::pair<QubitId, ClbitId>> targets = all_targets(n);
         const EngineExecutionResult result =
-            engine.execute(disk_request(circuit, targets, 1000, &observable, 0.0, 2, 6, 9));
-        EXPECT_EQ(result.actual_bytes, Window::heap_bytes(9) - common::kHeapBlockOverheadBytes);
+            engine.execute(disk_request(circuit, targets, 1000, &observable, 0.0, 2, 6, 11));
+        EXPECT_EQ(result.actual_bytes, Window::heap_bytes(11) - common::kHeapBlockOverheadBytes);
     }
     EXPECT_LE(ledger.peak_host_bytes(), estimate.estimated_peak_bytes);
-    EXPECT_GE(ledger.peak_host_bytes(), (std::uint64_t{1} << 9) * sizeof(Complex));
+    EXPECT_GE(ledger.peak_host_bytes(), (std::uint64_t{1} << 11) * sizeof(Complex));
     EXPECT_EQ(ledger.peak_disk_bytes(), estimate.tier.file_bytes);
     EXPECT_EQ(ledger.live_disk_bytes(), 0U);
     EXPECT_EQ(ledger.live_host_bytes(), 0U);
@@ -440,7 +458,9 @@ TEST(DiskDenseEngineTest, TheEngineChoosesTheWindowFromTheBudgetAndTheChunkFromT
     run.budget_bytes = smaller.estimated_peak_bytes;
     const EngineExecutionResult result = engine.execute(run);
     EXPECT_EQ(result.actual_bytes, Window::heap_bytes(n - 3) - common::kHeapBlockOverheadBytes);
-    EXPECT_EQ(result.counts.value(), run_in_memory(circuit, 100, nullptr, 0.0, 1).counts);
+    ASSERT_TRUE(result.counts.has_value());
+    EXPECT_EQ(result.counts.value_or(std::map<BitString, std::uint64_t>{}),
+              run_in_memory(circuit, 100, nullptr, 0.0, 1).counts);
     // A budget below the smallest window is refused with the figures.
     request.budget_bytes = 1;
     const CostEstimate none = engine.estimate(request);

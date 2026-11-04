@@ -69,7 +69,7 @@ public:
     [[nodiscard]] const std::filesystem::path& path() const;
 
 private:
-    void transfer(std::uint64_t offset, void* data, std::size_t bytes, bool writing) const;
+    void transfer(std::uint64_t offset, const void* data, std::size_t bytes, bool writing) const;
     void close_file();
 
     std::filesystem::path path_;

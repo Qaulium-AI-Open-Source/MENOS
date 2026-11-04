@@ -75,6 +75,8 @@ std::span<Complex> Window::slot(std::uint64_t index, std::uint64_t chunk_amplitu
 // The passes
 // ---------------------------------------------------------------------------
 
+// A value and a mask: distinct roles, named at every call site.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 std::uint64_t deposit_bits(std::uint64_t value, std::uint64_t mask) {
     std::uint64_t result = 0;
     for (std::uint64_t rest = mask, bit = 0; rest != 0; rest &= rest - 1, ++bit) {
