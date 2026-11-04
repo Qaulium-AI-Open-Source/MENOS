@@ -35,7 +35,11 @@ public:
     };
 
     explicit BitAdjacency(std::size_t n)
-        : n_(n), words_((n + 63) / 64), bits_(n * words_, 0), span_(n, WordRange{0, 0}) {}
+        : n_(n),
+          words_((n + 63) / 64),
+          bits_(n * words_, 0),
+          span_(n, WordRange{0, 0}),
+          degree_(n, 0) {}
 
     // Every row's WordRange is kept exact as bits change, so nonzero_range is
     // a lookup rather than a scan of the row (docs/adr/0025 section 12.3): a
@@ -43,7 +47,10 @@ public:
     // narrows it past every empty word there.
     void set(std::size_t a, std::size_t b) {
         const std::size_t w = b / 64;
-        row(a)[w] |= std::uint64_t{1} << (b % 64);
+        const std::uint64_t bit = std::uint64_t{1} << (b % 64);
+        std::uint64_t& word = row(a)[w];
+        degree_[a] += (word & bit) == 0 ? 1U : 0U;
+        word |= bit;
         WordRange& span = span_[a];
         if (span.first == span.last) {
             span = {w, w + 1};
@@ -55,7 +62,9 @@ public:
     void reset(std::size_t a, std::size_t b) {
         const std::size_t w = b / 64;
         std::uint64_t* r = row(a);
-        r[w] &= ~(std::uint64_t{1} << (b % 64));
+        const std::uint64_t bit = std::uint64_t{1} << (b % 64);
+        degree_[a] -= (r[w] & bit) != 0 ? 1U : 0U;
+        r[w] &= ~bit;
         WordRange& span = span_[a];
         if (r[w] != 0 || (w != span.first && w + 1 != span.last)) {
             return;
@@ -74,16 +83,15 @@ public:
         const WordRange span = span_[a];
         std::fill(row(a) + span.first, row(a) + span.last, std::uint64_t{0});
         span_[a] = {0, 0};
+        degree_[a] = 0;
     }
 
+    // Kept as a count by set, reset and clear_row.
     [[nodiscard]] std::size_t degree(std::size_t a) const {
-        std::size_t d = 0;
-        const std::uint64_t* r = row(a);
-        const WordRange span = span_[a];
-        for (std::size_t w = span.first; w < span.last; ++w) {
-            d += static_cast<std::size_t>(std::popcount(r[w]));
-        }
-        return d;
+        return degree_[a];
+    }
+    [[nodiscard]] bool test(std::size_t a, std::size_t b) const {
+        return ((row(a)[b / 64] >> (b % 64)) & std::uint64_t{1}) != 0;
     }
     [[nodiscard]] WordRange nonzero_range(std::size_t a) const {
         return span_[a];
@@ -137,11 +145,16 @@ private:
     std::size_t words_;
     std::vector<std::uint64_t> bits_;
     std::vector<WordRange> span_;
+    std::vector<std::size_t> degree_;
 };
 
 // fill(v) = C(deg(v), 2) - |{edges already present among v's neighbors}|
 // -- the number of NEW fill-in edges eliminating v right now would add.
 // Defined in treewidth.cpp, where its CPU-dispatch attribute lives.
-[[nodiscard]] std::size_t compute_fill(const BitAdjacency& adjacency, std::size_t v);
+// `scratch` is reused between calls to hold v's neighbours; its contents on
+// entry and exit are unspecified.
+[[nodiscard]] std::size_t compute_fill(const BitAdjacency& adjacency,
+                                       std::size_t v,
+                                       std::vector<std::size_t>& scratch);
 
 }  // namespace menos::analysis::detail

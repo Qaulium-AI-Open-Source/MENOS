@@ -59,10 +59,11 @@ BitAdjacency random_adjacency(RandomGraph shape) {
 void fill_benchmark(benchmark::State& state, RandomGraph shape) {
     const std::size_t n = shape.n;
     const BitAdjacency adjacency = random_adjacency(shape);
+    std::vector<std::size_t> scratch;
     for (auto _ : state) {
         std::size_t total = 0;
         for (std::size_t v = 0; v < n; ++v) {
-            total += menos::analysis::detail::compute_fill(adjacency, v);
+            total += menos::analysis::detail::compute_fill(adjacency, v, scratch);
         }
         benchmark::DoNotOptimize(total);
     }

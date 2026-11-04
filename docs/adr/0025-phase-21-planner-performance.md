@@ -686,3 +686,27 @@ the span and degree after each one. Dropping the narrowing makes it fail.
 
 The other jobs in the run were 1.02–1.22x. None was slower than its limit:
 factorized/small's spread was 28%, so its limit is 56%.
+
+C.1a equivalence: golden 45/45; differential 2000 seeds plus a 50,000-seed
+sweep (210000–259999), all identical.
+
+#### C.1b (d): bit tests instead of popcounts for rows sparser than their span — KEPT (third variant)
+
+When v has fewer neighbours k than words in its span, counting
+|N(a) ∩ N(v)| by k bit tests per neighbour is cheaper than one popcount per
+span word. Both methods count the same integer.
+
+Three variants were measured, each against C.1a:
+
+| Variant | random_pairs_controlled/large | Other jobs | Gate jobs (budgeted/large, factorized/large) | Verdict |
+|---|---|---|---|---|
+| 1: `degree()` pass to decide, then the chosen path | 2.18x (fastest 2.57x) | 0.91–1.12x, mostly 0.92–0.94x | 0.91x, 1.00x | rejected: gate job slower |
+| 2: always collect the neighbours into a vector, take k from it | 2.25x (2.42x) | 0.89–0.97x | 0.97x, 0.95x | rejected: every dense job slower |
+| 3: `BitAdjacency` keeps each row's degree as a counter (`set`, `reset` and `clear_row` update it); dense rows run exactly C.1a's loop | **2.05x (2.47x)** | 0.96–1.03x | 1.01x, 1.01x | **kept** |
+
+Variant 3 also gives random_pairs_controlled/medium 1.19x (1.28x).
+- The branch is a direct cost comparison (k bit tests against `span`
+  popcounts), not a tuned threshold.
+- A new test checks both paths against the plain oracle on graphs of
+  density 0.2–30%.
+- The interleaved test checks the degree counter after every operation.

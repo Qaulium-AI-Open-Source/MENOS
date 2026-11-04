@@ -267,14 +267,27 @@ namespace detail {
 #if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
 [[gnu::target_clones("popcnt", "default")]]
 #endif
-std::size_t compute_fill(const BitAdjacency& adjacency, std::size_t v) {
+std::size_t compute_fill(const BitAdjacency& adjacency,
+                         std::size_t v,
+                         std::vector<std::size_t>& scratch) {
     const BitAdjacency::WordRange range = adjacency.nonzero_range(v);
-    std::size_t k = 0;
+    const std::size_t k = adjacency.degree(v);
     std::size_t twice_edges = 0;
-    adjacency.for_each_neighbor_in(v, range, [&](std::size_t a) {
-        ++k;
-        twice_edges += adjacency.common(a, v, range);
-    });
+    if (k < range.last - range.first) {
+        // Fewer neighbours than words in the span: k bit tests per neighbour
+        // count |N(a) & N(v)| more cheaply than one popcount per span word.
+        // The same integer either way.
+        scratch.clear();
+        adjacency.for_each_neighbor_in(v, range, [&](std::size_t u) { scratch.push_back(u); });
+        for (const std::size_t a : scratch) {
+            for (const std::size_t u : scratch) {
+                twice_edges += adjacency.test(a, u) ? 1U : 0U;
+            }
+        }
+    } else {
+        adjacency.for_each_neighbor_in(
+            v, range, [&](std::size_t a) { twice_edges += adjacency.common(a, v, range); });
+    }
     return k * (k - 1) / 2 - twice_edges / 2;
 }
 
@@ -341,9 +354,10 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         adjacency.set(a, b);
         adjacency.set(b, a);
     }
+    std::vector<std::size_t> scratch;
     std::vector<std::size_t> initial_fill(graph.num_nodes);
     for (std::size_t v = 0; v < graph.num_nodes; ++v) {
-        initial_fill[v] = compute_fill(adjacency, v);
+        initial_fill[v] = compute_fill(adjacency, v, scratch);
     }
     // The next vertex: the remaining one with the smallest fill, ties to the
     // lowest index (min_fill_queue.h).
@@ -414,7 +428,7 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         }
         for (const std::size_t v : affected) {
             if (!queue.removed(v)) {
-                queue.set_fill(v, compute_fill(adjacency, v));
+                queue.set_fill(v, compute_fill(adjacency, v, scratch));
             }
             is_affected[v] = false;
         }

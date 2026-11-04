@@ -66,6 +66,11 @@ Graph random_graph(Shape shape, std::mt19937_64& rng) {
     return g;
 }
 
+std::size_t fill_of(const BitAdjacency& bits, std::size_t v) {
+    std::vector<std::size_t> scratch;
+    return compute_fill(bits, v, scratch);
+}
+
 std::size_t plain_common(const Matrix& m, std::size_t a, std::size_t b) {
     std::size_t c = 0;
     for (std::size_t u = 0; u < m.size(); ++u) {
@@ -118,7 +123,7 @@ void check_graph(const Graph& g) {
             ASSERT_EQ(g.bits.common(a, b, b_range), plain_common(g.plain, a, b))
                 << "a " << a << " b " << b << " n " << n;
         }
-        ASSERT_EQ(compute_fill(g.bits, a), plain_fill(g.plain, a)) << "vertex " << a;
+        ASSERT_EQ(fill_of(g.bits, a), plain_fill(g.plain, a)) << "vertex " << a;
     }
 }
 
@@ -149,7 +154,7 @@ TEST(BitAdjacencyTest, SingleBitRowsAtEveryPositionOfALargeGraph) {
         EXPECT_EQ(range.last, u / 64 + 1);
         EXPECT_EQ(bits.common(u, v, range), 0U);
         EXPECT_EQ(bits.common(v, v, range), 1U);
-        EXPECT_EQ(compute_fill(bits, v), 0U);
+        EXPECT_EQ(fill_of(bits, v), 0U);
     }
 }
 
@@ -160,7 +165,7 @@ TEST(BitAdjacencyTest, AnEmptiedRowHasAnEmptyRangeAndNoFill) {
     const BitAdjacency::WordRange range = g.bits.nonzero_range(0);
     EXPECT_EQ(range.first, 0U);
     EXPECT_EQ(range.last, 0U);
-    EXPECT_EQ(compute_fill(g.bits, 0), 0U);
+    EXPECT_EQ(fill_of(g.bits, 0), 0U);
     for (std::size_t b = 1; b < 130; ++b) {
         EXPECT_EQ(g.bits.common(b, 0, range), 0U);
     }
@@ -214,11 +219,27 @@ TEST(BitAdjacencyTest, TheSpanStaysExactUnderInterleavedSetsResetsAndClears) {
     }
 }
 
+TEST(BitAdjacencyTest, BothFillCountingPathsAgreeWithTheOracle) {
+    // compute_fill counts |N(a) & N(v)| by bit tests when v has fewer
+    // neighbours than words in its span and by popcounts otherwise
+    // (docs/adr/0025 section 12.3, C.1b): rows of a few far-apart bits take
+    // the first path, dense rows the second.
+    std::mt19937_64 rng(13);
+    for (const std::size_t n : {640U, 1000U}) {
+        for (const double density : {0.002, 0.005, 0.05, 0.3}) {
+            const Graph g = random_graph({n, density, false}, rng);
+            for (std::size_t v = 0; v < n; ++v) {
+                ASSERT_EQ(fill_of(g.bits, v), plain_fill(g.plain, v)) << "n " << n << " v " << v;
+            }
+        }
+    }
+}
+
 TEST(BitAdjacencyTest, FullGraphHasNoFill) {
     std::mt19937_64 rng(11);
     const Graph g = random_graph({129, 1.0, false}, rng);
     for (std::size_t v = 0; v < 129; ++v) {
-        EXPECT_EQ(compute_fill(g.bits, v), 0U);
+        EXPECT_EQ(fill_of(g.bits, v), 0U);
         EXPECT_EQ(g.bits.common(v, (v + 1) % 129, g.bits.nonzero_range((v + 1) % 129)), 127U);
     }
 }
