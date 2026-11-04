@@ -31,7 +31,7 @@ Returned by `menos.run`. See [Python API](/reference/python-api#result) for the 
 | `expectation_value` | `complex` or `None` |
 | `exact` | `bool` |
 | `actual_state_bytes` | `int` |
-| `peak_host_bytes`, `peak_device_bytes` | `int` |
+| `peak_host_bytes`, `peak_device_bytes`, `peak_disk_bytes` | `int` |
 | `execute_seconds`, `sample_seconds` | `float` |
 | `explain()` | `str` |
 

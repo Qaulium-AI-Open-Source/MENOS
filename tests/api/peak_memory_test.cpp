@@ -136,6 +136,38 @@ TEST(PeakMemoryTest, ExplainAppendsBothPeaksToTheActualLine) {
     EXPECT_TRUE(line.ends_with(
         std::format(" peak_host_bytes={} peak_device_bytes=0", result.peak_host_bytes())))
         << line;
+    // No disk-tier region: the Phase 23 field is absent, not 0.
+    EXPECT_EQ(result.peak_disk_bytes(), 0U);
+    EXPECT_EQ(text.find("peak_disk_bytes="), std::string::npos) << text;
+}
+
+TEST(PeakMemoryTest, ExplainAppendsTheDiskPeakOnlyWhenThereWasOne) {
+    const Result run_result =
+        run(entangled(8), on_cpu(RunOptions{.shots = 0, .want_statevector = true, .seed = 1}));
+    // A Result carrying a scratch-file peak, as the runtime builds one for a
+    // disk-tier plan (Phase 23, docs/adr/0027).
+    const Result with_disk(run_result.counts(),
+                           std::nullopt,
+                           std::nullopt,
+                           /*exact=*/true,
+                           run_result.plan(),
+                           run_result.actual_state_bytes(),
+                           /*execute_seconds=*/0.0,
+                           /*sample_seconds=*/0.0,
+                           /*replans=*/{},
+                           /*expectation_standard_error=*/std::nullopt,
+                           run_result.peak_host_bytes(),
+                           /*peak_device_bytes=*/0,
+                           /*peak_disk_bytes=*/123456);
+    EXPECT_EQ(with_disk.peak_disk_bytes(), 123456U);
+    const std::string text = with_disk.explain();
+    const std::size_t actual = text.find("actual     state_bytes=");
+    ASSERT_NE(actual, std::string::npos);
+    const std::string line = text.substr(actual, text.find('\n', actual) - actual);
+    EXPECT_TRUE(
+        line.ends_with(std::format(" peak_host_bytes={} peak_device_bytes=0 peak_disk_bytes=123456",
+                                   run_result.peak_host_bytes())))
+        << line;
 }
 
 TEST(PeakMemoryTest, APlanWithNoCudaReportsNoDeviceFigures) {

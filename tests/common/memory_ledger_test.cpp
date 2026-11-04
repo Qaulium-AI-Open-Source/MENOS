@@ -8,7 +8,8 @@
 #include <vector>
 
 // Phase 21 (docs/adr/0025 section 3.2): the ledger behind
-// Result::peak_host_bytes() and peak_device_bytes().
+// Result::peak_host_bytes() and peak_device_bytes(), and from Phase 23
+// (docs/adr/0027) peak_disk_bytes().
 
 namespace menos::common {
 namespace {
@@ -44,6 +45,28 @@ TEST(MemoryLedgerTest, HostAndDeviceAreSeparate) {
     }
     EXPECT_EQ(ledger.peak_host_bytes(), 64U);
     EXPECT_EQ(ledger.peak_device_bytes(), 4096U);
+}
+
+TEST(MemoryLedgerTest, DiskIsAThirdSeparateSpace) {
+    MemoryLedger ledger;
+    const MemoryLedger::Scope scope(ledger);
+    {
+        const Charge host(64);
+        const Charge device(4096, Space::Device);
+        const Charge disk(1U << 20, Space::Disk);
+        EXPECT_EQ(ledger.live_host_bytes(), 64U);
+        EXPECT_EQ(ledger.live_device_bytes(), 4096U);
+        EXPECT_EQ(ledger.live_disk_bytes(), 1U << 20);
+        {
+            const Charge window(2U << 20, Space::Disk);
+            EXPECT_EQ(ledger.live_disk_bytes(), 3U << 20);
+        }
+        EXPECT_EQ(ledger.live_disk_bytes(), 1U << 20);
+    }
+    EXPECT_EQ(ledger.live_disk_bytes(), 0U);
+    EXPECT_EQ(ledger.peak_host_bytes(), 64U);
+    EXPECT_EQ(ledger.peak_device_bytes(), 4096U);
+    EXPECT_EQ(ledger.peak_disk_bytes(), 3U << 20);
 }
 
 TEST(MemoryLedgerTest, SetReplacesTheFigureAndReleaseEndsIt) {

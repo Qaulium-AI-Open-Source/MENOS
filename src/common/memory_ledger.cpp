@@ -28,22 +28,51 @@ std::uint64_t MemoryLedger::live_device_bytes() const {
     return live_device_;
 }
 
+std::uint64_t MemoryLedger::peak_disk_bytes() const {
+    return peak_disk_;
+}
+
+std::uint64_t MemoryLedger::live_disk_bytes() const {
+    return live_disk_;
+}
+
 MemoryLedger* MemoryLedger::installed() {
     return installed_ledger;
 }
 
-void MemoryLedger::add(Space space, std::uint64_t bytes) {
-    if (space == Space::Host) {
-        live_host_ += bytes;
-        peak_host_ = std::max(peak_host_, live_host_);
-    } else {
-        live_device_ += bytes;
-        peak_device_ = std::max(peak_device_, live_device_);
+std::uint64_t& MemoryLedger::live_of(Space space) {
+    switch (space) {
+        case Space::Host:
+            return live_host_;
+        case Space::Device:
+            return live_device_;
+        case Space::Disk:
+            return live_disk_;
     }
+    return live_host_;  // unreachable: every Space is a case above
+}
+
+std::uint64_t& MemoryLedger::peak_of(Space space) {
+    switch (space) {
+        case Space::Host:
+            return peak_host_;
+        case Space::Device:
+            return peak_device_;
+        case Space::Disk:
+            return peak_disk_;
+    }
+    return peak_host_;  // unreachable: every Space is a case above
+}
+
+void MemoryLedger::add(Space space, std::uint64_t bytes) {
+    std::uint64_t& live = live_of(space);
+    live += bytes;
+    std::uint64_t& peak = peak_of(space);
+    peak = std::max(peak, live);
 }
 
 void MemoryLedger::remove(Space space, std::uint64_t bytes) {
-    (space == Space::Host ? live_host_ : live_device_) -= bytes;
+    live_of(space) -= bytes;
 }
 
 MemoryLedger::Scope::Scope(MemoryLedger& ledger) : previous_(installed_ledger) {

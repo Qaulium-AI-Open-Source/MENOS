@@ -5,8 +5,9 @@
 
 #include "menos/bitstring.h"
 
-// The memory a job's execution actually held, as Result::peak_host_bytes() and
-// Result::peak_device_bytes() report it (Phase 21, docs/adr/0025 section 3.2).
+// The memory a job's execution actually held, as Result::peak_host_bytes(),
+// Result::peak_device_bytes() and Result::peak_disk_bytes() report it (Phase 21,
+// docs/adr/0025 section 3.2; the disk space is Phase 23, docs/adr/0027).
 //
 // The runtime installs one MemoryLedger for each execution attempt, on the
 // thread that runs it. Every buffer whose size grows with the problem holds a
@@ -14,8 +15,9 @@
 // handed over to the result: the engines' states, scratch and SVD workspace,
 // their samplers and histograms, the tensor network's live tensors, the
 // stabilizer tableaux, the Pauli term lists, the device buffers, and the
-// runtime's own combination buffers. The ledger keeps their running total and
-// its highest point, for host and device memory separately.
+// runtime's own combination buffers, and the disk tier's scratch file. The
+// ledger keeps their running total and its highest point, for host memory,
+// device memory and disk space separately.
 //
 // Charges are made explicitly where the buffers are allocated, rather than
 // through an allocator as section 3.2 first proposed: the statevector is moved
@@ -34,7 +36,10 @@ namespace menos::common {
 
 class MemoryLedger {
 public:
-    enum class Space { Host, Device };
+    // Host memory, CUDA device memory, or the scratch file of the disk tier
+    // (Phase 23): three separate totals, because a byte in one is not a byte
+    // in another and each has its own budget.
+    enum class Space { Host, Device, Disk };
 
     MemoryLedger() = default;
     MemoryLedger(const MemoryLedger&) = delete;
@@ -46,9 +51,11 @@ public:
     // The highest total of live charges since construction.
     [[nodiscard]] std::uint64_t peak_host_bytes() const;
     [[nodiscard]] std::uint64_t peak_device_bytes() const;
+    [[nodiscard]] std::uint64_t peak_disk_bytes() const;
     // The total of the charges live now.
     [[nodiscard]] std::uint64_t live_host_bytes() const;
     [[nodiscard]] std::uint64_t live_device_bytes() const;
+    [[nodiscard]] std::uint64_t live_disk_bytes() const;
 
     // The ledger installed on this thread, or null.
     [[nodiscard]] static MemoryLedger* installed();
@@ -98,11 +105,15 @@ public:
 private:
     void add(Space space, std::uint64_t bytes);
     void remove(Space space, std::uint64_t bytes);
+    [[nodiscard]] std::uint64_t& live_of(Space space);
+    [[nodiscard]] std::uint64_t& peak_of(Space space);
 
     std::uint64_t live_host_ = 0;
     std::uint64_t peak_host_ = 0;
     std::uint64_t live_device_ = 0;
     std::uint64_t peak_device_ = 0;
+    std::uint64_t live_disk_ = 0;
+    std::uint64_t peak_disk_ = 0;
 };
 
 // The bytes a std::vector's buffer holds.

@@ -40,7 +40,8 @@ Result::Result(std::map<BitString, std::uint64_t> counts,
                std::vector<ReplanEvent> replans,
                std::optional<double> expectation_standard_error,
                std::uint64_t peak_host_bytes,
-               std::uint64_t peak_device_bytes)
+               std::uint64_t peak_device_bytes,
+               std::uint64_t peak_disk_bytes)
     // NOLINTEND(bugprone-easily-swappable-parameters)
     : counts_(std::move(counts)),
       statevector_(std::move(statevector)),
@@ -53,7 +54,8 @@ Result::Result(std::map<BitString, std::uint64_t> counts,
       replans_(std::move(replans)),
       expectation_standard_error_(expectation_standard_error),
       peak_host_bytes_(peak_host_bytes),
-      peak_device_bytes_(peak_device_bytes) {}
+      peak_device_bytes_(peak_device_bytes),
+      peak_disk_bytes_(peak_disk_bytes) {}
 
 const std::map<BitString, std::uint64_t>& Result::counts() const {
     return counts_;
@@ -89,6 +91,10 @@ std::uint64_t Result::peak_host_bytes() const {
 
 std::uint64_t Result::peak_device_bytes() const {
     return peak_device_bytes_;
+}
+
+std::uint64_t Result::peak_disk_bytes() const {
+    return peak_disk_bytes_;
 }
 
 double Result::execute_seconds() const {
@@ -148,6 +154,12 @@ std::string Result::explain() const {
                               sample_seconds_,
                               peak_host_bytes_,
                               peak_device_bytes_);
+    // The disk tier's scratch file (Phase 23, docs/adr/0027), printed only
+    // when there was one, so every other report is byte-identical to a
+    // pre-Phase-23 one.
+    if (peak_disk_bytes_ > 0) {
+        out += std::format(" peak_disk_bytes={}", peak_disk_bytes_);
+    }
     if (expectation_value_.has_value()) {
         out +=
             "\n" + label("expectation") +

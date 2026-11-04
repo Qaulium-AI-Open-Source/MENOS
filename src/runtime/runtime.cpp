@@ -157,7 +157,8 @@ Result execute_direct(Plan&& plan,
                   /*replans=*/{},
                   result.expectation_standard_error,
                   ledger.peak_host_bytes(),
-                  ledger.peak_device_bytes());
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
 }
 
 // {1, 0}: a static, never-allocated |0> amplitude pair for an idle
@@ -397,7 +398,8 @@ Result execute_factorized(Plan&& plan,
                   /*replans=*/{},
                   /*expectation_standard_error=*/std::nullopt,
                   ledger.peak_host_bytes(),
-                  ledger.peak_device_bytes());
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
 }
 
 }  // namespace
@@ -531,15 +533,17 @@ Result execute_cut(Plan&& plan,
                   /*replans=*/{},
                   /*expectation_standard_error=*/std::nullopt,
                   ledger.peak_host_bytes(),
-                  ledger.peak_device_bytes());
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
 }
 
 Result Runtime::execute(Plan&& plan,
                         const menos::plan::JobSpec& job_spec,
                         const ExecutionMonitor* monitor) const {
     // One ledger per execution attempt, installed on this thread for the
-    // engines' charges (docs/adr/0025 section 3.2). Its peak is what
-    // Result::peak_host_bytes() and peak_device_bytes() report.
+    // engines' charges (docs/adr/0025 section 3.2). Its peaks are what
+    // Result::peak_host_bytes(), peak_device_bytes() and peak_disk_bytes()
+    // report.
     common::MemoryLedger ledger;
     const common::MemoryLedger::Scope scope(ledger);
     if (plan.strategy == Strategy::CutAndRecombine) {

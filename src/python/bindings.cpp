@@ -223,6 +223,9 @@ NB_MODULE(_core, m) {
         // memory the execution held, measured by the runtime's memory ledger.
         .def_prop_ro("peak_host_bytes", &menos::Result::peak_host_bytes)
         .def_prop_ro("peak_device_bytes", &menos::Result::peak_device_bytes)
+        // Phase 23 (docs/adr/0027): the disk tier's scratch file; 0 for a
+        // plan with no disk-tier region.
+        .def_prop_ro("peak_disk_bytes", &menos::Result::peak_disk_bytes)
         .def_prop_ro("execute_seconds", &menos::Result::execute_seconds)
         .def_prop_ro("sample_seconds", &menos::Result::sample_seconds)
         // Phase 17 (docs/adr/0021 section 3): the abandoned attempts of a job
