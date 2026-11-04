@@ -1,0 +1,20 @@
+f451a7f Phase 23 step 5: a connected gate circuit; the gate record's summariser
+ M src/common/observable_restrict.cpp
+wsl vhd before: 63802703872 bytes; C: free 253090443264 bytes
+11:39:25 start power: status=2 charge=100
+11:39:27 after-build power: status=2 charge=100
+== gate 11:39:27
+gate driver exit 0
+11:57:03 end power: status=2 charge=100
+wsl vhd after: 63802703872 bytes; C: free 252925198336 bytes
+== done 11:57:03
+f451a7f Phase 23 step 5: a connected gate circuit; the gate record's summariser
+ M src/common/observable_restrict.cpp
+wsl vhd before: 63802703872 bytes; C: free 252925132800 bytes
+11:57:04 start power: status=2 charge=100
+11:57:06 after-build power: status=2 charge=100
+== gate 11:57:06
+gate driver exit 0
+12:07:59 end power: status=2 charge=100
+wsl vhd after: 63802703872 bytes; C: free 252563058688 bytes
+== done 12:07:59

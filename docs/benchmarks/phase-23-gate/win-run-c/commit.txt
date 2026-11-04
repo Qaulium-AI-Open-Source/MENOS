@@ -1,0 +1,2 @@
+f451a7f Phase 23 step 5: a connected gate circuit; the gate record's summariser
+ M src/common/observable_restrict.cpp

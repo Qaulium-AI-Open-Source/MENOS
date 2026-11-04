@@ -116,8 +116,10 @@ TEST(TierRequestTest, AJobWhoseStateDoesNotFitRunsOnTheDiskTierWithTheSameOutput
     EXPECT_EQ(actual.plan().regions[0].tier, Tier::Disk);
     EXPECT_EQ(actual.counts(), expected.counts());
     ASSERT_TRUE(actual.expectation_value().has_value());
-    const std::complex<double> actual_value = actual.expectation_value().value_or({});
-    const std::complex<double> expected_value = expected.expectation_value().value_or({});
+    const std::complex<double> actual_value =
+        actual.expectation_value().value_or(std::complex<double>{});
+    const std::complex<double> expected_value =
+        expected.expectation_value().value_or(std::complex<double>{});
     EXPECT_TRUE(same_bits(actual_value, expected_value))
         << actual_value << " vs " << expected_value;
     EXPECT_EQ(actual.peak_disk_bytes(), std::uint64_t{16} << kN);

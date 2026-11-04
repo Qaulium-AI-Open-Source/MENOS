@@ -199,7 +199,8 @@ nlohmann::json describe(const menos::Result& result, double wall_seconds) {
     j["counts_distinct"] = result.counts().size();
     j["counts_digest"] = counts_digest(result.counts());
     if (result.expectation_value().has_value()) {
-        const std::complex<double> value = result.expectation_value().value_or({});
+        const std::complex<double> value =
+            result.expectation_value().value_or(std::complex<double>{});
         j["expectation_real"] = value.real();
         j["expectation_imag"] = value.imag();
         j["expectation_real_bits"] = std::bit_cast<std::uint64_t>(value.real());
@@ -288,8 +289,10 @@ int main() {
         std::cerr << "   " << wall << " s\n";
 
         const bool same_counts = memory_result.counts() == disk_result.counts();
-        const std::complex<double> a = memory_result.expectation_value().value_or({});
-        const std::complex<double> b = disk_result.expectation_value().value_or({});
+        const std::complex<double> a =
+            memory_result.expectation_value().value_or(std::complex<double>{});
+        const std::complex<double> b =
+            disk_result.expectation_value().value_or(std::complex<double>{});
         const bool same_expectation =
             std::bit_cast<std::uint64_t>(a.real()) == std::bit_cast<std::uint64_t>(b.real()) &&
             std::bit_cast<std::uint64_t>(a.imag()) == std::bit_cast<std::uint64_t>(b.imag());
