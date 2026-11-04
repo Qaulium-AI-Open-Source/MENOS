@@ -5,7 +5,7 @@ candidate 0strategy=direct_dense feasible=false winner=false reason="checked_pow
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
 candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
 candidate 3strategy=direct_mps feasible=false winner=false reason="direct mps simulation requires 870446746240 bytes, budget is 8589934592 bytes"
-candidate 4strategy=direct_tensor_network feasible=true winner=false peak_bytes=65536 work_units=3580198848
+candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped before any elimination search: a lower bound of 20857968 work units over its 127 observable terms (from each term's network size) is already more than the 2105344 of a cheaper feasible alternative"
 candidate 5strategy=factorized feasible=true winner=true peak_bytes=4096 work_units=2105344
 candidate 6strategy=cut_and_recombine feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in fragment 1 of 9, at 2783232 work units, already more than the 2105344 of a cheaper feasible alternative"
 strategy   factorized (exact)
