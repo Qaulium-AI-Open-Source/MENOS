@@ -530,3 +530,48 @@ Raw results: `bench/raw/calibration_sensitivity_{cpu,cuda}.txt`.
   possible. It needs two candidates whose estimated seconds (or CPU and CUDA
   times) are within the calibration spread of each other, or of the budget.
   The corpus simply has no such pair.
+
+## 12. Step 2, pass 2: audit, harden, strengthen (owner request 2026-11-04)
+
+The owner asked for three things, in order: (A) an audit of the three data
+structures added in step 2; (B) targeted tests and microbenchmarks for each;
+(C) one measured strengthening change per commit against `c8f9083`.
+Changes that do not help are reverted, and their numbers are kept here.
+
+### 12.1 Audit of the step-2 structures — [MENOS], read from the diffs
+
+| | (d) non-zero-span `common()` | (b) vertex-choice heap | (c) Schmidt-rank cache |
+|---|---|---|---|
+| Commit | `0a5ec7c` | `bba745c` | `c8f9083` |
+| File | `src/analysis/treewidth.cpp`, `BitAdjacency` (anonymous namespace) | same file, `estimate_treewidth_min_fill_dense` | `src/analysis/schmidt_rank_bound.cpp`, `compute_schmidt_rank_bound` |
+| Structure | One `uint64_t` bitset row per vertex; `WordRange{first, last}`, the span of v's non-zero words, computed once per `compute_fill(v)`; `common(a, v, range)` popcounts `row(a) & row(v)` over that span only; `compute_fill` carries `target_clones("popcnt", "default")` | `std::priority_queue<std::pair<size_t, size_t>, std::vector<…>, std::greater<>>` of (fill, vertex), lazy deletion | `std::unordered_map<std::string, std::uint64_t>`, a local of one `compute_schmidt_rank_bound` call, plus one reused `std::string` key buffer |
+| Replaced | A popcount over every word of the row | A linear scan of every remaining vertex on each elimination step | One SVD (`zgesdd`) per (operation, spanned cut) |
+| Order / key | The same integer as the full popcount: the words outside v's span are zero | `pair` compares fill, then vertex, so ties go to the lowest index, exactly as the scan's strict `<` | `char(k)`, then `char(p)` for each left position p, then `'|'`, then the matrix's raw bytes |
+| Stale entries | — | A popped entry is skipped if its vertex is eliminated or its fill is no longer the current one. An entry is pushed only when a vertex's fill changes, so every remaining vertex always has one current entry | None: the cache dies with the call |
+| Empty row | `nonzero_range` returns `{0, 0}`, so no word is read; `k*(k-1)/2` with k = 0 is 0. No UB | — | — |
+| Size bound | Fixed: n·⌈n/64⌉ words, as before | n + the number of fill changes over the whole search (no decrease-key) | One entry per distinct (matrix, split); each key holds a full copy of the matrix. No cap, no eviction |
+| Thread safety | Every structure is function-local. `plan_job` shares no mutable state across calls here, so concurrent planning cannot race on them, and TSan adds nothing for these three | (same) | (same) |
+| Invalidation | — | — | Not needed: the cache is built and dropped within one call over one operation list |
+
+**Risks found:**
+1. **(b) heap growth [MENOS].** Without decrease-key, the heap holds up to
+   n + Σ(fill changes) entries of 16 bytes. Each step can change the fill of
+   every vertex within distance 2 of the eliminated one, so the worst case
+   is O(n²). That is hundreds of MB near the dense path's n ≈ 23000 limit.
+   It is not counted in any memory estimate. 12.2 measures the real peak
+   per corpus job.
+2. **(c) unbounded memory [MENOS].** Each distinct key copies the whole
+   16·4^k-byte matrix. A wide `UnitaryOp` spanning k − 1 cuts with distinct
+   splits keeps k − 1 copies until the call returns: for k = 12, about
+   2.8 GB. The SVD workspace for such a matrix is transient; the cache's
+   copies accumulate across operations.
+3. **(c) key encoding [MENOS].** The key is injective only while every
+   position byte stays below `'|'` (124) and k ≤ 127 fits the `char` cast.
+   Both always hold in practice, since a matrix with k ≥ 124 cannot be
+   allocated, but nothing checks it. The fix is fixed-width fields.
+4. **(c) collisions and ±0 [MENOS].** `std::unordered_map` compares whole
+   keys, so a hash collision costs time, never correctness. +0.0 and −0.0
+   give distinct keys: correct, with less sharing. A NaN's bytes are
+   deterministic, so equal bytes still mean equal inputs to the SVD.
+
+No correctness defect was found. The two memory risks are fixed in C.
