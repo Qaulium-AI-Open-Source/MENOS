@@ -103,7 +103,8 @@ add_executable(menos_tiered_memory_benchmark
     menos_benchmark_main.cpp
 )
 target_link_libraries(menos_tiered_memory_benchmark PRIVATE
-    menos_engines_dense menos_ir menos_common menos_benchmark_environment benchmark::benchmark
+    menos_engines_dense menos_engines_dense_tiered menos_ir menos_common menos_benchmark_environment
+    benchmark::benchmark
     nlohmann_json::nlohmann_json  # MENOS_TIERED_MEMORY_JSON output
 )
 target_compile_options(menos_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})

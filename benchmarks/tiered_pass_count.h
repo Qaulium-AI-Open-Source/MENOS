@@ -2,22 +2,17 @@
 
 // The pass count of the chunked executor docs/adr/0027 section 3.2 proposes,
 // as a pure function of a circuit, the number of local qubits L and the
-// window's global-qubit capacity w -- Phase 23 step 1's analysis (iv), before
-// any engine code exists. Step 2 moves this walk into src/ with tests.
-//
-// Qubits 0..L-1 are local (index bits inside a chunk), L..n-1 global (the
-// chunk number). A pass holds a set G of at most w global qubits and absorbs
-// every consecutive operation whose global operands lie in G; the greedy rule
-// extends G with a gate's global operands while that fits, and otherwise
-// closes the pass and opens the next with that gate's global operands.
+// window's global-qubit capacity w. Phase 23 step 1's analysis (iv) ran this
+// greedy walk from a benchmark-local copy before any engine code existed
+// (commit 88294be, docs/benchmarks/phase-23-baseline); step 2d moved the walk
+// into src/engines/dense_tiered/pass_plan.h with its tests, and this header
+// is now a view of that plan in the benchmark's own terms, so the benchmark's
+// table is produced by the code the executor runs.
 
-#include <algorithm>
 #include <cstdint>
-#include <iterator>
 #include <span>
-#include <variant>
-#include <vector>
 
+#include "engines/dense_tiered/pass_plan.h"
 #include "menos/circuit.h"
 
 namespace menos::benchmarks {
@@ -40,52 +35,15 @@ struct PassCountRequest {
 
 inline PassCount count_passes(std::span<const menos::Operation> operations,
                               PassCountRequest request) {
-    PassCount result;
-    std::vector<std::uint32_t> group;  // G, sorted
-    bool open = false;
-    for (const menos::Operation& operation : operations) {
-        const std::vector<menos::QubitId>* qubits = nullptr;
-        if (const auto* gate = std::get_if<menos::GateOp>(&operation)) {
-            qubits = &gate->qubits;
-        } else if (const auto* unitary = std::get_if<menos::UnitaryOp>(&operation)) {
-            qubits = &unitary->qubits;
-        } else {
-            continue;  // measurements and channels are not passes
-        }
-        std::vector<std::uint32_t> globals;
-        for (const menos::QubitId q : *qubits) {
-            if (q >= request.local_qubits) {
-                globals.push_back(q);
-            }
-        }
-        std::sort(globals.begin(), globals.end());
-        result.max_global_operands =
-            std::max(result.max_global_operands, static_cast<std::uint32_t>(globals.size()));
-        if (globals.size() > request.window_globals) {
-            result.window_too_small = true;
-        }
-        if (!globals.empty()) {
-            ++result.global_gates;
-        }
-        if (!open) {
-            open = true;
-            group = globals;
-            continue;
-        }
-        std::vector<std::uint32_t> merged;
-        std::set_union(
-            group.begin(), group.end(), globals.begin(), globals.end(), std::back_inserter(merged));
-        if (merged.size() <= request.window_globals) {
-            group = std::move(merged);
-        } else {
-            ++result.passes;
-            group = globals;
-        }
-    }
-    if (open) {
-        ++result.passes;
-    }
-    return result;
+    // The qubit count does not enter the count: only which operands are at
+    // or above local_qubits does.
+    const engines::dense_tiered::PassPlan plan =
+        engines::dense_tiered::build_pass_plan(operations,
+                                               /*num_qubits=*/64,
+                                               request.local_qubits,
+                                               request.local_qubits + request.window_globals);
+    return PassCount{
+        plan.pass_count(), plan.global_gates, plan.max_global_operands, plan.window_too_small};
 }
 
 }  // namespace menos::benchmarks

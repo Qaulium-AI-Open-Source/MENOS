@@ -139,6 +139,27 @@ struct DeviceCost {
 // candidates and by SimulationEngine::estimate() (Phase 4 onward) -- the
 // same shape serves both a whole-circuit candidate and a single region's
 // per-engine estimate.
+// What executing a candidate on a memory tier other than InMemory costs
+// (Phase 23, docs/adr/0027 section 3): the state is read and written through
+// the tier's link once per pass, which is what the planner prices with the
+// link's measured bandwidth beside the work units. All zero for an in-memory
+// engine, which never mentions it, so every pre-Phase-23 estimate is unchanged.
+struct TierCost {
+    // Gate passes over the whole state (docs/adr/0027 section 3.2), from the
+    // circuit's own pass plan: what the executor will run, not a model of it.
+    std::uint64_t passes = 0;
+    // The chunk the executor chose, 2^chunk_qubits amplitudes, and its window
+    // of 2^window_qubits amplitudes in host memory.
+    std::uint32_t chunk_qubits = 0;
+    std::uint32_t window_qubits = 0;
+    // Bytes crossing the tier's link in all: the initial write of the state,
+    // each pass's read and write, and the reads the outputs need.
+    std::uint64_t link_bytes = 0;
+    // The scratch file's size, 16 * 2^n, for the disk tier; 0 for a tier with
+    // no file.
+    std::uint64_t file_bytes = 0;
+};
+
 struct CostEstimate {
     bool feasible;
     std::uint64_t estimated_peak_bytes;
@@ -147,6 +168,9 @@ struct CostEstimate {
     // Everything about running this candidate on an accelerator. All zero for
     // a CPU engine, which never mentions it (Phase 10, docs/adr/0014).
     DeviceCost device = {};
+    // Everything about running this candidate on a memory tier. All zero for
+    // an in-memory engine (Phase 23, docs/adr/0027).
+    TierCost tier = {};
 };
 
 // A region is a contiguous local-index sub-circuit assigned an engine and
