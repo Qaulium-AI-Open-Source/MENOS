@@ -11,8 +11,11 @@
 
 #include <complex>
 #include <cstdint>
+#include <limits>
+#include <string>
 #include <vector>
 
+#include "common/error.h"
 #include "kernels/cuda/device_buffer.h"
 #include "kernels/cuda/device_info.h"
 #include "kernels/cuda/device_pool.h"
@@ -100,6 +103,44 @@ TEST(CudaDevicePoolTest, AvailableBytesCountTheRetainedPool) {
     EXPECT_GE(device_available_bytes(), device_free_bytes() + kBlockBytes);
     device_pool().trim();
     EXPECT_EQ(device_pool_bytes(), 0U);
+}
+
+// Phase 23 (docs/adr/0027 section 9, Q8(i)): memory another process took
+// between the plan and the allocation is a named resource refusal, not an
+// internal error. A direct driver allocation outside the pool stands in for
+// the other process.
+TEST(CudaDevicePoolTest, ADeviceThatRanOutSinceThePlanIsARefusalNamingTheBytes) {
+    if (!device_info().present) {
+        GTEST_SKIP() << "no CUDA device";
+    }
+    device_pool().trim();
+    constexpr std::uint64_t kHeadroom = std::uint64_t{32} << 20;
+    const std::uint64_t free_before = device_free_bytes();
+    if (free_before <= 2 * kHeadroom) {
+        GTEST_SKIP() << "the device has too little free memory to stage the race";
+    }
+    DevicePool other_process(/*use_pool=*/false);
+    void* hog = other_process.allocate(free_before - kHeadroom);
+    ASSERT_NE(hog, nullptr);
+    try {
+        // A state the plan would have found room for, asked for after the
+        // device filled up: 256 MiB against 32 MiB left.
+        const DeviceBuffer state(std::size_t{1} << 24, std::numeric_limits<std::uint64_t>::max());
+        FAIL() << "expected ResourceExceeded";
+    } catch (const common::ResourceExceeded& e) {
+        const std::string what = e.what();
+        EXPECT_NE(what.find("could not provide " + std::to_string(std::uint64_t{16} << 24) +
+                            " bytes of device memory"),
+                  std::string::npos)
+            << what;
+        EXPECT_NE(what.find("bytes are free now"), std::string::npos) << what;
+        EXPECT_NE(what.find("retained in MENOS's pool"), std::string::npos) << what;
+    }
+    other_process.release(hog);
+    // The device works again once the memory is back, and the sticky error
+    // was cleared.
+    const DeviceBuffer after(kBlockAmplitudes, std::numeric_limits<std::uint64_t>::max());
+    initialize(after.state(), 0.0);
 }
 
 TEST(CudaDevicePoolTest, APooledStateIsInitializedExactlyAsBefore) {

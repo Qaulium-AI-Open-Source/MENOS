@@ -2,6 +2,9 @@
 
 #include <cuda_runtime.h>
 
+#include <string>
+
+#include "common/error.h"
 #include "kernels/cuda/cuda_error.h"
 #include "kernels/cuda/device_info.h"
 
@@ -64,12 +67,26 @@ bool DevicePool::pooled() const {
 
 void* DevicePool::allocate(std::uint64_t bytes) {
     void* data = nullptr;
+    const cudaError_t status = pooled_
+                                   ? cudaMallocFromPoolAsync(&data, bytes, as_pool(pool_), nullptr)
+                                   : cudaMalloc(&data, bytes);
+    if (status == cudaErrorMemoryAllocation) {
+        // The device ran out between the plan and the allocation: another
+        // process took the memory the plan was checked against (Phase 23,
+        // docs/adr/0027 section 9, Q8(i)). A resource refusal, named, not an
+        // internal error: nothing in MENOS is wrong. The sticky error is
+        // cleared so the next call starts clean.
+        static_cast<void>(cudaGetLastError());
+        throw common::ResourceExceeded(
+            "the CUDA device could not provide " + std::to_string(bytes) +
+            " bytes of device memory: " + std::to_string(device_free_bytes()) +
+            " bytes are free now and " + std::to_string(reusable_bytes()) +
+            " are retained in MENOS's pool; another process may have taken device memory since "
+            "the job was planned");
+    }
+    ensure_cuda(status, pooled_ ? "cudaMallocFromPoolAsync" : "cudaMalloc");
     if (pooled_) {
-        ensure_cuda(cudaMallocFromPoolAsync(&data, bytes, as_pool(pool_), nullptr),
-                    "cudaMallocFromPoolAsync");
         ensure_cuda(cudaStreamSynchronize(nullptr), "cudaStreamSynchronize (allocation)");
-    } else {
-        ensure_cuda(cudaMalloc(&data, bytes), "cudaMalloc");
     }
     return data;
 }

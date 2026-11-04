@@ -109,6 +109,18 @@ target_link_libraries(menos_tiered_memory_benchmark PRIVATE
 )
 target_compile_options(menos_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 23 step 5 (docs/adr/0027 section 6): the disk tier's gate-scale runs
+# through the public API, one timed run each (a run writes a 16-32 GiB
+# scratch file), with its own main.
+add_executable(menos_tiered_gate_benchmark
+    tiered_gate_benchmark.cpp
+)
+target_link_libraries(menos_tiered_gate_benchmark PRIVATE
+    menos_api menos_benchmark_environment
+    nlohmann_json::nlohmann_json  # MENOS_TIERED_GATE_JSON output
+)
+target_compile_options(menos_tiered_gate_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
 if(MENOS_ENABLE_CUDA)
     # The CPU/CUDA crossover benchmark (docs/BUILD_PLAN.md Phase 10).
     add_executable(menos_cuda_crossover_benchmark

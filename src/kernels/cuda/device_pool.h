@@ -47,9 +47,13 @@ public:
     // Whether allocations come from the pool (true) or from cudaMalloc.
     [[nodiscard]] bool pooled() const;
 
-    // `bytes` of device memory, contents undefined. Throws InternalError if
-    // the allocation fails; callers check their budget before asking
-    // (DeviceBuffer).
+    // `bytes` of device memory, contents undefined. Callers check their
+    // budget before asking (DeviceBuffer); when the device still cannot
+    // provide the bytes -- another process took device memory between the
+    // plan and the allocation (Phase 23, docs/adr/0027 section 9, Q8(i)) --
+    // throws ResourceExceeded naming the bytes asked for, the bytes free now
+    // and the bytes the pool retains. Any other CUDA failure is an
+    // InternalError.
     [[nodiscard]] void* allocate(std::uint64_t bytes);
 
     // Returns `data` (from allocate(), or nullptr) to the pool or the driver.
