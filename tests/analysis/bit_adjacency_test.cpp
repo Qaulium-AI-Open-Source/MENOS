@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <random>
@@ -162,6 +163,54 @@ TEST(BitAdjacencyTest, AnEmptiedRowHasAnEmptyRangeAndNoFill) {
     EXPECT_EQ(compute_fill(g.bits, 0), 0U);
     for (std::size_t b = 1; b < 130; ++b) {
         EXPECT_EQ(g.bits.common(b, 0, range), 0U);
+    }
+}
+
+TEST(BitAdjacencyTest, TheSpanStaysExactUnderInterleavedSetsResetsAndClears) {
+    // The span is maintained incrementally (docs/adr/0025 section 12.3); it
+    // must match the row's real first and last non-zero words after every
+    // operation, including resets that empty an end word and rows emptied
+    // one bit at a time.
+    std::mt19937_64 rng(12);
+    for (const std::size_t n : {1U, 64U, 65U, 130U, 300U}) {
+        BitAdjacency bits(n);
+        Matrix plain(n, std::vector<bool>(n, false));
+        std::uniform_int_distribution<std::size_t> vertex(0, n - 1);
+        std::uniform_int_distribution<int> action(0, 99);
+        for (int i = 0; i < 20000; ++i) {
+            const std::size_t a = vertex(rng);
+            const std::size_t b = vertex(rng);
+            const int what = action(rng);
+            if (what < 45) {
+                bits.set(a, b);
+                plain[a][b] = true;
+            } else if (what < 99) {
+                bits.reset(a, b);
+                plain[a][b] = false;
+            } else {
+                bits.clear_row(a);
+                plain[a].assign(n, false);
+            }
+            std::size_t first = n;
+            std::size_t last = 0;
+            std::size_t degree = 0;
+            for (std::size_t u = 0; u < n; ++u) {
+                if (plain[a][u]) {
+                    first = std::min(first, u / 64);
+                    last = u / 64 + 1;
+                    ++degree;
+                }
+            }
+            const BitAdjacency::WordRange range = bits.nonzero_range(a);
+            if (degree == 0) {
+                ASSERT_EQ(range.first, 0U) << "n " << n << " op " << i;
+                ASSERT_EQ(range.last, 0U) << "n " << n << " op " << i;
+            } else {
+                ASSERT_EQ(range.first, first) << "n " << n << " op " << i;
+                ASSERT_EQ(range.last, last) << "n " << n << " op " << i;
+            }
+            ASSERT_EQ(bits.degree(a), degree);
+        }
     }
 }
 

@@ -645,3 +645,44 @@ instrumentation, not committed; the script is in the session scratchpad.
   counts_clifford/large has 10,299 hits and 1 miss, and
   expectation_factorized/large has 913 hits and 19 misses. Risk 2 of 12.1
   needs a wide `UnitaryOp`, which the corpus does not contain.
+
+### 12.3 Strengthening, one change per commit — [MEASURED]
+
+**Method.**
+- The machine was busier than in step 1: a qstudio job used about 7 cores,
+  with a load average of 6–9 on 16 hardware threads, and every core was
+  16–63% busy.
+- Runs are pinned to CPU 13 (the least-loaded core pair) and compare CPU
+  time, which excludes time spent descheduled.
+- Runs alternate before/after over 3 rounds × 5 repetitions. Each table
+  gives the pooled median ratio and the fastest-repetition ratio.
+- "Before" is the previous commit's binary.
+- Raw files: `bench/raw/step2_pass2/`.
+
+#### C.1a (d): each row's non-zero word span is maintained, not scanned — KEPT
+
+`nonzero_range` scanned the row from both ends on every `compute_fill`.
+In the re-profile at 46b2d93 it took 21% of expectation_factorized/large
+(12.1). `BitAdjacency` now keeps each row's exact span:
+- `set` widens it;
+- a `reset` that empties the word at either end narrows it past every
+  empty word there;
+- `clear_row` empties it.
+
+`degree`, `for_each_neighbor` and `clear_row` also walk the span only. The
+span is exact, so every popcount and neighbour visit is the same as before.
+
+A new test interleaves 20,000 sets, resets and clears per size and checks
+the span and degree after each one. Dropping the narrowing makes it fail.
+
+| Job | 46b2d93 | C.1a | Median | Fastest |
+|---|---|---|---|---|
+| expectation_factorized/large | 5303 ms | 3100 ms | 1.71x | 1.64x |
+| expectation_ising_budgeted/large | 1027 ms | 794 ms | 1.29x | 1.27x |
+| expectation_z_all/large | 45.8 ms | 34.9 ms | 1.31x | 1.19x |
+| expectation_ising/large | 46.2 ms | 38.1 ms | 1.21x | 1.25x |
+| expectation_cut/large | 17.4 ms | 15.1 ms | 1.16x | 1.14x |
+| expectation_factorized/small | 1.75 ms | 1.94 ms | 0.90x | 1.02x |
+
+The other jobs in the run were 1.02–1.22x. None was slower than its limit:
+factorized/small's spread was 28%, so its limit is 56%.
