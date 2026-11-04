@@ -27,16 +27,18 @@
 namespace menos::runtime {
 namespace {
 
-// Resolves a region's (engine, backend) pair. Both halves matter from Phase 10
-// on: Engine::Dense alone no longer identifies an implementation, since the CPU
-// and CUDA dense engines share it and differ only in backend.
-const SimulationEngine& engine_for(Engine engine, Backend backend) {
-    const SimulationEngine* found = plan::find_execution_engine(engine, backend);
+// Resolves a region's (engine, backend, tier) triple. Every coordinate matters:
+// from Phase 10 on Engine::Dense alone no longer identifies an implementation,
+// since the CPU and CUDA dense engines share it and differ only in backend, and
+// from Phase 23 the in-memory and disk dense engines share both and differ
+// only in tier (docs/adr/0027).
+const SimulationEngine& engine_for(Engine engine, Backend backend, Tier tier) {
+    const SimulationEngine* found = plan::find_execution_engine(engine, backend, tier);
     if (found == nullptr) {
         throw common::InternalError(
-            "engine_for: this build has no engine for the plan's (engine, backend) pair -- a "
-            "plan selecting a backend the runtime cannot execute is an internal invariant "
-            "violation");
+            "engine_for: this build has no engine for the plan's (engine, backend, tier) "
+            "triple -- a plan selecting an implementation the runtime cannot execute is an "
+            "internal invariant violation");
     }
     return *found;
 }
@@ -53,7 +55,7 @@ Result execute_direct(Plan&& plan,
     const Circuit& reduced_circuit =
         *plan.reduced_circuit;  // NOLINT(bugprone-unchecked-optional-access)
     const Region& region = plan.regions[0];
-    const SimulationEngine& engine = engine_for(region.engine, region.backend);
+    const SimulationEngine& engine = engine_for(region.engine, region.backend, region.tier);
     const bool want_expectation = job_spec.expectation.has_value();
 
     // final_writes must be computed from the light-cone-REDUCED circuit,
@@ -274,7 +276,7 @@ Result execute_factorized(Plan&& plan,
                     idle_region_expectation_terms(region_observable));
             }
         } else {
-            const SimulationEngine& engine = engine_for(region.engine, region.backend);
+            const SimulationEngine& engine = engine_for(region.engine, region.backend, region.tier);
             // global_phase is 0.0 here and applied once, as a
             // post-multiply over the whole global buffer below -- never
             // per region (docs/adr/0005's global-phase bug fix; unchanged
@@ -466,7 +468,8 @@ Result execute_cut(Plan&& plan,
             // runtime does no planning of its own.
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             const CutEvaluation& evaluation = plan.cut_summary->evaluations.at(f).at(a);
-            const SimulationEngine& engine = engine_for(evaluation.engine, Backend::Cpu);
+            const SimulationEngine& engine =
+                engine_for(evaluation.engine, Backend::Cpu, Tier::InMemory);
 
             const EngineExecutionRequest request{
                 .num_qubits = fragment_circuit.num_qubits(),

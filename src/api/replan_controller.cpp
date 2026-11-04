@@ -160,8 +160,10 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
                     "could use");
             }
 
-            observations.observe(
-                current.regions[0].engine, current.regions[0].backend, request.elapsed_seconds());
+            observations.observe(current.regions[0].engine,
+                                 current.regions[0].backend,
+                                 current.regions[0].tier,
+                                 request.elapsed_seconds());
 
             const double predicted = predicted_seconds_of(current);
             Plan replanned;
@@ -188,11 +190,16 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
                 .boundaries_crossed = request.boundaries_crossed(),
                 .engine = current.regions[0].engine,
                 .backend = current.regions[0].backend,
+                // Names the tier only when it is not the in-memory one, so a
+                // pre-Phase-23 report reads exactly as it did.
                 .reason = std::format(
-                    "observed runtime exceeded the time budget; {} on {} is excluded by an "
+                    "observed runtime exceeded the time budget; {} on {}{} is excluded by an "
                     "observed floor of {:.6g} s",
                     plan::engine_name(current.regions[0].engine),
                     plan::backend_name(current.regions[0].backend),
+                    current.regions[0].tier == Tier::InMemory
+                        ? std::string()
+                        : std::format(" (tier {})", plan::tier_name(current.regions[0].tier)),
                     request.elapsed_seconds()),
                 .superseded_plan = std::move(current),
             });

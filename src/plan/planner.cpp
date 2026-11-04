@@ -292,8 +292,8 @@ Plan plan_job(const JobSpec& job_spec,
         bool from_observation;
     };
     const auto raise_to_observed_floor =
-        [&](Engine engine, Backend backend, double modelled_seconds) -> FlooredSeconds {
-        const std::optional<double> floor = observations.floor_for(engine, backend);
+        [&](Engine engine, Backend backend, Tier tier, double modelled_seconds) -> FlooredSeconds {
+        const std::optional<double> floor = observations.floor_for(engine, backend, tier);
         if (floor.has_value() && *floor > modelled_seconds) {
             return {*floor, true};
         }
@@ -331,7 +331,7 @@ Plan plan_job(const JobSpec& job_spec,
             const std::optional<Engine> engine = single_engine_of(candidate.strategy);
             if (engine.has_value()) {
                 const FlooredSeconds floored =
-                    raise_to_observed_floor(*engine, candidate.backend, seconds);
+                    raise_to_observed_floor(*engine, candidate.backend, candidate.tier, seconds);
                 seconds = floored.seconds;
                 from_observation = floored.from_observation;
             }
@@ -744,6 +744,7 @@ Plan plan_job(const JobSpec& job_spec,
                 const double on_cpu =
                     raise_to_observed_floor(Engine::Dense,
                                             Backend::Cpu,
+                                            Tier::InMemory,
                                             cpu_seconds(dense_candidate.estimated_work_units,
                                                         dense_candidate.estimated_peak_bytes))
                         .seconds;
@@ -751,6 +752,7 @@ Plan plan_job(const JobSpec& job_spec,
                     raise_to_observed_floor(
                         Engine::Dense,
                         Backend::Cuda,
+                        Tier::InMemory,
                         cuda_seconds(cuda_estimate.estimated_work_units, cuda_estimate.device))
                         .seconds;
                 if (on_cuda < on_cpu) {

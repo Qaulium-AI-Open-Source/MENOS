@@ -63,6 +63,18 @@ std::string_view backend_name(Backend backend) {
     throw common::InternalError("backend_name: unknown Backend");
 }
 
+std::string_view tier_name(Tier tier) {
+    switch (tier) {
+        case Tier::InMemory:
+            return "in_memory";
+        case Tier::Disk:
+            return "disk";
+        case Tier::HostOffloaded:
+            return "host_offloaded";
+    }
+    throw common::InternalError("tier_name: unknown Tier");
+}
+
 }  // namespace plan
 
 namespace {
@@ -70,6 +82,7 @@ namespace {
 using plan::backend_name;
 using plan::engine_name;
 using plan::strategy_name;
+using plan::tier_name;
 
 // Left-justifies a label to an 11-character column, matching the example
 // report in docs/BUILD_PLAN.md Phase 1, 1.4.
@@ -94,6 +107,12 @@ std::string candidate_line(std::size_t index, const CandidateSummary& c, bool sh
         // of its regions run on CUDA. CPU candidates print nothing new.
         if (c.backend == Backend::Cuda || c.device.device_bytes > 0) {
             s += std::format(" device_bytes={}", c.device.device_bytes);
+        }
+        // A candidate costed for a memory tier (Phase 23, docs/adr/0027).
+        // Printed only then, so every report of a job whose state fits in
+        // memory stays byte-identical to a pre-Phase-23 one.
+        if (c.tier != Tier::InMemory) {
+            s += std::format(" tier={}", tier_name(c.tier));
         }
         // Printed only for a time-constrained plan. estimated_seconds is
         // measured, so it differs between machines; including it in every
@@ -162,6 +181,9 @@ std::string Plan::explain() const {
                                                                qubit_list(region.local_to_global),
                                                                engine_name(region.engine),
                                                                backend_name(region.backend));
+        if (region.tier != Tier::InMemory) {
+            out += std::format(" tier={}", tier_name(region.tier));
+        }
         if (!region.engine_selection_reason.empty()) {
             out += std::format(" why=\"{}\"", region.engine_selection_reason);
         }

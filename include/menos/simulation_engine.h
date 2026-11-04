@@ -275,6 +275,14 @@ public:
     // runtime resolve a Region's (engine, backend) pair to exactly one
     // implementation.
     [[nodiscard]] virtual Backend backend() const = 0;
+    // Where this implementation keeps the region's state (Phase 23,
+    // docs/adr/0027). Defaulted, unlike backend(), because every engine before
+    // Phase 23 keeps its state in one in-memory buffer and only the tiered
+    // dense engines say otherwise; the runtime resolves a Region's (engine,
+    // backend, tier) triple to exactly one implementation.
+    [[nodiscard]] virtual Tier tier() const {
+        return Tier::InMemory;
+    }
     [[nodiscard]] virtual EngineCapabilities capabilities() const = 0;
 
     // The work-unit/peak-byte cost of running request.operations on an

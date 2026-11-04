@@ -1067,5 +1067,50 @@ TEST(RuntimeObservationTest, ObserveKeepsTheLargerFloor) {
     EXPECT_EQ(observations.floor_for(Engine::MPS, Backend::Cpu), std::nullopt);
 }
 
+// A floor is attributed to one (engine, backend, tier) triple (Phase 23,
+// docs/adr/0027): an overrun of the disk tier says nothing about the in-memory
+// engine of the same (engine, backend), and the reverse.
+TEST(RuntimeObservationTest, FloorsAreKeyedByTier) {
+    RuntimeObservations observations;
+    observations.observe(Engine::Dense, Backend::Cpu, Tier::Disk, 5.0);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu), std::nullopt);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::InMemory), std::nullopt);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::Disk),
+              std::optional<double>{5.0});
+    observations.observe(Engine::Dense, Backend::Cpu, 3.0);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu), std::optional<double>{3.0});
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::Disk),
+              std::optional<double>{5.0});
+}
+
+// A planned job whose state fits in memory never prints a tier (every
+// pre-Phase-23 report is byte-identical); a candidate or region costed for a
+// tier prints it on its own line and nowhere else.
+TEST(PlanExplainTest, TierIsPrintedOnlyWhenItIsNotInMemory) {
+    const JobSpec job = make_job(3, /*budget=*/1'000'000);
+    const HardwareProfile hw{.total_memory_bytes = 1'000'000};
+    const Plan plan = plan_job(job, hw);
+    const std::string before = plan.explain();
+    EXPECT_EQ(before.find("tier="), std::string::npos) << before;
+    for (const CandidateSummary& candidate : plan.candidates) {
+        EXPECT_EQ(candidate.tier, Tier::InMemory);
+    }
+    ASSERT_EQ(plan.regions.size(), 1U);
+    EXPECT_EQ(plan.regions[0].tier, Tier::InMemory);
+
+    Plan tiered = plan;
+    ASSERT_FALSE(tiered.candidates.empty());
+    tiered.candidates[0].tier = Tier::Disk;
+    tiered.regions[0].tier = Tier::Disk;
+    const std::string after = tiered.explain();
+    EXPECT_NE(after.find("candidate 0strategy=direct_dense feasible=true winner=true"),
+              std::string::npos)
+        << after;
+    EXPECT_NE(after.find(" tier=disk\n"), std::string::npos) << after;
+    EXPECT_NE(after.find("engine=dense backend=cpu tier=disk"), std::string::npos) << after;
+    // Only those two lines changed.
+    EXPECT_EQ(after.size(), before.size() + 2 * std::string(" tier=disk").size());
+}
+
 }  // namespace
 }  // namespace menos::plan

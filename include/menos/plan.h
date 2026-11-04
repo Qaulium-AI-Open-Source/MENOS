@@ -81,6 +81,18 @@ enum class Engine { Dense, Stabilizer, Pauli, MPS, TensorNetwork, DensityMatrix,
 // them separately: the algorithm by work units, then the backend by calibrated
 // wall-clock seconds (docs/adr/0014).
 enum class Backend { Cpu, Cuda };
+// Where a region's state lives while it executes (Phase 23, docs/adr/0027).
+// InMemory is every engine before Phase 23: the state is one buffer in the
+// backend's own memory. Disk keeps the state in a scratch file and runs the
+// gates chunk by chunk through a window in host memory; HostOffloaded keeps it
+// in host memory and runs the chunks on the CUDA device (measured in step 1
+// and not built, docs/adr/0027 section 10.1). A tier is a third coordinate of
+// an implementation beside Engine and Backend: (Dense, Cpu, Disk) is the
+// chunked executor over a scratch file, (Dense, Cpu, InMemory) is DenseEngine.
+// The planner reaches for a tier other than InMemory only when the in-memory
+// state does not fit (reach-only, section 9 Q5), so a job that fits is
+// planned, executed and explained exactly as before.
+enum class Tier { InMemory, Disk, HostOffloaded };
 
 // Sentinel for Region::global_to_local: this global qubit does not belong
 // to the region.
@@ -152,6 +164,9 @@ struct Region {
     std::vector<Operation> operations;
     Engine engine;
     Backend backend;
+    // Where this region's state lives while it executes (Phase 23). InMemory
+    // for every region of a job whose state fits its budget.
+    Tier tier = Tier::InMemory;
     // Why `engine` was chosen over the other available engine(s) for this
     // region, for explain() (docs/BUILD_PLAN.md Phase 4: mixed-engine
     // Factorized plans and the 99%-Clifford-plus-one-T case must show
@@ -251,6 +266,10 @@ struct CandidateSummary {
     // winner's to Cuda (docs/adr/0014). Recorded so explain() and the tests
     // can see which hardware the chosen plan is actually for.
     Backend backend = Backend::Cpu;
+    // The memory tier this candidate was costed for (Phase 23). InMemory
+    // unless the planner reached for a tier because the in-memory state does
+    // not fit; explain() prints it only then.
+    Tier tier = Tier::InMemory;
     // The accelerator terms this candidate was costed with; all zero for a CPU
     // backend. Separate from estimated_peak_bytes, which is host memory. A
     // Factorized candidate stays on the Cpu backend even when some of its

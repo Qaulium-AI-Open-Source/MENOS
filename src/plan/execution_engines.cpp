@@ -27,9 +27,10 @@ const std::vector<const SimulationEngine*>& execution_engines() {
     return kEngines;
 }
 
-const SimulationEngine* find_execution_engine(Engine engine, Backend backend) {
+const SimulationEngine* find_execution_engine(Engine engine, Backend backend, Tier tier) {
     for (const SimulationEngine* candidate : execution_engines()) {
-        if (candidate->engine_id() == engine && candidate->backend() == backend) {
+        if (candidate->engine_id() == engine && candidate->backend() == backend &&
+            candidate->tier() == tier) {
             return candidate;
         }
     }
