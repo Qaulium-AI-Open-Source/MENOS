@@ -741,3 +741,32 @@ The oracle tests at n = 640 and 1000 with 5–30% density take this path.
 | expectation_factorized/large | 2876 ms | 2827 ms | 1.02x | 1.02x |
 
 The other jobs were 0.96–1.04x; none was slower than its limit.
+
+C.1b equivalence: differential 50,000-seed sweep (260000–309999), identical.
+
+#### C.2a (b): indexed heap with packed integer keys — KEPT
+
+`MinFillQueue` is now an indexed binary min-heap:
+- **Size.** One entry per remaining vertex, plus a position table, so
+  `set_fill` moves a vertex's entry up or down in place. The heap never
+  holds more than n entries, which removes risk 1 of 12.1. The lazy heap
+  peaked at 2.64 n.
+- **Key.** Each entry is one integer, `(fill << 32) | vertex`. Integer order
+  is fill, then vertex: the scan's tie-break, compared in one instruction.
+- **Bounds.** The constructor checks that n and C(n − 1, 2), the largest
+  possible fill, both fit in 32 bits. The dense path's size limit keeps
+  them far below.
+
+Mutation check: reversing the vertex half of the key, so ties go to the
+highest index, fails 6 tests.
+
+| Job | C.1c | C.2a | Median | Fastest |
+|---|---|---|---|---|
+| expectation_factorized/large | 2781 ms | 2623 ms | 1.06x | 1.07x |
+| expectation_factorized/medium | 159 ms | 142 ms | 1.12x | 1.09x |
+| expectation_ising_budgeted/large | 654 ms | 645 ms | 1.01x | 1.02x |
+| expectation_ising_budgeted/medium | 146 ms | 135 ms | 1.08x | 1.12x |
+| expectation_ising/large | 26.4 ms | 24.6 ms | 1.07x | 1.10x |
+
+The other jobs were 0.90–1.15x on medians and 1.02–1.15x on fastest
+repetitions; none was slower than its limit.

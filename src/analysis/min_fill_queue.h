@@ -6,14 +6,14 @@
 
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
-#include <functional>
+#include <cstdint>
 #include <limits>
-#include <queue>
 #include <span>
 #include <utility>
 #include <vector>
+
+#include "common/error.h"
 
 namespace menos::analysis::detail {
 
@@ -22,73 +22,128 @@ namespace menos::analysis::detail {
 // vertex a scan of every remaining vertex in increasing index order with a
 // strict `<` would choose.
 //
-// A lazy-deletion min-heap of (fill, vertex) pairs: std::pair compares fill
-// first, then vertex, which is that order. Entries are never changed in
-// place. set_fill pushes a new entry only when a vertex's fill actually
-// changes, and pop_min discards an entry whose vertex is already removed or
-// whose fill is no longer that vertex's current fill. Every remaining vertex
-// always has one entry holding its current fill, so the first entry that
-// survives is the scan's choice.
+// An indexed binary min-heap (docs/adr/0025 section 12.3, C.2a): one entry
+// per remaining vertex, and a position table so set_fill moves a vertex's
+// entry up or down in place instead of adding a new one. The heap therefore
+// never holds more than n entries. Each entry is one integer,
+// (fill << 32) | vertex, so the integer order is fill first, then vertex --
+// the scan's order -- and a comparison is a single integer compare. The
+// packing needs vertex and fill below 2^32; the constructor checks both
+// bounds, which the dense search's size limit (estimate_treewidth_min_fill)
+// keeps far from: a fill is at most C(n - 1, 2).
 class MinFillQueue {
 public:
     static constexpr std::size_t kNone = std::numeric_limits<std::size_t>::max();
 
     explicit MinFillQueue(std::span<const std::size_t> initial_fill)
-        : fill_(initial_fill.begin(), initial_fill.end()), removed_(initial_fill.size(), false) {
-        std::vector<Entry> storage;
-        storage.reserve(initial_fill.size());
-        for (std::size_t v = 0; v < initial_fill.size(); ++v) {
-            storage.emplace_back(initial_fill[v], v);
+        : fill_(initial_fill.begin(), initial_fill.end()),
+          position_(initial_fill.size(), kRemoved) {
+        const std::size_t n = initial_fill.size();
+        common::ensure(n <= kLow && (n < 2 || (n - 1) * (n - 2) / 2 <= kLow),
+                       "MinFillQueue: graph too large for packed heap keys");
+        heap_.reserve(n);
+        for (std::size_t v = 0; v < n; ++v) {
+            heap_.push_back(key(v));
+            position_[v] = v;
         }
-        heap_ = Heap(std::greater<>{}, std::move(storage));
-        peak_entries_ = heap_.size();
+        // Floyd's bottom-up heap construction.
+        for (std::size_t i = n / 2; i-- > 0;) {
+            sift_down(i);
+        }
     }
 
     // Records v's current fill. v must not have been popped.
     void set_fill(std::size_t v, std::size_t fill) {
-        if (fill == fill_[v]) {
+        const std::size_t old = fill_[v];
+        if (fill == old) {
             return;
         }
         fill_[v] = fill;
-        heap_.emplace(fill, v);
-        peak_entries_ = std::max(peak_entries_, heap_.size());
+        const std::size_t at = position_[v];
+        heap_[at] = key(v);
+        if (fill < old) {
+            sift_up(at);
+        } else {
+            sift_down(at);
+        }
     }
 
     [[nodiscard]] std::size_t fill(std::size_t v) const {
         return fill_[v];
     }
     [[nodiscard]] bool removed(std::size_t v) const {
-        return removed_[v];
+        return position_[v] == kRemoved;
     }
 
     // Removes and returns the remaining vertex with the smallest fill, ties
     // to the lowest index; kNone if every vertex has been removed.
     std::size_t pop_min() {
-        while (!heap_.empty()) {
-            const auto [entry_fill, v] = heap_.top();
-            heap_.pop();
-            if (!removed_[v] && entry_fill == fill_[v]) {
-                removed_[v] = true;
-                return v;
-            }
+        if (heap_.empty()) {
+            return kNone;
         }
-        return kNone;
+        const auto v = static_cast<std::size_t>(heap_.front() & kLow);
+        position_[v] = kRemoved;
+        const std::uint64_t last = heap_.back();
+        heap_.pop_back();
+        if (!heap_.empty()) {
+            heap_.front() = last;
+            position_[static_cast<std::size_t>(last & kLow)] = 0;
+            sift_down(0);
+        }
+        return v;
     }
 
-    // The most entries the heap has held at once, for the memory report
-    // (docs/adr/0025 section 12.1, risk 1).
+    // The most entries the heap has held at once: n, by construction.
     [[nodiscard]] std::size_t peak_entries() const {
-        return peak_entries_;
+        return fill_.size();
     }
 
 private:
-    using Entry = std::pair<std::size_t, std::size_t>;
-    using Heap = std::priority_queue<Entry, std::vector<Entry>, std::greater<>>;
+    static constexpr std::uint64_t kLow = 0xFFFFFFFFULL;
+    static constexpr std::size_t kRemoved = std::numeric_limits<std::size_t>::max();
+
+    [[nodiscard]] std::uint64_t key(std::size_t v) const {
+        return (static_cast<std::uint64_t>(fill_[v]) << 32) | static_cast<std::uint64_t>(v);
+    }
+    void place(std::size_t at, std::uint64_t k) {
+        heap_[at] = k;
+        position_[static_cast<std::size_t>(k & kLow)] = at;
+    }
+    void sift_up(std::size_t at) {
+        const std::uint64_t k = heap_[at];
+        while (at > 0) {
+            const std::size_t parent = (at - 1) / 2;
+            if (heap_[parent] <= k) {
+                break;
+            }
+            place(at, heap_[parent]);
+            at = parent;
+        }
+        place(at, k);
+    }
+    void sift_down(std::size_t at) {
+        const std::size_t n = heap_.size();
+        const std::uint64_t k = heap_[at];
+        while (true) {
+            std::size_t child = 2 * at + 1;
+            if (child >= n) {
+                break;
+            }
+            if (child + 1 < n && heap_[child + 1] < heap_[child]) {
+                ++child;
+            }
+            if (k <= heap_[child]) {
+                break;
+            }
+            place(at, heap_[child]);
+            at = child;
+        }
+        place(at, k);
+    }
 
     std::vector<std::size_t> fill_;
-    std::vector<bool> removed_;
-    Heap heap_;
-    std::size_t peak_entries_ = 0;
+    std::vector<std::size_t> position_;  // index into heap_, or kRemoved
+    std::vector<std::uint64_t> heap_;
 };
 
 }  // namespace menos::analysis::detail
