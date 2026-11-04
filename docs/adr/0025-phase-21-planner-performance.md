@@ -710,3 +710,34 @@ Variant 3 also gives random_pairs_controlled/medium 1.19x (1.28x).
 - A new test checks both paths against the plain oracle on graphs of
   density 0.2–30%.
 - The interleaved test checks the degree counter after every operation.
+
+#### C.1c (d): AVX2 popcount with runtime dispatch — KEPT
+
+On dense rows with a span of at least one vector (4 words),
+`compute_fill` counts `popcount(a & v)` four words at a time:
+- each byte's count is looked up from its two nibbles (`vpshufb`);
+- the byte counts are summed into 64-bit lanes (`vpsadbw`);
+- the tail is scalar.
+
+This is the standard nibble-lookup method, written here without copied
+code. It is exact integer arithmetic, so the counts are the same.
+
+Dispatch and portability:
+- x86-64 Linux with GCC or Clang only. `__builtin_cpu_supports("avx2")`,
+  after `__builtin_cpu_init`, is evaluated once.
+- Any other platform or CPU, including MSVC, keeps the portable
+  `std::popcount` loop.
+- This CPU has AVX2 but no AVX-512, so `vpopcntq` was not an option.
+
+The oracle tests at n = 640 and 1000 with 5–30% density take this path.
+
+| Job | C.1b | C.1c | Median | Fastest |
+|---|---|---|---|---|
+| expectation_ising_budgeted/large | 731 ms | 669 ms | 1.09x | 1.11x |
+| expectation_ising_budgeted/medium | 172 ms | 149 ms | 1.16x | 1.14x |
+| expectation_z_all/large | 31.5 ms | 27.9 ms | 1.13x | 1.09x |
+| expectation_ising/large | 30.3 ms | 27.8 ms | 1.09x | 1.12x |
+| expectation_cut/large | 13.5 ms | 11.8 ms | 1.14x | 1.16x |
+| expectation_factorized/large | 2876 ms | 2827 ms | 1.02x | 1.02x |
+
+The other jobs were 0.96–1.04x; none was slower than its limit.

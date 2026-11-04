@@ -45,6 +45,9 @@ public:
     // a lookup rather than a scan of the row (docs/adr/0025 section 12.3): a
     // set can only widen it, and a reset that empties the word at either end
     // narrows it past every empty word there.
+    // Sets bit b of a's row; the search keeps the graph symmetric by always
+    // calling set(a, b) and set(b, a) together.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (row, column) of one bit
     void set(std::size_t a, std::size_t b) {
         const std::size_t w = b / 64;
         const std::uint64_t bit = std::uint64_t{1} << (b % 64);
@@ -59,6 +62,7 @@ public:
             span.last = std::max(span.last, w + 1);
         }
     }
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (row, column) of one bit
     void reset(std::size_t a, std::size_t b) {
         const std::size_t w = b / 64;
         std::uint64_t* r = row(a);
@@ -89,6 +93,11 @@ public:
     // Kept as a count by set, reset and clear_row.
     [[nodiscard]] std::size_t degree(std::size_t a) const {
         return degree_[a];
+    }
+    // a's row: words_per_row() 64-bit words, bit u of the row set iff u is a
+    // neighbour of a.
+    [[nodiscard]] const std::uint64_t* row_words(std::size_t a) const {
+        return row(a);
     }
     [[nodiscard]] bool test(std::size_t a, std::size_t b) const {
         return ((row(a)[b / 64] >> (b % 64)) & std::uint64_t{1}) != 0;

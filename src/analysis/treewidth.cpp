@@ -1,5 +1,9 @@
 #include "analysis/treewidth.h"
 
+#if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
+#include <immintrin.h>
+#endif
+
 #include "analysis/bit_adjacency.h"
 #include "analysis/min_fill_queue.h"
 
@@ -252,6 +256,86 @@ LineGraphSize line_graph_size(const ClosedTimelines& timelines) {
 
 namespace detail {
 
+#if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
+#define MENOS_TREEWIDTH_AVX2 1
+namespace {
+
+// sum over w in [first, last) of popcount(a[w] & b[w]), four words at a time
+// with AVX2: each byte's popcount is looked up from its two nibbles
+// (vpshufb), and the byte counts are summed into four 64-bit lanes (vpsadbw).
+// The tail and short spans use the scalar popcount. Exact integer arithmetic,
+// so the same count as the scalar loop (docs/adr/0025 section 12.3, C.1c).
+[[gnu::target("avx2,popcnt")]] std::size_t and_popcount_avx2(const std::uint64_t* a,
+                                                             const std::uint64_t* b,
+                                                             std::size_t first,
+                                                             std::size_t last) {
+    const __m256i lookup = _mm256_setr_epi8(0,
+                                            1,
+                                            1,
+                                            2,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            2,
+                                            3,
+                                            3,
+                                            4,
+                                            0,
+                                            1,
+                                            1,
+                                            2,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            2,
+                                            3,
+                                            3,
+                                            4);
+    const __m256i low_nibble = _mm256_set1_epi8(0x0f);
+    __m256i total = _mm256_setzero_si256();
+    std::size_t w = first;
+    for (; w + 4 <= last; w += 4) {
+        // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads
+        const __m256i x =
+            _mm256_and_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + w)),
+                             _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + w)));
+        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+        const __m256i lo = _mm256_and_si256(x, low_nibble);
+        const __m256i hi = _mm256_and_si256(_mm256_srli_epi16(x, 4), low_nibble);
+        const __m256i bytes =
+            _mm256_add_epi8(_mm256_shuffle_epi8(lookup, lo), _mm256_shuffle_epi8(lookup, hi));
+        total = _mm256_add_epi64(total, _mm256_sad_epu8(bytes, _mm256_setzero_si256()));
+    }
+    std::size_t c = static_cast<std::size_t>(_mm256_extract_epi64(total, 0)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 1)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 2)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 3));
+    for (; w < last; ++w) {
+        c += static_cast<std::size_t>(std::popcount(a[w] & b[w]));
+    }
+    return c;
+}
+
+// Evaluated once, at static initialisation; __builtin_cpu_init makes the
+// check safe whatever order the static initialisers run in.
+const bool kHasAvx2 = [] {
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx2") != 0;
+}();
+
+}  // namespace
+#endif
+
 // fill(v) = C(deg(v), 2) - |{edges already present among v's neighbors}|
 // -- the number of NEW fill-in edges eliminating v right now would add.
 // Each edge {a, b} among v's neighbours is counted once from a and once from
@@ -285,6 +369,16 @@ std::size_t compute_fill(const BitAdjacency& adjacency,
             }
         }
     } else {
+#ifdef MENOS_TREEWIDTH_AVX2
+        if (kHasAvx2 && range.last - range.first >= 4) {
+            const std::uint64_t* rv = adjacency.row_words(v);
+            adjacency.for_each_neighbor_in(v, range, [&](std::size_t a) {
+                twice_edges +=
+                    and_popcount_avx2(adjacency.row_words(a), rv, range.first, range.last);
+            });
+            return k * (k - 1) / 2 - twice_edges / 2;
+        }
+#endif
         adjacency.for_each_neighbor_in(
             v, range, [&](std::size_t a) { twice_edges += adjacency.common(a, v, range); });
     }
