@@ -236,7 +236,9 @@ Layout lay_out(const Shape& shape) {
         }
         if (shape.want_expectation) {
             for (const auto& term : shape.observable->terms) {
-                file_passes += (term.first.x_words[0] >> plan->chunk_qubits) != 0 ? 2 : 1;
+                file_passes += (term.first.x_words[0] >> plan->chunk_qubits) != 0
+                                   ? std::uint64_t{2}
+                                   : std::uint64_t{1};
             }
         }
         layout.link_bytes = checked_mul(layout.file_bytes, file_passes);

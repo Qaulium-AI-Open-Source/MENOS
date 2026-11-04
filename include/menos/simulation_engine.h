@@ -164,7 +164,7 @@ struct EngineExecutionRequest {
     // Where the disk tier creates its scratch file (Phase 23, docs/adr/0027
     // section 3.3); empty means the system's temporary directory. Read only
     // by the disk-tier engine.
-    std::filesystem::path scratch_directory;
+    std::filesystem::path scratch_directory = {};
     // The chunked executor's chunk and window sizes, as qubit counts, for
     // tests that run the tier on a small state (docs/adr/0027 section 9
     // Q10: an internal seam, not public API). 0 lets the engine choose, which
