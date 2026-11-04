@@ -9,8 +9,8 @@ candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pr
 candidate 5strategy=factorized feasible=true winner=true peak_bytes=256 work_units=4096
 candidate 6strategy=cut_and_recombine feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in fragment 1 of 3, at 8280 work units, already more than the 4096 of a cheaper feasible alternative"
 strategy   factorized (exact)
-region 0   qubits=[0,1,2,3] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate)"
-region 1   qubits=[4,5,6,7] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate)"
+region 0   qubits=[0,1,2,3] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (tensor_network rejected: pruned by branch-and-bound: costing stopped before any elimination search: a lower bound of 35848 work units over its 15 observable terms (from each term's network size) is already more than the 2048 of a cheaper feasible alternative)"
+region 1   qubits=[4,5,6,7] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (tensor_network rejected: pruned by branch-and-bound: costing stopped before any elimination search: a lower bound of 35848 work units over its 15 observable terms (from each term's network size) is already more than the 2048 of a cheaper feasible alternative)"
 estimated  state_bytes=256 work_units=4096
 --- plan fields not printed by explain() ---
 region 0: operations=44 observable_terms=15 state_bytes=256 work_units=2048 global_to_local_size=8
