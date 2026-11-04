@@ -1,0 +1,14 @@
+[cpu_time]
+benchmark                                          before med    after med  med x  min x  spread  limit
+plan_job/statevector_brickwork/small                     20.9         19.6   1.06   1.06    7.0%    14%
+plan_job/statevector_brickwork/medium                    98.5         94.5   1.04   1.06    6.5%    13%
+plan_job/statevector_brickwork/large                    297.8        279.9   1.06   1.07    7.8%    16%
+plan_job/counts_brickwork/small                          27.5         26.4   1.04   1.05    7.5%    15%
+plan_job/counts_brickwork/medium                        117.3        110.1   1.06   1.07    3.9%     8%
+plan_job/counts_brickwork/large                         339.5        325.6   1.04   1.07    9.1%    18%
+plan_job/counts_clifford/small                           51.4         47.8   1.07   1.07   10.2%    20%
+plan_job/counts_clifford/medium                         735.0        696.4   1.06   1.07    7.0%    14%
+plan_job/counts_clifford/large                         8083.2       7784.1   1.04   1.07   68.4%   137%
+cache_hit/statevector_brickwork/medium                  108.3         86.5   1.25   1.28    6.7%    13%
+cache_hit/counts_brickwork/large                        330.1        259.8   1.27   1.30    4.4%     9%
+cache_hit/expectation_ising/medium                      114.4         91.0   1.26   1.26    2.7%     5%

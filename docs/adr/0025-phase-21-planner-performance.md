@@ -1017,3 +1017,127 @@ repetitions, on a quiet machine if one is confirmed.
 Equivalence at every kept commit: golden 45/45 and the 2000-seed
 differential test. The 50,000-seed sweeps, recorded above, cover
 seeds 210000–409999 with no differences.
+
+## 13. Section D: pruning order, budgeted pruning, re-costing, cache hits (owner request 2026-11-04) — [MEASURED]
+
+The owner approved the four section 11 findings for implementation on
+2026-11-04, with one relaxation of invariant 2: **explain() may change only
+where it reflects different pruning**, each golden update in its own commit.
+The chosen plan and its cost stay identical. Each change below was measured
+against the commit before it: pinned to CPU 13, CPU time, 3 rounds × 5
+repetitions per side, alternating (`bench/raw/step2_pass2/sectionD/`).
+
+### D.0 What "identical up to pruning" means (`tests/plan/prune_equivalence.h`)
+
+The golden test still compares byte for byte, against re-recorded files. The
+differential test compares the live planner with the frozen d89dde3 planner,
+and the frozen planner with every golden file, under this rule:
+- the two outcomes have the same lines in the same order;
+- a differing **candidate** line must be pruned in the live plan, must not
+  be the reference winner, and, if the reference costed it as feasible, its
+  work units must be strictly above the winner's (a prune needs a cheaper
+  feasible bound; ties go to the earlier candidate);
+- a differing **region** line may differ only in engines the live plan lists
+  as pruned: such an engine may be absent from the reference (feasible but
+  costlier there) or carry any reason;
+- everything else (the strategy, the estimate, every region's fields, every
+  refusal) is byte-identical.
+
+`prune_equivalence_test.cpp` checks the rule accepts and rejects what it
+should (11 cases).
+
+### D.1a The tensor network is costed after the cheaper candidates — KEPT
+
+`direct_tensor_network` is still listed after `direct_mps`. It is now
+costed after `direct_density_matrix`, `direct_trajectory` and `factorized`,
+and then moved into its listed place, so its min-fill search gets a bound
+from them (section 11.1).
+
+| Job | Before (C.3 code) | After | Median | Fastest |
+|---|---|---|---|---|
+| expectation_factorized/medium | 76.7 ms | 36.8 ms | 2.08x | 2.09x |
+| expectation_factorized/large | 1357 ms | 648 ms | 2.09x | 2.09x |
+| expectation_ising_budgeted, expectation_cut, factorized/small | | | 0.99–1.01x | |
+
+Golden change (`cce76b0`): the tensor-network candidate of
+expectation_factorized/{small,medium,large} now carries the pruned reason
+(small: it was already pruned; only the reason's figures change).
+
+### D.1b Branch-and-bound stays on under a time budget, CPU-only — KEPT
+
+Section 11.2: in a job where neither the CUDA dense-backend step nor
+Factorized's per-region backends can apply (`backend` is not `cuda`, and not
+CUDA-and-CPU-both-calibrated with `backend` unset), each costed candidate is
+held to the time budget before it may serve as the bound, so the bound is
+the fewest work units among candidates feasible in memory and time. The
+budget check is idempotent, so it still runs once more for every candidate
+after enumeration, exactly as before. CUDA-capable jobs still cost every
+candidate in full.
+
+| Job | Before (D.1a) | After | Median | Fastest |
+|---|---|---|---|---|
+| expectation_ising_budgeted/small | 2.95 ms | 0.161 ms | 18.3x | 18.1x |
+| expectation_ising_budgeted/medium | 65.9 ms | 2.07 ms | 31.9x | 31.9x |
+| expectation_ising_budgeted/large | 228 ms | 10.3 ms | 22.1x | 22.1x |
+| expectation_factorized, expectation_cut | | | 0.99–1.00x | |
+
+On the large job the tensor network still ends on its memory-budget reason:
+its first term's elimination search hits the budget before the per-term
+bound check is reached. The saving is the cut-and-recombine costing, now
+pruned in fragment 1 of 2.
+
+Golden change (`297bf24`): expectation_ising_budgeted/{small,medium,large}.
+`cut_and_recombine` (all three) and `direct_tensor_network` (small, medium)
+print the pruned reason in place of their figures and `est_seconds`.
+
+Tests changed with it: `WithATimeBudgetTheTensorNetworkIsCostedInFull`
+became `...IsStillPruned`; new `ACandidateOverTheTimeBudgetIsNotTheBound`;
+the observed-floor test also covers pruned candidates.
+
+### D.2 A pruned engine in a region's "why" is reported as pruned — KEPT
+
+`describe_engine_choice` re-costed every engine that `pick_cheapest_engine`
+had pruned, without the bound, to print its unbounded reason (section 10.3).
+That was 38% of expectation_factorized/large after pass 2. It now prints
+the engine's own pruned reason.
+
+| Job | Before (D.1b) | After | Median | Fastest |
+|---|---|---|---|---|
+| expectation_factorized/small | 0.915 ms | 0.136 ms | 6.75x | 6.79x |
+| expectation_factorized/medium | 37.5 ms | 0.997 ms | 37.6x | 38.3x |
+| expectation_factorized/large | 658 ms | 4.47 ms | 147x | 149x |
+| counts_factorized, expectation_cut | | | 0.96–1.02x | (spread 4–9%) |
+
+Golden change (`444c4f7`): each Factorized region of
+expectation_factorized/{small,medium,large} also lists
+`(tensor_network rejected: pruned by branch-and-bound: ...)`.
+
+### D.3 Plan-cache hit: lazy error message, light cone without copies — KEPT
+
+Section 11.3. `reparameterize_direct_plan` built its "operation i differs"
+message for every operation of every hit; it is now built only on failure.
+`compute_light_cone` copied each operation's qubit list on its backward
+walk; it now reads the list in place, which also speeds every plan. The
+copies of the cached plan itself are left to Phase 22 (owner). No golden
+change.
+
+| Benchmark | Before (D.2) | After | Median | Fastest |
+|---|---|---|---|---|
+| cache_hit/statevector_brickwork/medium | 108 µs | 86.5 µs | 1.25x | 1.28x |
+| cache_hit/counts_brickwork/large | 330 µs | 260 µs | 1.27x | 1.30x |
+| cache_hit/expectation_ising/medium | 114 µs | 91.0 µs | 1.26x | 1.26x |
+| plan_job statevector_brickwork, counts_brickwork, counts_clifford | | | 1.04–1.07x | |
+
+A hit on statevector_brickwork/medium (86.5 µs) is now cheaper than planning
+it (94.5 µs), which section 11.3 found reversed.
+
+### D equivalence
+
+- Golden 45/45 against the re-recorded files at every code commit's golden
+  commit; the frozen d89dde3 planner reproduces all 45 up to pruning.
+- Differential, 2000 seeds, at every commit: nothing beyond pruning (151
+  seeds differ only by pruning after D.1a, 238 after D.2).
+- Planner, plan-cache, light-cone and analysis tests under ASan+UBSan (dev):
+  102/102.
+- 50,000-seed sweep after D.3 (seeds 410000–459999, Release): nothing beyond
+  pruning (`sectionD/sweep_410000_459999.txt`).
