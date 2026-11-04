@@ -1141,3 +1141,59 @@ it (94.5 µs), which section 11.3 found reversed.
   102/102.
 - 50,000-seed sweep after D.3 (seeds 410000–459999, Release): nothing beyond
   pruning (`sectionD/sweep_410000_459999.txt`).
+
+## 14. Section E: the gate run — [MEASURED]
+
+**Conditions.** No quiet machine was available (owner, 2026-11-04). CPU
+governor `performance` (already set). Pinned to CPU 13, CPU time, 6 rounds
+× 5 repetitions per side (30 per side), before and after alternating each
+round, the whole corpus plus the cache-hit benchmarks. Load average (1 min)
+logged before every round: 1.26–4.33, mean 2.63; one long-running
+single-threaded test process of another project was running throughout and
+was left alone. Head binary: the D.3 code (`300fcb3`); every later commit
+changes documentation or evidence only. Raw runs, compare tables and load
+logs: `bench/raw/step2_pass2/sectionE/`.
+
+**Gate criterion 1, median speed-up ≥ 5x — MET.**
+
+| Job | d89dde3 | Head | Median | Worst case | Spread before / after |
+|---|---|---|---|---|---|
+| expectation_ising_budgeted/large | 1992 ms | 10.8 ms | **184.6x** | 159.8x | 24% / 20% |
+| expectation_factorized/large | 14041 ms | 4.44 ms | **3164x** | 2605x | 18% / 19% |
+
+"Worst case" is the fastest d89dde3 repetition over the slowest head
+repetition: even that is far above 5x, so the spread cannot put the result
+in doubt. Against c8f9083 (the start of pass 2): 73.0x and 837x median,
+57.6x and 668x worst case. No cost-model change was needed.
+
+**Gate criterion 2, no corpus job slower than baseline by more than
+max(5%, 2 × spread) — MET.** Every one of the 45 jobs and the 3 cache-hit
+benchmarks is faster at the median than d89dde3; the smallest ratio is
+statevector_brickwork/small, 1.07x. Against c8f9083 the smallest is
+counts_factorized/small, 1.02x. Per-job spread ranges 4–53% (before side)
+and is listed per job in `vs_d89dde3.compare.txt`.
+
+| Family (vs d89dde3, median) | Small | Medium | Large |
+|---|---|---|---|
+| statevector_brickwork | 1.07x | 1.08x | 1.07x |
+| counts_brickwork | 2.56x | 2.63x | 2.33x |
+| expectation_z_all / ising / heisenberg / random_paulis | 2.05–2.12x | 4.04–4.07x | 7.39–7.97x |
+| expectation_ising_budgeted | 37.8x | 139x | 185x |
+| counts_clifford | 3.81x | 4.22x | 3.17x |
+| counts_random_pairs | 2.78x | 6.71x | 7.53x |
+| expectation_random_pairs_controlled | 2.22x | 5.38x | 13.0x |
+| counts_factorized | 2.31x | 3.43x | 3.96x |
+| expectation_factorized | 11.4x | 383x | 3164x |
+| expectation_cut | 2.01x | 3.21x | 6.13x |
+| counts_noisy_density_matrix / trajectory | 1.10x / 1.10x | 1.11x / 1.08x | 1.09x / 1.10x |
+| cache_hit (3 benchmarks) | | 1.32–1.35x | |
+
+**Gate criteria 3 and 4, golden and differential — MET** on the final head:
+golden 45/45 (re-recorded only in the D golden commits, each
+reproduced by the frozen d89dde3 planner up to pruning); differential 2000
+seeds per build in `scripts/verify.sh`, and the 50,000-seed sweeps of
+sections 12 and 13 (seeds 210000–459999), nothing beyond pruning.
+
+Invariant 2 was relaxed by the owner for section D only: `explain()`
+differs from d89dde3 in six golden files, in losing candidate lines and
+region reasons that are now reported as pruned (section 13).

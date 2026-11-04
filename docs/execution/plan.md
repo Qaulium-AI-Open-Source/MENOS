@@ -43,4 +43,4 @@ Planning is deterministic. The same circuit, options and (for time budgets) cali
 
 ## Planning cost
 
-Planning is cheap but not free. In measurements it ranged from about 0.05 ms to about 17 ms on average across workloads, with one worst sample of 85 ms. That is negligible next to a second-scale simulation and comparable to the run itself for millisecond-scale jobs.
+Planning is cheap next to running the job. On one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.
