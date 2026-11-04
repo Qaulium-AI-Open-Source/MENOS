@@ -1,5 +1,6 @@
 add_library(menos_engines_dense_tiered STATIC
     pass_plan.cpp
+    file_backing_store.cpp
 )
 
 target_include_directories(menos_engines_dense_tiered PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
