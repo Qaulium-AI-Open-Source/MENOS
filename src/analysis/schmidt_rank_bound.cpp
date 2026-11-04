@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -63,6 +65,25 @@ OperandMatrix operand_matrix_of(const Operation& op) {
 // (the standard operator-Schmidt reshaping: u as a vector in
 // (H_L(x)H_R)(x)(H_L(x)H_R)* regrouped as (H_L(x)H_L*)(x)(H_R(x)H_R*)),
 // then take m's ordinary matrix rank via SVD.
+// The operands of a gate or unitary; nullptr for a measurement. A noise
+// channel throws exactly as operand_matrix_of does, whatever its size.
+const std::vector<QubitId>* operands_of(const Operation& op) {
+    return std::visit(
+        [](const auto& o) -> const std::vector<QubitId>* {
+            using T = std::decay_t<decltype(o)>;
+            if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
+                return &o.qubits;
+            } else if constexpr (std::is_same_v<T, ChannelOp>) {
+                throw common::InternalError(
+                    "schmidt_rank_bound: a noise channel reached a pure-state bound");
+            } else {
+                static_assert(std::is_same_v<T, MeasureOp>);
+                return nullptr;
+            }
+        },
+        op);
+}
+
 std::uint64_t operator_schmidt_rank(std::span<const Complex> u,
                                     std::size_t k,
                                     const std::vector<std::size_t>& left_positions,
@@ -144,18 +165,30 @@ SchmidtRankBound compute_schmidt_rank_bound(std::uint32_t num_qubits,
         caps[i] = subsystem_dimension_cap(i + 1, n - (i + 1));
     }
 
+    // Operator Schmidt ranks already computed, keyed by the exact bytes of the
+    // operation's matrix and which of its operands lie left of the cut. The
+    // rank is an integer computed deterministically from exactly those
+    // inputs, so a repeated key returns the integer the SVD would return
+    // again. Keying on bytes, not values, is conservative: two matrices that
+    // are equal but differ in representation (0.0 and -0.0) are computed
+    // separately.
+    std::unordered_map<std::string, std::uint64_t> rank_cache;
+    std::string key;
     for (const Operation& op : operations) {
-        const OperandMatrix operand_matrix = operand_matrix_of(op);
-        if (operand_matrix.qubits == nullptr) {
+        // A single-qubit operation or a measurement never crosses a cut, so
+        // the operands are checked before any matrix is generated.
+        const std::vector<QubitId>* operands = operands_of(op);
+        if (operands == nullptr) {
             continue;  // MeasureOp: no matrix, never crosses a cut.
         }
-        const std::vector<QubitId>& qubits = *operand_matrix.qubits;
-        const std::size_t k = qubits.size();
-        const QubitId min_q = *std::min_element(qubits.begin(), qubits.end());
-        const QubitId max_q = *std::max_element(qubits.begin(), qubits.end());
+        const QubitId min_q = *std::min_element(operands->begin(), operands->end());
+        const QubitId max_q = *std::max_element(operands->begin(), operands->end());
         if (min_q == max_q) {
             continue;  // Single-qubit operation: never crosses a cut.
         }
+        const OperandMatrix operand_matrix = operand_matrix_of(op);
+        const std::vector<QubitId>& qubits = *operand_matrix.qubits;
+        const std::size_t k = qubits.size();
 
         for (QubitId cut = min_q; cut < max_q; ++cut) {
             if (result.bound_per_cut[cut] >= caps[cut]) {
@@ -171,8 +204,23 @@ SchmidtRankBound compute_schmidt_rank_bound(std::uint32_t num_qubits,
                     right_positions.push_back(p);
                 }
             }
+            key.clear();
+            key.push_back(static_cast<char>(k));
+            for (const std::size_t p : left_positions) {
+                key.push_back(static_cast<char>(p));
+            }
+            key.push_back('|');
+            key.append(reinterpret_cast<const char*>(operand_matrix.matrix.data()),
+                       operand_matrix.matrix.size() * sizeof(Complex));
+            const auto cached = rank_cache.find(key);
             const std::uint64_t op_rank =
-                operator_schmidt_rank(operand_matrix.matrix, k, left_positions, right_positions);
+                cached != rank_cache.end()
+                    ? cached->second
+                    : rank_cache
+                          .emplace(key,
+                                   operator_schmidt_rank(
+                                       operand_matrix.matrix, k, left_positions, right_positions))
+                          .first->second;
             result.bound_per_cut[cut] =
                 std::min(common::checked_mul(result.bound_per_cut[cut], op_rank), caps[cut]);
         }

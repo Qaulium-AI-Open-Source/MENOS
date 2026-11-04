@@ -362,6 +362,56 @@ Equivalence:
 - the differential test, 2000 seeds, plus a sweep of 50,000 seeds
   (110000–159999) — all identical to the frozen planner.
 
+### 10.4 (c) Schmidt-rank bound: no matrix for single-qubit operations, ranks cached
+
+`compute_schmidt_rank_bound` (the MPS candidate's bond-dimension bound)
+generated a gate matrix for every operation before checking whether it
+crosses a cut. It then ran an SVD (LAPACK `zgesdd`) for every cut a
+multi-qubit operation spans.
+
+Two changes:
+- **Operands first.** Each operation's operands are now checked before its
+  matrix is generated, so a single-qubit operation or a measurement never
+  builds one. A noise channel still throws the same `InternalError`, whatever
+  its size.
+- **Rank cache.** Operator Schmidt ranks are cached for the duration of one
+  bound computation. The key is the operand count, which operands lie left of
+  the cut, and the exact bytes of the matrix.
+  - The rank is an integer computed deterministically from exactly those
+    inputs, so a repeated key returns the integer the SVD would return again.
+  - Keying on bytes is conservative: equal matrices with different
+    representations (0.0 and −0.0) are simply computed separately.
+  - Gates repeat (every CX on neighbouring qubits is the same matrix and the
+    same split), so most SVDs disappear.
+  - A 2-qubit gate splits its operands the same way at every cut it spans,
+    so each further cut it spans is a cache hit too.
+
+The "skip when every spanned cut is already at its cap" shortcut was
+considered and left out. It was not asked for, and on invalid input it would
+skip a matrix-generation error the old code raised.
+
+Focused, pinned, alternating runs on top of (b)+(e), 30 repetitions per side
+(`c_rank_cache_focused.compare.txt`; full run in `c_rank_cache.compare.txt`):
+
+| Job | Before | After | Speed-up |
+|---|---|---|---|
+| counts_clifford/small, medium, large | 0.18 / 2.94 / 38.4 ms | 0.05 / 0.73 / 12.6 ms | 3.54x / 4.01x / 3.05x |
+| counts_random_pairs/small, medium, large | 0.13 / 0.79 / 3.13 ms | 0.05 / 0.13 / 0.48 ms | 2.62x / 5.95x / 6.52x |
+| counts_factorized/small, medium, large | 0.12 / 0.81 / 3.49 ms | 0.05 / 0.29 / 1.06 ms | 2.24x / 2.82x / 3.28x |
+| expectation_ising/small | 311 µs | 222 µs | 1.40x |
+| expectation_random_pairs_controlled/large | 293 ms | 268 ms | 1.09x |
+
+In the full run, expectation_random_pairs_controlled/large looked 0.88x
+slower on fastest repetitions; the focused run gives 1.09x, so that did not
+reproduce. expectation_factorized/large was not re-measured: its full-run
+0.94x is inside that run's 25% limit, and the focused run shows its medium
+size at 1.02x. No job is slower than the gate's limit.
+
+Equivalence:
+- golden 45/45;
+- the differential test, 2000 seeds, plus a sweep of 50,000 seeds
+  (160000–209999) — all identical to the frozen planner.
+
 ## 11. Investigations the owner asked for (2026-11-03) — [MEASURED] / [DERIVED], nothing implemented
 
 ### 11.1 Costing cheaper candidates before the tensor network
