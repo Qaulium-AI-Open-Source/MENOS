@@ -112,7 +112,11 @@ std::string candidate_line(std::size_t index, const CandidateSummary& c, bool sh
         // Printed only then, so every report of a job whose state fits in
         // memory stays byte-identical to a pre-Phase-23 one.
         if (c.tier != Tier::InMemory) {
-            s += std::format(" tier={}", tier_name(c.tier));
+            s += std::format(" tier={} passes={} chunk_qubits={} disk_bytes={}",
+                             tier_name(c.tier),
+                             c.tier_cost.passes,
+                             c.tier_cost.chunk_qubits,
+                             c.tier_cost.file_bytes);
         }
         // Printed only for a time-constrained plan. estimated_seconds is
         // measured, so it differs between machines; including it in every
@@ -168,6 +172,9 @@ std::string Plan::explain() const {
     }
     if (requested_backend.has_value()) {
         out += label("backend") + std::format("{} (requested)\n", backend_name(*requested_backend));
+    }
+    if (requested_tier.has_value()) {
+        out += label("tier") + std::format("{} (requested)\n", tier_name(*requested_tier));
     }
     for (std::size_t i = 0; i < candidates.size(); ++i) {
         out += candidate_line(i, candidates[i], show_seconds) + "\n";
@@ -255,6 +262,24 @@ std::string Plan::explain() const {
     }
     if (device_pooled.has_value()) {
         out += std::format(" pooled={}", *device_pooled ? "true" : "false");
+    }
+    // The scratch directory a disk-tier decision rested on (Phase 23,
+    // docs/adr/0027), with the space and bandwidth figures of the moment.
+    // Absent from every plan with no disk tier in it.
+    if (disk_available_bytes.has_value()) {
+        out += std::format(" disk_available_bytes={}", *disk_available_bytes);
+    }
+    if (scratch_directory.has_value()) {
+        out += std::format(" scratch_directory=\"{}\"", scratch_directory->string());
+    }
+    if (disk_write_bytes_per_second.has_value() && disk_read_bytes_per_second.has_value()) {
+        if (*disk_write_bytes_per_second > 0.0 && *disk_read_bytes_per_second > 0.0) {
+            out += std::format(" disk_write_bandwidth={:.6g} disk_read_bandwidth={:.6g} (measured)",
+                               *disk_write_bytes_per_second,
+                               *disk_read_bytes_per_second);
+        } else {
+            out += " disk_bandwidth=unmeasured";
+        }
     }
     out += "\n";
     return out;

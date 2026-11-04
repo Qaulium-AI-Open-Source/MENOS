@@ -1106,10 +1106,16 @@ TEST(PlanExplainTest, TierIsPrintedOnlyWhenItIsNotInMemory) {
     EXPECT_NE(after.find("candidate 0strategy=direct_dense feasible=true winner=true"),
               std::string::npos)
         << after;
-    EXPECT_NE(after.find(" tier=disk\n"), std::string::npos) << after;
-    EXPECT_NE(after.find("engine=dense backend=cpu tier=disk"), std::string::npos) << after;
+    // The candidate line carries the tier's figures (zero here: the plan
+    // was never costed for the tier), the region line the tier alone.
+    EXPECT_NE(after.find(" tier=disk passes=0 chunk_qubits=0 disk_bytes=0\n"), std::string::npos)
+        << after;
+    EXPECT_NE(after.find("engine=dense backend=cpu tier=disk\n"), std::string::npos) << after;
     // Only those two lines changed.
-    EXPECT_EQ(after.size(), before.size() + 2 * std::string(" tier=disk").size());
+    EXPECT_EQ(after.size(),
+              before.size() +
+                  std::string(" tier=disk passes=0 chunk_qubits=0 disk_bytes=0").size() +
+                  std::string(" tier=disk").size());
 }
 
 }  // namespace

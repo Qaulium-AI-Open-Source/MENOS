@@ -140,6 +140,75 @@ std::optional<Engine> single_engine_of(Strategy strategy) {
     throw common::InternalError("single_engine_of: unknown Strategy");
 }
 
+cost::CostEstimate infeasible_disk_tier(std::string reason) {
+    return cost::CostEstimate{/*feasible=*/false, 0, 0, std::move(reason), {}, {}};
+}
+
+// The disk tier's estimate for the whole job as one region (Phase 23,
+// docs/adr/0027 section 3.5): the engine's own figure, the runtime's
+// measurement bookkeeping added as cost::estimate_direct adds it, checked
+// against the host budget, and the scratch file checked against the space
+// available beside the reserve. The engine is given the budget less the
+// bookkeeping, so the window it chooses leaves room for it.
+cost::CostEstimate estimate_disk_tier(const Circuit& circuit,
+                                      const Observable* observable,
+                                      const HardwareProfile& hardware_profile,
+                                      const JobSpec& job_spec,
+                                      bool want_counts,
+                                      bool want_expectation,
+                                      std::uint64_t budget) {
+    const SimulationEngine* engine = find_execution_engine(Engine::Dense, Backend::Cpu, Tier::Disk);
+    common::ensure(engine != nullptr, "plan_job: this build has no disk-tier dense engine");
+    if (hardware_profile.scratch_directory.empty() ||
+        hardware_profile.scratch_capacity_bytes == 0) {
+        return infeasible_disk_tier(
+            "the disk tier has no scratch directory to use: none was given, or its space could "
+            "not be read");
+    }
+    std::uint64_t bookkeeping = 0;
+    try {
+        bookkeeping = cost::measurement_bookkeeping_bytes(circuit);
+    } catch (const common::ResourceExceeded& e) {
+        return infeasible_disk_tier(e.what());
+    }
+    if (bookkeeping > budget) {
+        return infeasible_disk_tier("the disk tier's measurement bookkeeping of " +
+                                    std::to_string(bookkeeping) + " bytes exceeds the budget of " +
+                                    std::to_string(budget) + " bytes");
+    }
+    const EngineEstimateRequest request{.num_qubits = circuit.num_qubits(),
+                                        .operations = &circuit.operations(),
+                                        .want_statevector = job_spec.want_statevector,
+                                        .want_counts = want_counts,
+                                        .want_expectation = want_expectation,
+                                        .observable = observable,
+                                        .accuracy_policy = job_spec.accuracy_policy,
+                                        .budget_bytes = budget - bookkeeping,
+                                        .shots = want_counts ? job_spec.shots : 0,
+                                        .bitstring_width = circuit.num_clbits(),
+                                        .is_sole_region = true};
+    cost::CostEstimate estimate = engine->estimate(request);
+    if (!estimate.feasible) {
+        return estimate;
+    }
+    estimate.estimated_peak_bytes = estimate.estimated_peak_bytes + bookkeeping;
+    if (estimate.estimated_peak_bytes > budget) {
+        return infeasible_disk_tier("the disk tier's window and outputs need " +
+                                    std::to_string(estimate.estimated_peak_bytes) +
+                                    " bytes, budget is " + std::to_string(budget) + " bytes");
+    }
+    const std::uint64_t reserve = scratch_reserve_bytes(hardware_profile.scratch_capacity_bytes);
+    if (estimate.tier.file_bytes > hardware_profile.scratch_available_bytes ||
+        hardware_profile.scratch_available_bytes - estimate.tier.file_bytes < reserve) {
+        return infeasible_disk_tier(
+            "the disk tier's scratch file of " + std::to_string(estimate.tier.file_bytes) +
+            " bytes plus the reserve of " + std::to_string(reserve) + " bytes exceeds the " +
+            std::to_string(hardware_profile.scratch_available_bytes) + " bytes available in " +
+            hardware_profile.scratch_directory.string());
+    }
+    return estimate;
+}
+
 }  // namespace
 
 Plan plan_job(const JobSpec& job_spec,
@@ -265,6 +334,30 @@ Plan plan_job(const JobSpec& job_spec,
                 "noiseless dense simulation only");
         }
     }
+    // A forced tier that cannot be honoured at all (Phase 23, docs/adr/0027
+    // section 3.5): refused here, before costing, never a silent fallback,
+    // as a forced CUDA backend is. One that can run but has no room is
+    // refused later, as ResourceExceeded, by the ordinary feasibility rules.
+    if (job_spec.tier == Tier::HostOffloaded) {
+        throw common::UnsupportedFeature(
+            "tier=host_offloaded was requested, but the host-offloaded tier was measured and not "
+            "built (docs/adr/0027 section 10.1)");
+    }
+    if (job_spec.tier == Tier::Disk) {
+        if (job_spec.want_statevector) {
+            throw common::UnsupportedFeature(
+                "tier=disk was requested, but the disk tier does not return a statevector");
+        }
+        if (noisy) {
+            throw common::UnsupportedFeature(
+                "tier=disk was requested, but the circuit is noisy and the disk tier runs "
+                "noiseless dense simulation only");
+        }
+        if (job_spec.backend == Backend::Cuda) {
+            throw common::UnsupportedFeature(
+                "tier=disk was requested with backend=cuda, but the disk tier runs on the CPU");
+        }
+    }
     const auto cuda_seconds = [&](std::uint64_t work_units, const DeviceCost& device) {
         return static_cast<double>(device.kernel_launches) *
                    hardware_profile.cuda_kernel_launch_seconds +
@@ -325,6 +418,30 @@ Plan plan_job(const JobSpec& job_spec,
                 factorized_mixed_seconds.has_value()) {
                 seconds = *factorized_mixed_seconds;
             }
+            if (candidate.tier == Tier::Disk) {
+                // The disk tier (Phase 23, docs/adr/0027 section 3.5): the
+                // work term as on the CPU, plus the state crossing the
+                // scratch file's link once per pass at the slower of its
+                // measured directions. An unmeasured link leaves the runtime
+                // unknown: under a time budget that is a refusal, never a
+                // guess, and without one the figure is simply absent.
+                const double link_bytes_per_second =
+                    std::min(hardware_profile.scratch_write_bytes_per_second,
+                             hardware_profile.scratch_read_bytes_per_second);
+                if (link_bytes_per_second <= 0.0) {
+                    if (job_spec.time_budget_seconds.has_value()) {
+                        candidate.feasible = false;
+                        candidate.infeasible_reason =
+                            "the disk tier's runtime cannot be estimated against the time "
+                            "budget: the scratch directory's bandwidth is unmeasured";
+                    }
+                    candidate.estimated_seconds = -1.0;
+                    return;
+                }
+                seconds =
+                    static_cast<double>(candidate.estimated_work_units) / work_units_per_second +
+                    static_cast<double>(candidate.tier_cost.link_bytes) / link_bytes_per_second;
+            }
             // Only a single-engine candidate can carry an observation: it is
             // attributed to one (engine, backend) pair, and a Factorized or
             // CutAndRecombine candidate spans several engines.
@@ -375,6 +492,44 @@ Plan plan_job(const JobSpec& job_spec,
         .estimated_work_units = direct_dense_estimate.estimated_work_units,
         .is_winner = false,
     });
+
+    // The disk tier (Phase 23, docs/adr/0027 section 3.5, owner Q5): reach
+    // only. It is costed when the in-memory dense state does not fit the
+    // budget -- never for a noisy or statevector job, which it cannot run, nor
+    // under a forced CUDA backend, which has no disk tier -- or when the
+    // caller forced it. A job whose state fits is planned exactly as before.
+    // The dense candidate then carries the tier: the same algorithm and work
+    // units, the window's host peak as its memory, and the tier's own cost.
+    const bool disk_forced = job_spec.tier == Tier::Disk;
+    const bool disk_reachable = job_spec.tier != Tier::InMemory &&
+                                job_spec.backend != Backend::Cuda && !noisy &&
+                                !job_spec.want_statevector;
+    std::optional<cost::CostEstimate> disk_estimate;
+    if (disk_forced || (disk_reachable && !direct_dense_estimate.feasible)) {
+        disk_estimate = estimate_disk_tier(circuit,
+                                           reduced_observable,
+                                           hardware_profile,
+                                           job_spec,
+                                           want_counts,
+                                           want_expectation,
+                                           budget);
+        CandidateSummary& dense_candidate = candidates[dense_index];
+        if (disk_estimate->feasible) {
+            dense_candidate.feasible = true;
+            dense_candidate.infeasible_reason.clear();
+            dense_candidate.estimated_peak_bytes = disk_estimate->estimated_peak_bytes;
+            dense_candidate.estimated_work_units = disk_estimate->estimated_work_units;
+            dense_candidate.tier = Tier::Disk;
+            dense_candidate.tier_cost = disk_estimate->tier;
+        } else if (disk_forced) {
+            dense_candidate.feasible = false;
+            dense_candidate.infeasible_reason =
+                "tier=disk requested: " + disk_estimate->infeasible_reason;
+        } else {
+            dense_candidate.infeasible_reason +=
+                "; the disk tier: " + disk_estimate->infeasible_reason;
+        }
+    }
 
     // Candidate: DirectStabilizer, always enumerated -- its own
     // estimate() reports infeasibility (naming the first non-Clifford
@@ -640,6 +795,20 @@ Plan plan_job(const JobSpec& job_spec,
         }
     }
 
+    // A forced disk tier (Phase 23): only the dense algorithm has one, so
+    // every other candidate is infeasible with a reason explain() prints. The
+    // dense candidate was moved to the tier above, or refused there.
+    if (disk_forced) {
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            if (i != dense_index && candidates[i].feasible) {
+                candidates[i].feasible = false;
+                candidates[i].infeasible_reason =
+                    "tier=disk requested: " + std::string(strategy_name(candidates[i].strategy)) +
+                    " has no disk tier";
+            }
+        }
+    }
+
     // Backend selection for the dense candidate (Phase 10, docs/adr/0014).
     //
     // The owner-decided rule is two-level: the ALGORITHM is chosen by work
@@ -727,7 +896,12 @@ Plan plan_job(const JobSpec& job_spec,
             // without this a caller-supplied device budget would be ignored.
             const bool fits_device =
                 cuda_estimate.device.device_bytes <= hardware_profile.cuda_device_available_bytes;
-            if (cuda_estimate.feasible && dense_candidate.feasible && fits_device) {
+            // A dense candidate already on the disk tier (Phase 23) is one
+            // whose in-memory state did not fit the host budget: the CUDA
+            // engine's host copy would not either, so the comparison is not
+            // made.
+            if (cuda_estimate.feasible && dense_candidate.feasible &&
+                dense_candidate.tier == Tier::InMemory && fits_device) {
                 // Each backend's figure is raised to what an abandoned attempt
                 // actually measured on it BEFORE the two are compared (Phase 11,
                 // docs/adr/0015). Without this, a GPU run that overran its budget
@@ -921,17 +1095,28 @@ Plan plan_job(const JobSpec& job_spec,
     if (*winner == dense_index) {
         plan.strategy = Strategy::DirectDense;
         plan.exact = true;
+        const CandidateSummary& dense_candidate = candidates[dense_index];
+        // On the disk tier the region's estimate is the tier's own (Phase
+        // 23): its window as the execution budget, its pass plan as the
+        // chunk and window the runtime hands the engine. disk_estimate is
+        // set whenever the candidate carries the tier.
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        const cost::CostEstimate& dense_region_estimate =
+            dense_candidate.tier == Tier::Disk ? *disk_estimate : direct_dense_estimate;
+        // NOLINTEND(bugprone-unchecked-optional-access)
         plan.regions.push_back(build_direct_region(circuit,
                                                    Engine::Dense,
-                                                   candidates[dense_index].backend,
-                                                   direct_dense_estimate,
+                                                   dense_candidate.backend,
+                                                   dense_region_estimate,
                                                    reduced_observable));
+        plan.regions.back().tier = dense_candidate.tier;
+        plan.regions.back().tier_cost = dense_candidate.tier_cost;
         // The chosen backend's host figure (docs/adr/0025 section 5): the
         // candidate carries the CUDA one when the dense job moved to the
         // device. The region keeps the CPU figure, at least the CUDA host
         // copy, as its execution budget.
-        plan.estimated_state_bytes = candidates[dense_index].estimated_peak_bytes;
-        plan.estimated_work_units = direct_dense_estimate.estimated_work_units;
+        plan.estimated_state_bytes = dense_candidate.estimated_peak_bytes;
+        plan.estimated_work_units = dense_region_estimate.estimated_work_units;
     } else if (*winner == stabilizer_index) {
         plan.strategy = Strategy::DirectStabilizer;
         plan.exact = true;
@@ -1120,8 +1305,48 @@ Plan plan_job(const JobSpec& job_spec,
         plan.device_pool_bytes = hardware_profile.cuda_device_pool_bytes;
         plan.device_pooled = hardware_profile.cuda_device_pooled;
     }
+    // The scratch directory's figures a disk-tier decision rested on (Phase
+    // 23, docs/adr/0027), on the same rule: only when the plan has the tier
+    // in it. The requested tier is reported whenever one was requested, as
+    // the requested backend is.
+    plan.requested_tier = job_spec.tier;
+    const auto on_disk = [](const auto& item) { return item.tier == Tier::Disk; };
+    if (std::any_of(plan.candidates.begin(), plan.candidates.end(), on_disk) ||
+        std::any_of(plan.regions.begin(), plan.regions.end(), on_disk)) {
+        plan.scratch_directory = hardware_profile.scratch_directory;
+        plan.disk_available_bytes = hardware_profile.scratch_available_bytes;
+        plan.disk_write_bytes_per_second = hardware_profile.scratch_write_bytes_per_second;
+        plan.disk_read_bytes_per_second = hardware_profile.scratch_read_bytes_per_second;
+    }
 
     return plan;
+}
+
+bool may_reach_disk_tier(const JobSpec& job_spec, const HardwareProfile& hardware_profile) {
+    if (job_spec.tier == Tier::Disk) {
+        return true;
+    }
+    if (job_spec.tier == Tier::InMemory || job_spec.backend == Backend::Cuda ||
+        job_spec.want_statevector ||
+        ir::first_noise_reason(job_spec.circuit.operations()).has_value()) {
+        return false;
+    }
+    const std::uint64_t budget =
+        job_spec.memory_budget_bytes.value_or(default_memory_budget(hardware_profile));
+    const bool want_counts = job_spec.shots > 0;
+    const bool want_expectation = job_spec.expectation.has_value();
+    const cost::CostEstimate in_memory =
+        cost::estimate_direct(job_spec.circuit,
+                              *available_engines()[0],
+                              job_spec.want_statevector,
+                              want_counts,
+                              want_expectation,
+                              want_expectation ? &*job_spec.expectation : nullptr,
+                              budget,
+                              job_spec.accuracy_policy,
+                              /*trajectories=*/0,
+                              job_spec.shots);
+    return !in_memory.feasible;
 }
 
 }  // namespace menos::plan

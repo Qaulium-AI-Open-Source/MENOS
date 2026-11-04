@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 
 #include "common/thread_count.h"
@@ -61,6 +62,15 @@ struct JobSpec {
     // A forced backend (RunOptions::backend has the semantics, docs/adr/0021
     // section 2). Unset: the planner chooses, as before.
     std::optional<Backend> backend = std::nullopt;
+    // A forced memory tier (RunOptions::tier, Phase 23, docs/adr/0027). Unset:
+    // the planner reaches for the disk tier only when the in-memory state
+    // does not fit; Tier::Disk forces it and never falls back.
+    std::optional<Tier> tier = std::nullopt;
+    // The directory the disk tier creates its scratch file in, resolved by
+    // the api layer (RunOptions::scratch_directory or the system's temporary
+    // directory); empty only for a JobSpec built directly, which leaves the
+    // engine to the temporary directory.
+    std::filesystem::path scratch_directory = {};
 };
 
 }  // namespace menos::plan

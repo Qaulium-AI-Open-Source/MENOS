@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -191,6 +192,11 @@ struct Region {
     // Where this region's state lives while it executes (Phase 23). InMemory
     // for every region of a job whose state fits its budget.
     Tier tier = Tier::InMemory;
+    // The tier's own figures for this region (Phase 23, docs/adr/0027): the
+    // pass plan's chunk and window the executor runs with, which the runtime
+    // hands to the engine so the plan the planner priced is the plan that
+    // runs. All zero for an in-memory region.
+    TierCost tier_cost = {};
     // Why `engine` was chosen over the other available engine(s) for this
     // region, for explain() (docs/BUILD_PLAN.md Phase 4: mixed-engine
     // Factorized plans and the 99%-Clifford-plus-one-T case must show
@@ -292,8 +298,9 @@ struct CandidateSummary {
     Backend backend = Backend::Cpu;
     // The memory tier this candidate was costed for (Phase 23). InMemory
     // unless the planner reached for a tier because the in-memory state does
-    // not fit; explain() prints it only then.
+    // not fit; explain() prints it only then, with the tier's figures below.
     Tier tier = Tier::InMemory;
+    TierCost tier_cost = {};
     // The accelerator terms this candidate was costed with; all zero for a CPU
     // backend. Separate from estimated_peak_bytes, which is host memory. A
     // Factorized candidate stays on the Cpu backend even when some of its
@@ -385,6 +392,21 @@ struct Plan {
     // memory-pool support). Set exactly when device_available_bytes is.
     std::optional<std::uint64_t> device_pool_bytes = std::nullopt;
     std::optional<bool> device_pooled = std::nullopt;
+    // The memory tier the caller forced (RunOptions::tier, Phase 23,
+    // docs/adr/0027), so explain() can say the tier was requested rather than
+    // reached. Unset when the planner chose, and then explain() prints
+    // nothing extra.
+    std::optional<Tier> requested_tier = std::nullopt;
+    // The scratch directory a disk-tier decision rested on, with the space
+    // available on it and its measured bandwidth (0 when unmeasured), read
+    // when the job was planned. Set only when a candidate or a region of this
+    // plan is on the disk tier, so every plan with no disk tier in it reports
+    // exactly as before. Like device_available_bytes, these are measured
+    // figures of the moment.
+    std::optional<std::filesystem::path> scratch_directory = std::nullopt;
+    std::optional<std::uint64_t> disk_available_bytes = std::nullopt;
+    std::optional<double> disk_write_bytes_per_second = std::nullopt;
+    std::optional<double> disk_read_bytes_per_second = std::nullopt;
 
     // A deterministic text report: the "circuit", "light_cone",
     // candidate, "strategy" and region lines, and the "estimated" line

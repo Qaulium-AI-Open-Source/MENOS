@@ -4,6 +4,7 @@ add_executable(menos_plan_tests
     region_builder_test.cpp
     engine_noise_refusal_test.cpp
     execution_engines_test.cpp
+    disk_tier_selection_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)

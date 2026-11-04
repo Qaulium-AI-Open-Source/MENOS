@@ -19,6 +19,14 @@ namespace menos::cost {
 // menos::cost::CostEstimate call site keeps compiling unchanged.
 using menos::CostEstimate;
 
+// The runtime's own measurement bookkeeping for one job, held beside the
+// engines (src/runtime/runtime.cpp, Phase 21, docs/adr/0025 section 3.4): the
+// surviving write of each clbit (ir::compute_final_writes, one map node per
+// clbit) and the measure targets built from it. estimate_direct and
+// estimate_factorized add it to every candidate's peak; the planner's disk-tier
+// block adds it the same way (Phase 23).
+[[nodiscard]] std::uint64_t measurement_bookkeeping_bytes(const Circuit& circuit);
+
 // From `engines` (fixed enumeration order), the cheapest engine whose
 // estimate() is feasible for this region's request; ties go to the
 // earliest index (docs/BUILD_PLAN.md Phase 4: "each factorized region

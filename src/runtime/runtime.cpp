@@ -105,6 +105,13 @@ Result execute_direct(Plan&& plan,
         .trajectories =
             plan.trajectory_summary.has_value() ? plan.trajectory_summary->trajectories : 0,
         .max_threads = job_spec.max_threads,
+        // The disk tier's scratch directory and the chunk and window the
+        // planner priced (Phase 23, docs/adr/0027): the engine runs exactly
+        // the pass plan its estimate reported. Both are zero for an
+        // in-memory region, which ignores them.
+        .scratch_directory = job_spec.scratch_directory,
+        .tier_chunk_qubits = region.tier_cost.chunk_qubits,
+        .tier_window_qubits = region.tier_cost.window_qubits,
     };
 
     const auto start_execute = std::chrono::steady_clock::now();

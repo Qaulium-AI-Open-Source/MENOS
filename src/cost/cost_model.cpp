@@ -21,20 +21,12 @@ using common::checked_mul;
 using common::checked_pow2;
 using common::ResourceExceeded;
 
-namespace {
-
-// The runtime's own measurement bookkeeping for one job, held beside the
-// engines (src/runtime/runtime.cpp, Phase 21, docs/adr/0025 section 3.4): the
-// surviving write of each clbit (ir::compute_final_writes, one map node per
-// clbit) and the measure targets built from it.
 std::uint64_t measurement_bookkeeping_bytes(const Circuit& circuit) {
     const std::uint64_t clbits = circuit.num_clbits();
     const std::uint64_t node = common::tree_node_bytes(sizeof(std::pair<const ClbitId, QubitId>));
     return checked_add(checked_mul(clbits + 1, node),
                        common::grown_vector_bytes(clbits, sizeof(std::pair<QubitId, ClbitId>)));
 }
-
-}  // namespace
 
 EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engines,
                                   const EngineEstimateRequest& request) {
