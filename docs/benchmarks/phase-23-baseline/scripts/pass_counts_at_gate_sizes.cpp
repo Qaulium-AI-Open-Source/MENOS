@@ -82,7 +82,8 @@ int main() {
     };
     // The table goes to stderr, the JSON array to stdout.
     std::fprintf(stderr,
-                 "family         n gates   L global gmax  w=gmax  w+1  w+2 | first 100 ops: global gmax w=gmax w+1 w+2\n");
+                 "family         n gates   L global gmax  w=gmax  w+1  w+2 | first 100 ops: global "
+                 "gmax w=gmax w+1 w+2\n");
     std::printf("[\n");
     bool first = true;
     for (const auto& [name, make] : families) {
@@ -90,9 +91,11 @@ int main() {
             const menos::Circuit circuit = make(n);
             const auto& ops = circuit.operations();
             const std::span<const menos::Operation> all(ops.data(), ops.size());
-            const std::span<const menos::Operation> prefix(ops.data(), std::min<std::size_t>(100, ops.size()));
+            const std::span<const menos::Operation> prefix(ops.data(),
+                                                           std::min<std::size_t>(100, ops.size()));
             for (const std::uint32_t L : {24U, 25U, 26U, 27U, 28U}) {
-                if (L >= n) continue;
+                if (L >= n)
+                    continue;
                 const auto gmax = count_passes(all, PassCountRequest{L, 64}).max_global_operands;
                 const auto p0 = count_passes(all, PassCountRequest{L, gmax});
                 const auto p1 = count_passes(all, PassCountRequest{L, gmax + 1});
@@ -101,32 +104,45 @@ int main() {
                 const auto q1 = count_passes(prefix, PassCountRequest{L, gmax + 1});
                 const auto q2 = count_passes(prefix, PassCountRequest{L, gmax + 2});
                 std::fprintf(stderr,
-                             "%-12s %3u %5zu  %2u %6llu %4u %7llu %4llu %4llu | %6llu %4u %6llu %4llu %4llu\n",
-                             name.c_str(), n, ops.size(), L,
-                             static_cast<unsigned long long>(p0.global_gates), gmax,
+                             "%-12s %3u %5zu  %2u %6llu %4u %7llu %4llu %4llu | %6llu %4u %6llu "
+                             "%4llu %4llu\n",
+                             name.c_str(),
+                             n,
+                             ops.size(),
+                             L,
+                             static_cast<unsigned long long>(p0.global_gates),
+                             gmax,
                              static_cast<unsigned long long>(p0.passes),
                              static_cast<unsigned long long>(p1.passes),
                              static_cast<unsigned long long>(p2.passes),
-                             static_cast<unsigned long long>(q0.global_gates), q0.max_global_operands,
+                             static_cast<unsigned long long>(q0.global_gates),
+                             q0.max_global_operands,
                              static_cast<unsigned long long>(q0.passes),
                              static_cast<unsigned long long>(q1.passes),
                              static_cast<unsigned long long>(q2.passes));
-                std::printf("%s{\"family\":\"%s\",\"n\":%u,\"gates\":%zu,\"local_qubits\":%u,"
-                            "\"global_gates\":%llu,\"max_global_operands\":%u,"
-                            "\"passes_window_gmax\":%llu,\"passes_window_gmax_plus_1\":%llu,"
-                            "\"passes_window_gmax_plus_2\":%llu,"
-                            "\"first_100_ops\":{\"global_gates\":%llu,\"max_global_operands\":%u,"
-                            "\"passes_window_gmax\":%llu,\"passes_window_gmax_plus_1\":%llu,"
-                            "\"passes_window_gmax_plus_2\":%llu}}\n",
-                            first ? " " : ",", name.c_str(), n, ops.size(), L,
-                            static_cast<unsigned long long>(p0.global_gates), gmax,
-                            static_cast<unsigned long long>(p0.passes),
-                            static_cast<unsigned long long>(p1.passes),
-                            static_cast<unsigned long long>(p2.passes),
-                            static_cast<unsigned long long>(q0.global_gates), q0.max_global_operands,
-                            static_cast<unsigned long long>(q0.passes),
-                            static_cast<unsigned long long>(q1.passes),
-                            static_cast<unsigned long long>(q2.passes));
+                std::printf(
+                    "%s{\"family\":\"%s\",\"n\":%u,\"gates\":%zu,\"local_qubits\":%u,"
+                    "\"global_gates\":%llu,\"max_global_operands\":%u,"
+                    "\"passes_window_gmax\":%llu,\"passes_window_gmax_plus_1\":%llu,"
+                    "\"passes_window_gmax_plus_2\":%llu,"
+                    "\"first_100_ops\":{\"global_gates\":%llu,\"max_global_operands\":%u,"
+                    "\"passes_window_gmax\":%llu,\"passes_window_gmax_plus_1\":%llu,"
+                    "\"passes_window_gmax_plus_2\":%llu}}\n",
+                    first ? " " : ",",
+                    name.c_str(),
+                    n,
+                    ops.size(),
+                    L,
+                    static_cast<unsigned long long>(p0.global_gates),
+                    gmax,
+                    static_cast<unsigned long long>(p0.passes),
+                    static_cast<unsigned long long>(p1.passes),
+                    static_cast<unsigned long long>(p2.passes),
+                    static_cast<unsigned long long>(q0.global_gates),
+                    q0.max_global_operands,
+                    static_cast<unsigned long long>(q0.passes),
+                    static_cast<unsigned long long>(q1.passes),
+                    static_cast<unsigned long long>(q2.passes));
                 first = false;
             }
         }
