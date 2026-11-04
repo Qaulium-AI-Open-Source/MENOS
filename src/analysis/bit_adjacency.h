@@ -133,6 +133,25 @@ public:
             }
         }
     }
+    // Calls f(u) for every common neighbour u of a and b, in ascending order
+    // of u.
+    template <typename F>
+    void for_each_common_neighbor(std::size_t a, std::size_t b, F&& f) const {
+        const WordRange sa = span_[a];
+        const WordRange sb = span_[b];
+        const std::size_t first = std::max(sa.first, sb.first);
+        const std::size_t last = std::min(sa.last, sb.last);
+        const std::uint64_t* ra = row(a);
+        const std::uint64_t* rb = row(b);
+        for (std::size_t w = first; w < last; ++w) {
+            std::uint64_t word = ra[w] & rb[w];
+            while (word != 0) {
+                const auto bit = static_cast<std::size_t>(std::countr_zero(word));
+                f(w * 64 + bit);
+                word &= word - 1;
+            }
+        }
+    }
     // Calls f(u) for every neighbour u of a, in ascending order of u.
     template <typename F>
     void for_each_neighbor(std::size_t a, F&& f) const {

@@ -465,6 +465,8 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
     std::vector<std::size_t> neighbors;
     std::vector<bool> is_affected(graph.num_nodes, false);
     std::vector<std::size_t> affected;
+    std::vector<std::size_t> drop(graph.num_nodes, 0);
+    std::vector<std::pair<std::size_t, std::size_t>> new_edges;
 
     for (std::size_t step = 0; step < graph.num_nodes; ++step) {
         const std::size_t best_vertex = queue.pop_min();
@@ -492,10 +494,16 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
             break;
         }
 
+        // The fill-in edges eliminating best_vertex adds: every pair of its
+        // neighbours not yet adjacent.
+        new_edges.clear();
         for (std::size_t i = 0; i < neighbors.size(); ++i) {
             for (std::size_t j = i + 1; j < neighbors.size(); ++j) {
-                adjacency.set(neighbors[i], neighbors[j]);
-                adjacency.set(neighbors[j], neighbors[i]);
+                if (!adjacency.test(neighbors[i], neighbors[j])) {
+                    new_edges.emplace_back(neighbors[i], neighbors[j]);
+                    adjacency.set(neighbors[i], neighbors[j]);
+                    adjacency.set(neighbors[j], neighbors[i]);
+                }
             }
         }
         for (const std::size_t nb : neighbors) {
@@ -503,28 +511,39 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         }
         adjacency.clear_row(best_vertex);
 
-        // A new fill-in edge is always between two members of
-        // `neighbors`, so only a vertex with two or more of them as its
-        // own neighbors could have its own fill count change. Every
-        // neighbor of a member of `neighbors` is a safe (if slightly
-        // generous) superset of that set -- cheap to build, and correct
-        // regardless of how generous, since compute_fill is idempotent.
-        affected.clear();
-        const auto mark = [&](std::size_t u) {
-            if (!is_affected[u]) {
-                is_affected[u] = true;
-                affected.push_back(u);
-            }
-        };
+        // Exact incremental update (docs/adr/0025 section 12.3, C.2b).
+        // fill(u) counts the non-adjacent pairs among u's neighbours.
+        //  - A neighbour of best_vertex loses it as a neighbour and gains
+        //    the others: its fill is recomputed in full.
+        //  - Any other remaining vertex u keeps exactly its neighbourhood
+        //    (it was not adjacent to best_vertex, and every new edge joins
+        //    two neighbours of best_vertex), and the only adjacency that
+        //    changes among its neighbours is the new edges. Its fill drops
+        //    by the number of new edges with both ends adjacent to u, and
+        //    by nothing else -- so only the common neighbours of a new
+        //    edge's two ends change at all.
         for (const std::size_t nb : neighbors) {
-            mark(nb);
-            adjacency.for_each_neighbor(nb, mark);
+            is_affected[nb] = true;
         }
-        for (const std::size_t v : affected) {
-            if (!queue.removed(v)) {
-                queue.set_fill(v, compute_fill(adjacency, v, scratch));
-            }
-            is_affected[v] = false;
+        affected.clear();
+        for (const auto& [a, b] : new_edges) {
+            adjacency.for_each_common_neighbor(a, b, [&](std::size_t u) {
+                if (is_affected[u]) {
+                    return;  // a neighbour of best_vertex: recomputed below
+                }
+                if (drop[u] == 0) {
+                    affected.push_back(u);
+                }
+                ++drop[u];
+            });
+        }
+        for (const std::size_t u : affected) {
+            queue.set_fill(u, queue.fill(u) - drop[u]);
+            drop[u] = 0;
+        }
+        for (const std::size_t nb : neighbors) {
+            queue.set_fill(nb, compute_fill(adjacency, nb, scratch));
+            is_affected[nb] = false;
         }
     }
     return result;

@@ -13,8 +13,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <limits>
+#include <random>
+#include <string>
 
 namespace menos::analysis {
 namespace {
@@ -295,6 +298,57 @@ TEST(TreewidthTest, DenseAndSparseMinFillAgreeOnRandomGraphs) {
         EXPECT_EQ(dense.per_step_degree, sparse.per_step_degree) << "trial " << trial;
         EXPECT_EQ(dense.width, sparse.width) << "trial " << trial;
         EXPECT_EQ(dense.exceeded_budget, sparse.exceeded_budget) << "trial " << trial;
+    }
+}
+
+// The same agreement on graphs of several 64-bit words per row, and on the
+// line graphs of real circuits' closed networks -- the graphs the planner
+// actually searches (docs/adr/0025 section 12.3: the dense search updates
+// fills incrementally, and the sparse search, which recomputes every
+// affected fill from scratch and scans every vertex, is its oracle).
+TEST(TreewidthTest, DenseAndSparseMinFillAgreeOnLargerAndCircuitGraphs) {
+    std::mt19937_64 rng(20261104);
+    const auto check = [](const TensorNetworkGraph& g, const std::string& what) {
+        const EliminationOrder dense = estimate_treewidth_min_fill_dense(g);
+        const EliminationOrder sparse = estimate_treewidth_min_fill_sparse(g);
+        ASSERT_EQ(dense.order, sparse.order) << what;
+        ASSERT_EQ(dense.per_step_degree, sparse.per_step_degree) << what;
+        ASSERT_EQ(dense.width, sparse.width) << what;
+    };
+    for (std::size_t trial = 0; trial < 16; ++trial) {
+        const std::size_t n = 70 + rng() % 180;
+        const double density = std::array<double, 4>{0.005, 0.02, 0.05, 0.15}[trial % 4];
+        std::bernoulli_distribution edge(density);
+        TensorNetworkGraph g{n, {}};
+        for (std::size_t a = 0; a < n; ++a) {
+            for (std::size_t b = a + 1; b < n; ++b) {
+                if (edge(rng)) {
+                    g.edges.emplace_back(a, b);
+                }
+            }
+        }
+        check(g, "random trial " + std::to_string(trial));
+    }
+    for (std::uint32_t trial = 0; trial < 12; ++trial) {
+        const std::uint32_t n = 4 + trial % 9;
+        Circuit circuit(n, 0);
+        for (std::uint32_t layer = 0; layer < 3 + trial % 5; ++layer) {
+            for (std::uint32_t q = 0; q < n; ++q) {
+                circuit.append(Opcode::RY, {q}, {0.1 * static_cast<double>(q + 1)});
+            }
+            for (std::uint32_t g = 0; g < n / 2; ++g) {
+                const auto a = static_cast<QubitId>(rng() % n);
+                auto b = static_cast<QubitId>(rng() % (n - 1));
+                b = b >= a ? b + 1 : b;
+                circuit.append(Opcode::CX, {a, b});
+            }
+        }
+        PauliString z{n, std::vector<std::uint64_t>(1, 0), std::vector<std::uint64_t>(1, 0)};
+        for (std::uint32_t q = 0; q < n; q += 2) {
+            z.z_words[0] |= std::uint64_t{1} << q;
+        }
+        const LineGraph line = build_line_graph(build_closed_timelines(n, circuit.operations(), z));
+        check(line.graph, "circuit trial " + std::to_string(trial));
     }
 }
 

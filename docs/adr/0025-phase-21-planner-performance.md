@@ -770,3 +770,50 @@ highest index, fails 6 tests.
 
 The other jobs were 0.90–1.15x on medians and 1.02–1.15x on fastest
 repetitions; none was slower than its limit.
+
+#### C.2b (b): exact incremental fill update — KEPT
+
+After eliminating v, the search recomputed `compute_fill` for every
+vertex within two steps of v. Most of those fills cannot change.
+fill(u) counts the non-adjacent pairs among u's neighbours, which gives
+two cases [DERIVED]:
+- **u a neighbour of v.** u loses v and gains the other neighbours of v,
+  so its fill is recomputed in full, as before.
+- **Any other remaining u.** u was not adjacent to v, so it keeps exactly
+  its neighbourhood: every new fill-in edge joins two neighbours of v, and
+  the only removed edges are v's own. So the only change among u's
+  neighbours is the new edges that have both ends adjacent to u. fill(u)
+  drops by exactly that count.
+
+So the search now:
+1. records the new edges as it adds them (it already tested each pair);
+2. for each new edge (a, b), walks the common neighbours of a and b, using
+   `BitAdjacency::for_each_common_neighbor` over the overlap of the two
+   spans;
+3. subtracts each such vertex's count from its fill;
+4. recomputes only v's neighbours in full.
+
+When fill(v) is 0, which is common under min-fill, no vertex outside N(v)
+is touched at all.
+
+Every step is integer counting, so every fill is the integer a full
+recompute gives. The sparse search still recomputes fills from scratch and
+scans every vertex, and it serves as the oracle:
+- the existing test covers 200 random graphs of n ≤ 90;
+- a new test covers 16 random graphs of n = 70–250 (2–4 words per row) and
+  12 circuit line graphs.
+
+Mutation check: dropping the outside-N(v) update fails both tests.
+
+| Job | C.2a | C.2b | Median | Fastest |
+|---|---|---|---|---|
+| expectation_ising_budgeted/large | 665 ms | 271 ms | **2.46x** | 2.46x |
+| expectation_factorized/large | 2651 ms | 1719 ms | **1.54x** | 1.54x |
+| expectation_ising_budgeted/medium | 138 ms | 75.7 ms | 1.83x | 1.86x |
+| expectation_factorized/medium | 166 ms | 88.8 ms | 1.87x | 1.77x |
+| expectation_random_pairs_controlled/large | 200 ms | 43.9 ms | 4.55x | 3.92x |
+| expectation_z_all/large | 27.2 ms | 11.5 ms | 2.36x | 2.26x |
+| expectation_ising/large | 28.0 ms | 12.3 ms | 2.28x | 2.17x |
+| expectation_cut/large | 10.7 ms | 6.87 ms | 1.56x | 1.79x |
+
+Every job in the run is faster: 1.13–4.55x on medians.
