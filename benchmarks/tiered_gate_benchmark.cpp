@@ -119,7 +119,7 @@ menos::Observable twenty_terms(std::uint32_t n) {
                 x_mask = x & all;
                 break;
             case 2:
-                x_mask = std::uint64_t{1} << (n - 1 - static_cast<std::uint32_t>(k % n));
+                x_mask = std::uint64_t{1} << (n - 1 - static_cast<std::uint32_t>(k) % n);
                 z_mask = z & all;
                 break;
             default:

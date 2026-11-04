@@ -139,7 +139,7 @@ TEST(CudaDevicePoolTest, ADeviceThatRanOutSinceThePlanIsARefusalNamingTheBytes) 
     other_process.release(hog);
     // The device works again once the memory is back, and the sticky error
     // was cleared.
-    const DeviceBuffer after(kBlockAmplitudes, std::numeric_limits<std::uint64_t>::max());
+    DeviceBuffer after(kBlockAmplitudes, std::numeric_limits<std::uint64_t>::max());
     initialize(after.state(), 0.0);
 }
 
