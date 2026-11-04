@@ -12,6 +12,7 @@
 #include <complex>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -108,13 +109,21 @@ TEST(CudaDevicePoolTest, AvailableBytesCountTheRetainedPool) {
 // Phase 23 (docs/adr/0027 section 9, Q8(i)): memory another process took
 // between the plan and the allocation is a named resource refusal, not an
 // internal error. A direct driver allocation outside the pool stands in for
-// the other process.
+// the other process. The states are then asked for one after another until
+// the driver refuses: on a native Linux driver the first request is refused
+// (32 MiB left, 256 MiB asked), while WSL's driver backs device memory with
+// shared system memory and grants allocations past the free figure, by an
+// amount that varies between calls (measured up to 16 GiB, docs/adr/0027
+// section 10.3), so the refusal comes later there. Either way it must come,
+// and it must be the named refusal.
 TEST(CudaDevicePoolTest, ADeviceThatRanOutSinceThePlanIsARefusalNamingTheBytes) {
     if (!device_info().present) {
         GTEST_SKIP() << "no CUDA device";
     }
     device_pool().trim();
     constexpr std::uint64_t kHeadroom = std::uint64_t{32} << 20;
+    constexpr std::size_t kStateAmplitudes = std::size_t{1} << 24;  // 256 MiB
+    constexpr std::size_t kMostStates = 256;  // 64 GiB: more than any shared-memory grant
     const std::uint64_t free_before = device_free_bytes();
     if (free_before <= 2 * kHeadroom) {
         GTEST_SKIP() << "the device has too little free memory to stage the race";
@@ -122,20 +131,31 @@ TEST(CudaDevicePoolTest, ADeviceThatRanOutSinceThePlanIsARefusalNamingTheBytes) 
     DevicePool other_process(/*use_pool=*/false);
     void* hog = other_process.allocate(free_before - kHeadroom);
     ASSERT_NE(hog, nullptr);
-    try {
-        // A state the plan would have found room for, asked for after the
-        // device filled up: 256 MiB against 32 MiB left.
-        const DeviceBuffer state(std::size_t{1} << 24, std::numeric_limits<std::uint64_t>::max());
-        FAIL() << "expected ResourceExceeded";
-    } catch (const common::ResourceExceeded& e) {
-        const std::string what = e.what();
-        EXPECT_NE(what.find("could not provide " + std::to_string(std::uint64_t{16} << 24) +
-                            " bytes of device memory"),
-                  std::string::npos)
-            << what;
-        EXPECT_NE(what.find("bytes are free now"), std::string::npos) << what;
-        EXPECT_NE(what.find("retained in MENOS's pool"), std::string::npos) << what;
+    {
+        std::vector<std::unique_ptr<DeviceBuffer>> states;
+        bool refused = false;
+        while (!refused && states.size() < kMostStates) {
+            try {
+                // A state the plan would have found room for, asked for
+                // after the device filled up.
+                states.push_back(std::make_unique<DeviceBuffer>(
+                    kStateAmplitudes, std::numeric_limits<std::uint64_t>::max()));
+            } catch (const common::ResourceExceeded& e) {
+                refused = true;
+                const std::string what = e.what();
+                EXPECT_NE(what.find("could not provide " +
+                                    std::to_string(std::uint64_t{16} * kStateAmplitudes) +
+                                    " bytes of device memory"),
+                          std::string::npos)
+                    << what;
+                EXPECT_NE(what.find("bytes are free now"), std::string::npos) << what;
+                EXPECT_NE(what.find("retained in MENOS's pool"), std::string::npos) << what;
+            }
+        }
+        EXPECT_TRUE(refused) << "the driver granted " << states.size()
+                             << " states of 256 MiB past the free figure without refusing";
     }
+    device_pool().trim();
     other_process.release(hog);
     // The device works again once the memory is back, and the sticky error
     // was cleared.
