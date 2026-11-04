@@ -96,3 +96,31 @@ This is the stabilizer-formalism view of Clifford dynamics
 8,000 random 3- and 4-qubit cases. Since the rank cache, the SVD is about
 2% of the most Clifford-heavy corpus job, so it is not implemented
 (docs/adr/0025 section 12.3, C.4).
+
+## Branch-and-bound across candidates (plan selection)
+
+`src/plan/planner.cpp`, `src/plan/region_builder.cpp`, `src/cost/cost_model.cpp`.
+
+The winner is the feasible candidate with the fewest work units, ties to the
+earlier one. So once a feasible candidate is known, a search-based estimate
+(the tensor network's elimination search, cut-and-recombine's per-fragment
+costing, an engine inside a Factorized region) can stop as soon as its running
+total is strictly above it. This is the classic branch-and-bound argument:
+a partial cost that already exceeds the incumbent can never become the
+optimum.
+- **Order.** The bound only helps if it exists early, so the candidates that
+  cost little to estimate are costed first. The tensor network is costed
+  after Factorized and then moved back to its listed place, so the listing
+  and the tie-break order do not change.
+- **Under a time budget.** A candidate can serve as the bound only after it
+  has been checked against the budget. On the CPU that check depends only on
+  the candidate's own figures and on observations known before planning
+  starts, so it can run early. Where a later step can still change a
+  candidate (the CUDA backend choice), every candidate is costed in full.
+- **Reporting.** A stopped candidate or engine is reported as pruned, with
+  the figure it reached. It is not costed again only to print its full
+  figure.
+
+The plan is unchanged by construction. `tests/plan/prune_equivalence.h`
+states exactly which `explain()` lines may differ from the frozen pre-phase
+planner, and the differential test enforces it.
