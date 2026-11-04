@@ -110,7 +110,7 @@ TEST(PlannerDifferential, FrozenPlannerReproducesTheGoldenFiles) {
         const std::string golden = golden_file(corpus[i].name);
         const std::optional<std::string> difference =
             planner_corpus::differs_beyond_pruning(frozen, golden);
-        EXPECT_FALSE(difference.has_value()) << *difference << "\n--- frozen\n"
+        EXPECT_FALSE(difference.has_value()) << difference.value_or("") << "\n--- frozen\n"
                                              << frozen << "--- golden\n"
                                              << golden;
     }
