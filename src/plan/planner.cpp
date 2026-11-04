@@ -385,18 +385,29 @@ Plan plan_job(const JobSpec& job_spec,
     // stopped and explain() reports it as pruned, with the figure it reached.
     //
     // Enabled only where no later step of plan_job can change a candidate
-    // after enumeration: with a time budget a cheaper-in-work candidate can
-    // still be rejected on seconds (and a replan raises figures from
-    // observations), and the CUDA backend step can replace the dense
-    // candidate's work units. In every such job the bound stays at its
-    // default and every candidate is costed in full, exactly as before.
+    // after enumeration: the CUDA backend step can replace the dense
+    // candidate's work units, and Factorized's per-region backends set its
+    // seconds. In such a job (CUDA forced, or CUDA and CPU both calibrated and
+    // CUDA not refused) the bound stays at its default and every candidate is
+    // costed in full, exactly as before.
+    //
+    // A time budget no longer turns it off (docs/adr/0025 sections 11.2 and
+    // 13, D.1b). In a CPU-only job, apply_time_budget depends only on the
+    // candidate's own figures and on observations known before planning
+    // starts, so each candidate already costed is held to the budget before it
+    // can serve as the bound, and the bound is the fewest work units among
+    // candidates feasible in both memory and time. Selection is fewest work
+    // units among exactly those, so a candidate stopped strictly above the
+    // bound could never have won. apply_time_budget gives the same answer
+    // when it runs again after enumeration.
     const bool branch_and_bound =
-        !job_spec.time_budget_seconds.has_value() && job_spec.backend != Backend::Cuda &&
+        job_spec.backend != Backend::Cuda &&
         !(job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated);
     const auto incumbent_work_units = [&]() {
         std::uint64_t bound = std::numeric_limits<std::uint64_t>::max();
         if (branch_and_bound) {
-            for (const CandidateSummary& candidate : candidates) {
+            for (CandidateSummary& candidate : candidates) {
+                apply_time_budget(candidate);
                 if (candidate.feasible) {
                     bound = std::min(bound, candidate.estimated_work_units);
                 }

@@ -506,10 +506,11 @@ TEST(PlanJobExpectationTest, TensorNetworkLosesToACheaperCandidateOnCost) {
     EXPECT_FALSE(tn->is_winner);
 }
 
-TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsCostedInFull) {
-    // The same job with a (generous) time budget: branch and bound is off,
-    // because a candidate cheaper in work units could still be rejected on
-    // seconds, so the contraction keeps its full figure, as before.
+TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsStillPruned) {
+    // The same job with a (generous) time budget. Branch and bound stays on in
+    // a CPU-only job (docs/adr/0025 section 13, D.1b): every candidate is held
+    // to the budget before it can serve as the bound, and Pauli, which fits
+    // it, is the bound. The plan is the one the unbudgeted job gets.
     Circuit circuit(1, 0);
     circuit.append(Opcode::RZ, {0}, {0.5});
     const Observable obs{{{one_qubit_z(), {1.0, 0.0}}}};
@@ -537,16 +538,69 @@ TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsCostedInFull) {
     }
     ASSERT_NE(tn, nullptr);
     ASSERT_NE(pauli, nullptr);
-    ASSERT_TRUE(tn->feasible) << "the contraction is feasible here; it simply is not cheapest";
     ASSERT_TRUE(pauli->feasible);
-    EXPECT_LT(pauli->estimated_work_units, tn->estimated_work_units);
+    EXPECT_FALSE(tn->feasible);
+    EXPECT_TRUE(tn->infeasible_reason.starts_with(kPrunedReasonPrefix)) << tn->infeasible_reason;
     EXPECT_EQ(plan.strategy, Strategy::DirectPauli);
     EXPECT_FALSE(tn->is_winner);
 }
 
+// A time budget that some candidate misses must not let that candidate serve
+// as the bound: here Pauli is cheapest in work units but over budget, so the
+// bound comes from a candidate within budget, and nothing within budget that
+// could win is pruned.
+TEST(PlanJobExpectationTest, ACandidateOverTheTimeBudgetIsNotTheBound) {
+    Circuit circuit(1, 0);
+    circuit.append(Opcode::RZ, {0}, {0.5});
+    const Observable obs{{{one_qubit_z(), {1.0, 0.0}}}};
+    JobSpec job{.circuit = circuit,
+                .shots = 0,
+                .want_statevector = false,
+                .seed = 0,
+                .memory_budget_bytes = 1'000'000,
+                .expectation = obs};
+    const HardwareProfile hw{.total_memory_bytes = 1'000'000,
+                             .memory_bandwidth_bytes_per_second = 1.0,
+                             .work_units_per_second = 1.0};
+    // Unbudgeted: every candidate's figures, for choosing a budget.
+    job.time_budget_seconds = 1e12;
+    const Plan generous = plan_job(job, hw);
+    const CandidateSummary* pauli = nullptr;
+    for (const CandidateSummary& c : generous.candidates) {
+        if (c.strategy == Strategy::DirectPauli) {
+            pauli = &c;
+        }
+    }
+    ASSERT_NE(pauli, nullptr);
+    ASSERT_TRUE(pauli->feasible);
+    // A budget just below Pauli's own seconds.
+    job.time_budget_seconds = pauli->estimated_seconds * 0.999;
+    try {
+        const Plan tight = plan_job(job, hw);
+        EXPECT_NE(tight.strategy, Strategy::DirectPauli);
+        for (const CandidateSummary& c : tight.candidates) {
+            if (c.is_winner) {
+                EXPECT_TRUE(c.feasible);
+                EXPECT_LE(c.estimated_seconds, *job.time_budget_seconds);
+            }
+            if (c.strategy == Strategy::DirectPauli) {
+                EXPECT_FALSE(c.feasible);
+                EXPECT_FALSE(c.infeasible_reason.starts_with(kPrunedReasonPrefix))
+                    << "Pauli is rejected on time, not pruned";
+            }
+        }
+    } catch (const common::ResourceExceeded& e) {
+        // Nothing else fits: then no candidate may have been pruned, since a
+        // prune needs a feasible bound.
+        EXPECT_EQ(std::string(e.what()).find(kPrunedReasonPrefix), std::string::npos) << e.what();
+    }
+}
+
 // Branch and bound must never change the plan: on random expectation jobs the
-// winner and its figures are the same with pruning on (no time budget) and
-// off (a time budget so large it rejects nothing).
+// winner and its figures are the same with no time budget and with a time
+// budget so large it rejects nothing. (Since D.1b both prune; the comparison
+// against the frozen d89dde3 planner, which costed every candidate in full
+// under a budget, is the differential test.)
 TEST(PlanJobExpectationTest, BranchAndBoundNeverChangesTheWinner) {
     std::uint64_t state = 0x9E3779B97F4A7C15ULL;
     const auto next = [&state]() {
@@ -1102,7 +1156,12 @@ TEST(RuntimeObservationTest, EveryDirectCandidateIsExcludedByItsOwnObservedFloor
 
         for (const CandidateSummary& candidate : initial.candidates) {
             const std::optional<Engine> engine = engine_of_direct(candidate.strategy);
-            if (!candidate.feasible || !engine.has_value()) {
+            // A pruned candidate is one the engine could run but that lost on
+            // work units before it was costed in full (docs/adr/0025 section
+            // 13, D.1b); its floor must exclude it just the same.
+            const bool pruned =
+                !candidate.feasible && candidate.infeasible_reason.starts_with(kPrunedReasonPrefix);
+            if ((!candidate.feasible && !pruned) || !engine.has_value()) {
                 continue;
             }
             engines_covered.insert(*engine);
