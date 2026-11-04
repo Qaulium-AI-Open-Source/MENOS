@@ -70,17 +70,18 @@ struct HardwareProfile {
     double cuda_device_work_units_per_second = 0.0;
 
     // --- The disk tier's scratch directory (Phase 23, docs/adr/0027 section
-    // 3.3), all empty/zero until current_hardware_profile() is asked about
-    // one. The directory a disk-tier job would create its scratch file in;
-    // its volume's capacity and the space available on it now, read at every
-    // plan like the CUDA device's free memory, so the planner's reserve
+    // 3.3), all zero until current_hardware_profile() is asked about one: the
+    // figures of the directory a disk-tier job would create its scratch file
+    // in (the job's own JobSpec::scratch_directory; the profile stays a
+    // literal type, so a test can hold one as constexpr). Its volume's
+    // capacity and the space available on it now, read at every plan like
+    // the CUDA device's free memory, so the planner's reserve
     // (scratch_reserve_bytes) and the file's size are checked against the
     // figures of the moment; and its sequential write and read bandwidth,
     // measured lazily (section 9 Q3) with at most 1 GiB written, once per
     // directory per process, and only when a job could reach the disk tier.
     // Zero bandwidth means unmeasured, and the planner treats a disk-tier
     // candidate's runtime as unknown then.
-    std::filesystem::path scratch_directory = {};
     std::uint64_t scratch_capacity_bytes = 0;
     std::uint64_t scratch_available_bytes = 0;
     double scratch_write_bytes_per_second = 0.0;

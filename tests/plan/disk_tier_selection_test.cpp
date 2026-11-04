@@ -53,6 +53,7 @@ JobSpec counts_job(std::uint32_t n, std::optional<std::uint64_t> budget) {
         .seed = 1,
         .memory_budget_bytes = budget,
         .expectation = std::nullopt,
+        .scratch_directory = std::filesystem::path("/scratch"),
     };
 }
 
@@ -61,7 +62,6 @@ JobSpec counts_job(std::uint32_t n, std::optional<std::uint64_t> budget) {
 HardwareProfile profile_with_scratch() {
     HardwareProfile hw;
     hw.total_memory_bytes = std::uint64_t{1} << 36;
-    hw.scratch_directory = std::filesystem::path("/scratch");
     hw.scratch_capacity_bytes = std::uint64_t{1} << 40;
     hw.scratch_available_bytes = std::uint64_t{1} << 39;
     hw.scratch_write_bytes_per_second = 4.5e9;

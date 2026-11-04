@@ -358,7 +358,6 @@ HardwareProfile current_hardware_profile(const std::filesystem::path& scratch_di
     if (error) {
         return profile;
     }
-    profile.scratch_directory = scratch_directory;
     profile.scratch_capacity_bytes = info.capacity;
     profile.scratch_available_bytes = info.available;
     if (measure_scratch) {

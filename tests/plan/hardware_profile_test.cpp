@@ -149,7 +149,6 @@ TEST(ScratchProfileTest, TheDirectorysSpaceIsReadAndItsBandwidthOnlyOnRequest) {
     const std::filesystem::path directory = std::filesystem::current_path();
     const HardwareProfile unmeasured =
         current_hardware_profile(directory, /*measure_scratch=*/false);
-    EXPECT_EQ(unmeasured.scratch_directory, directory);
     EXPECT_GT(unmeasured.scratch_capacity_bytes, 0U);
     EXPECT_GT(unmeasured.scratch_available_bytes, 0U);
     EXPECT_LE(unmeasured.scratch_available_bytes, unmeasured.scratch_capacity_bytes);
@@ -163,7 +162,6 @@ TEST(ScratchProfileTest, TheDirectorysSpaceIsReadAndItsBandwidthOnlyOnRequest) {
     // A directory that does not exist leaves every scratch figure zero.
     const HardwareProfile missing =
         current_hardware_profile(directory / "no-such-directory-2311", /*measure_scratch=*/true);
-    EXPECT_TRUE(missing.scratch_directory.empty());
     EXPECT_EQ(missing.scratch_capacity_bytes, 0U);
     EXPECT_EQ(missing.scratch_available_bytes, 0U);
 }

@@ -159,8 +159,7 @@ cost::CostEstimate estimate_disk_tier(const Circuit& circuit,
                                       std::uint64_t budget) {
     const SimulationEngine* engine = find_execution_engine(Engine::Dense, Backend::Cpu, Tier::Disk);
     common::ensure(engine != nullptr, "plan_job: this build has no disk-tier dense engine");
-    if (hardware_profile.scratch_directory.empty() ||
-        hardware_profile.scratch_capacity_bytes == 0) {
+    if (job_spec.scratch_directory.empty() || hardware_profile.scratch_capacity_bytes == 0) {
         return infeasible_disk_tier(
             "the disk tier has no scratch directory to use: none was given, or its space could "
             "not be read");
@@ -204,7 +203,7 @@ cost::CostEstimate estimate_disk_tier(const Circuit& circuit,
             "the disk tier's scratch file of " + std::to_string(estimate.tier.file_bytes) +
             " bytes plus the reserve of " + std::to_string(reserve) + " bytes exceeds the " +
             std::to_string(hardware_profile.scratch_available_bytes) + " bytes available in " +
-            hardware_profile.scratch_directory.string());
+            job_spec.scratch_directory.string());
     }
     return estimate;
 }
@@ -1313,7 +1312,7 @@ Plan plan_job(const JobSpec& job_spec,
     const auto on_disk = [](const auto& item) { return item.tier == Tier::Disk; };
     if (std::any_of(plan.candidates.begin(), plan.candidates.end(), on_disk) ||
         std::any_of(plan.regions.begin(), plan.regions.end(), on_disk)) {
-        plan.scratch_directory = hardware_profile.scratch_directory;
+        plan.scratch_directory = job_spec.scratch_directory;
         plan.disk_available_bytes = hardware_profile.scratch_available_bytes;
         plan.disk_write_bytes_per_second = hardware_profile.scratch_write_bytes_per_second;
         plan.disk_read_bytes_per_second = hardware_profile.scratch_read_bytes_per_second;
