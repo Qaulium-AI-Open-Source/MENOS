@@ -5,6 +5,7 @@ add_executable(menos_plan_tests
     engine_noise_refusal_test.cpp
     plan_cache_test.cpp
     planner_golden_test.cpp
+    prune_equivalence_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)
