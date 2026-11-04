@@ -1,5 +1,7 @@
 #include "analysis/schmidt_rank_bound.h"
 
+#include "analysis/schmidt_rank_internal.h"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -20,7 +22,7 @@
 namespace menos::analysis {
 namespace {
 
-using Complex = std::complex<double>;
+using detail::Complex;
 
 // (qubits, matrix) for a GateOp/UnitaryOp; the matrix is always owned
 // here (generate_matrix returns by value for GateOp; UnitaryOp's own
@@ -56,15 +58,6 @@ OperandMatrix operand_matrix_of(const Operation& op) {
         op);
 }
 
-// The operator-Schmidt-rank of the k-qubit matrix u (row-major,
-// operand-order bit convention) with respect to splitting its k
-// operand positions into left_positions and right_positions: reshape
-// u's (row, col) index pair, each k bits, into a
-// 2^(2*l) x 2^(2*r) matrix m whose row groups a left-side (row, col)
-// bit pair and whose column groups a right-side (row, col) bit pair
-// (the standard operator-Schmidt reshaping: u as a vector in
-// (H_L(x)H_R)(x)(H_L(x)H_R)* regrouped as (H_L(x)H_L*)(x)(H_R(x)H_R*)),
-// then take m's ordinary matrix rank via SVD.
 // The operands of a gate or unitary; nullptr for a measurement. A noise
 // channel throws exactly as operand_matrix_of does, whatever its size.
 const std::vector<QubitId>* operands_of(const Operation& op) {
@@ -84,6 +77,32 @@ const std::vector<QubitId>* operands_of(const Operation& op) {
         op);
 }
 
+// 2^min(left_size, right_size), or, if that would not fit a uint64_t,
+// the largest representable value -- a cut this wide is already far
+// beyond any budget a caller could satisfy, so the cap's own exact
+// magnitude past 2^62 is immaterial (checked_pow2's own limit, per
+// CLAUDE.md's "never shift by n >= 63").
+std::uint64_t subsystem_dimension_cap(std::uint32_t left_size, std::uint32_t right_size) {
+    const std::uint32_t smaller = std::min(left_size, right_size);
+    if (smaller > 62) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    return common::checked_pow2(smaller);
+}
+
+}  // namespace
+
+namespace detail {
+
+// The operator-Schmidt-rank of the k-qubit matrix u (row-major,
+// operand-order bit convention) with respect to splitting its k
+// operand positions into left_positions and right_positions: reshape
+// u's (row, col) index pair, each k bits, into a
+// 2^(2*l) x 2^(2*r) matrix m whose row groups a left-side (row, col)
+// bit pair and whose column groups a right-side (row, col) bit pair
+// (the standard operator-Schmidt reshaping: u as a vector in
+// (H_L(x)H_R)(x)(H_L(x)H_R)* regrouped as (H_L(x)H_L*)(x)(H_R(x)H_R*)),
+// then take m's ordinary matrix rank via SVD.
 std::uint64_t operator_schmidt_rank(std::span<const Complex> u,
                                     std::size_t k,
                                     const std::vector<std::size_t>& left_positions,
@@ -129,20 +148,30 @@ std::uint64_t operator_schmidt_rank(std::span<const Complex> u,
     return common::numerical_rank(svd_result.singular_values, m_rows, m_cols);
 }
 
-// 2^min(left_size, right_size), or, if that would not fit a uint64_t,
-// the largest representable value -- a cut this wide is already far
-// beyond any budget a caller could satisfy, so the cap's own exact
-// magnitude past 2^62 is immaterial (checked_pow2's own limit, per
-// CLAUDE.md's "never shift by n >= 63").
-std::uint64_t subsystem_dimension_cap(std::uint32_t left_size, std::uint32_t right_size) {
-    const std::uint32_t smaller = std::min(left_size, right_size);
-    if (smaller > 62) {
-        return std::numeric_limits<std::uint64_t>::max();
+std::uint64_t SchmidtRankCache::rank(std::span<const Complex> u,
+                                     std::size_t k,
+                                     const std::vector<std::size_t>& left_positions,
+                                     const std::vector<std::size_t>& right_positions) {
+    key_.clear();
+    key_.push_back(static_cast<char>(k));
+    for (const std::size_t p : left_positions) {
+        key_.push_back(static_cast<char>(p));
     }
-    return common::checked_pow2(smaller);
+    key_.push_back('|');
+    key_.append(reinterpret_cast<const char*>(u.data()), u.size() * sizeof(Complex));
+    const auto cached = ranks_.find(key_);
+    if (cached != ranks_.end()) {
+        ++stats_.hits;
+        return cached->second;
+    }
+    ++stats_.misses;
+    stats_.bytes += key_.size();
+    stats_.peak_bytes = std::max(stats_.peak_bytes, stats_.bytes);
+    return ranks_.emplace(key_, operator_schmidt_rank(u, k, left_positions, right_positions))
+        .first->second;
 }
 
-}  // namespace
+}  // namespace detail
 
 std::uint64_t SchmidtRankBound::max_bound() const {
     if (bound_per_cut.empty()) {
@@ -165,15 +194,8 @@ SchmidtRankBound compute_schmidt_rank_bound(std::uint32_t num_qubits,
         caps[i] = subsystem_dimension_cap(i + 1, n - (i + 1));
     }
 
-    // Operator Schmidt ranks already computed, keyed by the exact bytes of the
-    // operation's matrix and which of its operands lie left of the cut. The
-    // rank is an integer computed deterministically from exactly those
-    // inputs, so a repeated key returns the integer the SVD would return
-    // again. Keying on bytes, not values, is conservative: two matrices that
-    // are equal but differ in representation (0.0 and -0.0) are computed
-    // separately.
-    std::unordered_map<std::string, std::uint64_t> rank_cache;
-    std::string key;
+    // Ranks already computed in this call (schmidt_rank_internal.h).
+    detail::SchmidtRankCache rank_cache;
     for (const Operation& op : operations) {
         // A single-qubit operation or a measurement never crosses a cut, so
         // the operands are checked before any matrix is generated.
@@ -204,23 +226,8 @@ SchmidtRankBound compute_schmidt_rank_bound(std::uint32_t num_qubits,
                     right_positions.push_back(p);
                 }
             }
-            key.clear();
-            key.push_back(static_cast<char>(k));
-            for (const std::size_t p : left_positions) {
-                key.push_back(static_cast<char>(p));
-            }
-            key.push_back('|');
-            key.append(reinterpret_cast<const char*>(operand_matrix.matrix.data()),
-                       operand_matrix.matrix.size() * sizeof(Complex));
-            const auto cached = rank_cache.find(key);
             const std::uint64_t op_rank =
-                cached != rank_cache.end()
-                    ? cached->second
-                    : rank_cache
-                          .emplace(key,
-                                   operator_schmidt_rank(
-                                       operand_matrix.matrix, k, left_positions, right_positions))
-                          .first->second;
+                rank_cache.rank(operand_matrix.matrix, k, left_positions, right_positions);
             result.bound_per_cut[cut] =
                 std::min(common::checked_mul(result.bound_per_cut[cut], op_rank), caps[cut]);
         }

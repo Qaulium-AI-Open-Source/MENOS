@@ -23,6 +23,18 @@ target_link_libraries(menos_planner_benchmark PRIVATE
 )
 target_compile_options(menos_planner_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 21 step 2 pass 2 (docs/adr/0025 section 12): each planner data
+# structure timed alone.
+add_executable(menos_planner_structures_benchmark
+    planner_structures_benchmark.cpp
+    menos_benchmark_main.cpp
+)
+target_include_directories(menos_planner_structures_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_planner_structures_benchmark PRIVATE
+    menos_plan menos_benchmark_environment benchmark::benchmark
+)
+target_compile_options(menos_planner_structures_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
 add_executable(menos_calibration_probe calibration_probe.cpp)
 target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
 target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})

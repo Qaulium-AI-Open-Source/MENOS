@@ -575,3 +575,73 @@ Changes that do not help are reverted, and their numbers are kept here.
    deterministic, so equal bytes still mean equal inputs to the SVD.
 
 No correctness defect was found. The two memory risks are fixed in C.
+
+### 12.2 Hardening: targeted tests, microbenchmarks, measured sizes — [MEASURED]
+
+**Internal headers.** The three structures moved out of anonymous namespaces
+into `src/analysis/` headers in namespace `menos::analysis::detail`, so they
+can be tested alone. They are not public API, and the code is unchanged:
+- `bit_adjacency.h`: `BitAdjacency`, `compute_fill`;
+- `min_fill_queue.h`: `MinFillQueue`, the lazy heap of (b) behind
+  `set_fill` / `pop_min`;
+- `schmidt_rank_internal.h`: `operator_schmidt_rank`, `SchmidtRankCache`
+  with hit/miss/byte counters.
+
+Golden 45/45 and the 2000-seed differential test pass on the extraction.
+
+**Targeted tests** (`tests/analysis/`):
+- `bit_adjacency_test.cpp`: `common`, `nonzero_range`,
+  `for_each_neighbor_in` and `compute_fill` against a plain
+  `std::vector<bool>` oracle. Covers n ∈ {1, 2, 63, 64, 65, 127, 128, 129,
+  200, 1000}, densities 0, 1%, 10%, 50% and 100%, bits on both sides of
+  each word boundary, single-bit rows and emptied rows.
+- `min_fill_queue_test.cpp`: the pick sequence against the strict-`<`
+  linear scan. 500 random runs, most with fills in {0..3}, so nearly every
+  pick is a tie. Also covers a fill changing and changing back (duplicate
+  live entries) and an empty queue.
+- `schmidt_rank_cache_test.cpp`:
+  - a hit equals a fresh `operator_schmidt_rank` for every split of CX, CZ,
+    SWAP, CP, RZZ, CCX and random dense and product matrices for k = 2..4;
+  - known ranks (CX 2, SWAP 4, product 1);
+  - distinct splits are distinct entries; separately built copies share
+    one; ±0.0 are distinct keys with the same rank;
+  - k = 2 and k = 3 keys do not collide.
+
+**Mutation checks.** Each one was applied by hand, built, run, and then
+reverted:
+
+| Mutation | Result |
+|---|---|
+| (b) ties go to the highest index | 4 of 5 `MinFillQueue` tests fail |
+| (d) `common` skips the first word of the span | 3 of 4 `BitAdjacency` tests fail |
+| (c) the key omits the left positions | 2 of 6 `SchmidtRankCache` tests fail (hit ≠ recompute; splits merged) |
+
+**Sanitizers.** In the dev preset (ASan + UBSan), the new tests, the
+treewidth, Schmidt-rank, golden and differential tests pass: 44 of 44.
+TSan was not run. All three structures are locals of one function call, and
+`plan_job` shares none of them between threads (12.1).
+
+**Microbenchmarks** (`benchmarks/planner_structures_benchmark.cpp`), pinned,
+c8f9083-equivalent code:
+
+| Benchmark | Time |
+|---|---|
+| `compute_fill` over all vertices, n = 256: 1% / 10% / 50% density | 4.6 / 25.6 / 103 µs |
+| same, n = 2048 | 1.54 / 11.9 / 45.7 ms |
+| dense min-fill, brickwork 16×8 / 24×12 / 32×16 (528 / 1176 / 2080 nodes) | 0.68 / 3.41 / 9.32 ms |
+| dense min-fill, random pairs 24×6 / 40×8 (624 / 1360 nodes) | 2.21 / 15.4 ms |
+| rank: SVD alone / cache miss / cache hit, CX | 2635 / 2782 / 25.6 ns |
+| same, SWAP | 4061 / 4374 / 27.1 ns |
+| same, CCX | 5118 / 5548 / 36.8 ns |
+
+**Measured sizes per corpus job.** These come from temporary
+instrumentation, not committed; the script is in the session scratchpad.
+- **(b) heap.** The peak is at most **2.64 × n** entries: 17,737 entries
+  for 7,266 nodes, about 277 KiB, on expectation_factorized/large. The
+  O(n²) worst case of 12.1, risk 1, does not occur in the corpus. It
+  remains possible in principle.
+- **(c) cache.** The cache peaks at **1.0 KiB** (counts_random_pairs). The
+  hit rate is 81–100% on every job that computes a rank: for example
+  counts_clifford/large has 10,299 hits and 1 miss, and
+  expectation_factorized/large has 913 hits and 19 misses. Risk 2 of 12.1
+  needs a wide `UnitaryOp`, which the corpus does not contain.
