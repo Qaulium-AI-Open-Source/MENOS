@@ -480,42 +480,6 @@ Plan plan_job(const JobSpec& job_spec,
         .is_winner = false,
     });
 
-    // Candidate: DirectTensorNetwork, only enumerated for an expectation
-    // request (mirrors DirectPauli's own placement above, for the same
-    // reason: its capabilities() can never satisfy a counts/statevector-only
-    // request). It competes on estimated_work_units like every other
-    // candidate below -- no last-resort gate, no qubit-count exclusion, no
-    // special casing of any kind (docs/BUILD_PLAN.md Phase 8; MENOS is
-    // cost-driven, so an engine is selected because its estimate wins, never
-    // because it exists). Its own estimate() bounds its internal elimination
-    // search by the job's own budget (EngineEstimateRequest::budget_bytes),
-    // which is what keeps an unconditionally-enumerated combinatorial search
-    // from hanging planning -- the principled alternative to gating the
-    // candidate itself.
-    std::optional<cost::CostEstimate> direct_tensor_network_estimate;
-    std::optional<std::size_t> tensor_network_index;
-    if (want_expectation) {
-        direct_tensor_network_estimate = cost::estimate_direct(circuit,
-                                                               tensor_network_engine,
-                                                               job_spec.want_statevector,
-                                                               want_counts,
-                                                               want_expectation,
-                                                               reduced_observable,
-                                                               budget,
-                                                               job_spec.accuracy_policy,
-                                                               /*trajectories=*/0,
-                                                               incumbent_work_units());
-        tensor_network_index = candidates.size();
-        candidates.push_back(CandidateSummary{
-            .strategy = Strategy::DirectTensorNetwork,
-            .feasible = direct_tensor_network_estimate->feasible,
-            .infeasible_reason = direct_tensor_network_estimate->infeasible_reason,
-            .estimated_peak_bytes = direct_tensor_network_estimate->estimated_peak_bytes,
-            .estimated_work_units = direct_tensor_network_estimate->estimated_work_units,
-            .is_winner = false,
-        });
-    }
-
     // Candidate: DirectDensityMatrix, only for a noisy job (Phase 12,
     // docs/adr/0016 section 5). It is the only Direct candidate that can run
     // noise; every other Direct candidate above is still listed, infeasible
@@ -624,6 +588,50 @@ Plan plan_job(const JobSpec& job_spec,
         });
     }
 
+    // Candidate: DirectTensorNetwork, only enumerated for an expectation
+    // request (mirrors DirectPauli's own placement above, for the same
+    // reason: its capabilities() can never satisfy a counts/statevector-only
+    // request). It competes on estimated_work_units like every other
+    // candidate below -- no last-resort gate, no qubit-count exclusion, no
+    // special casing of any kind (docs/BUILD_PLAN.md Phase 8; MENOS is
+    // cost-driven, so an engine is selected because its estimate wins, never
+    // because it exists). Its own estimate() bounds its internal elimination
+    // search by the job's own budget (EngineEstimateRequest::budget_bytes),
+    // which is what keeps an unconditionally-enumerated combinatorial search
+    // from hanging planning -- the principled alternative to gating the
+    // candidate itself.
+    //
+    // It is listed after DirectMPS but costed here, after DensityMatrix,
+    // Trajectory and Factorized (it is moved into its listed place below).
+    // Its costing is a search the branch-and-bound bound can stop, so the
+    // cheaper candidates are costed first to give it a bound (docs/adr/0025
+    // section 13, D.1). The winner cannot change: a candidate is stopped only
+    // above a feasible alternative. Only its explain() line can, from its
+    // full figures to the pruned reason, and only when it loses either way.
+    std::optional<cost::CostEstimate> direct_tensor_network_estimate;
+    std::optional<std::size_t> tensor_network_index;
+    if (want_expectation) {
+        direct_tensor_network_estimate = cost::estimate_direct(circuit,
+                                                               tensor_network_engine,
+                                                               job_spec.want_statevector,
+                                                               want_counts,
+                                                               want_expectation,
+                                                               reduced_observable,
+                                                               budget,
+                                                               job_spec.accuracy_policy,
+                                                               /*trajectories=*/0,
+                                                               incumbent_work_units());
+        tensor_network_index = candidates.size();
+        candidates.push_back(CandidateSummary{
+            .strategy = Strategy::DirectTensorNetwork,
+            .feasible = direct_tensor_network_estimate->feasible,
+            .infeasible_reason = direct_tensor_network_estimate->infeasible_reason,
+            .estimated_peak_bytes = direct_tensor_network_estimate->estimated_peak_bytes,
+            .estimated_work_units = direct_tensor_network_estimate->estimated_work_units,
+            .is_winner = false,
+        });
+    }
+
     // Candidate: CutAndRecombine, appended after Factorized (docs/adr/0013
     // section 8, Phase 9). Expectation requests only, and only when a cut plan
     // actually exists for this circuit. It competes on estimated_work_units
@@ -654,6 +662,24 @@ Plan plan_job(const JobSpec& job_spec,
                 .is_winner = false,
             });
         }
+    }
+
+    // Back into the listed order: DirectTensorNetwork directly after DirectMPS,
+    // ahead of the candidates costed before it. Indices are fixed up so every
+    // one still names its own candidate.
+    if (tensor_network_index.has_value()) {
+        const std::size_t to = mps_index + 1;
+        const std::size_t from = *tensor_network_index;
+        std::rotate(candidates.begin() + static_cast<std::ptrdiff_t>(to),
+                    candidates.begin() + static_cast<std::ptrdiff_t>(from),
+                    candidates.begin() + static_cast<std::ptrdiff_t>(from) + 1);
+        for (std::optional<std::size_t>* index :
+             {&density_matrix_index, &trajectory_index, &factorized_index}) {
+            if (index->has_value() && **index >= to && **index < from) {
+                ++**index;
+            }
+        }
+        tensor_network_index = to;
     }
 
     // Backend selection for the dense candidate (Phase 10, docs/adr/0014).
