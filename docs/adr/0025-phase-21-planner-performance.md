@@ -412,6 +412,26 @@ Equivalence:
 - the differential test, 2000 seeds, plus a sweep of 50,000 seeds
   (160000–209999) — all identical to the frozen planner.
 
+### 10.5 Gate status after (d), (b), (e), (c): not met
+
+This is a direct measurement against the pre-phase planner, not a product of
+the per-step ratios: d89dde3 against c8f9083, pinned to one core,
+alternating, 15 repetitions × 2 rounds per side (`gate_head.compare.txt`).
+
+| Job | d89dde3 | c8f9083 | Speed-up | Gate |
+|---|---|---|---|---|
+| expectation_ising_budgeted/large | 2423 ms | 1022 ms | 2.37x | 5x: not met |
+| expectation_factorized/large | 16447 ms | 5294 ms | 3.11x | 5x: not met |
+
+The machine was slower and noisier than in step 1: the baseline's absolute
+times are 1.3x step 1's, and the budgeted family's before-side spread is
+29–65%. The ratios agree with the chained per-step estimates (about 2.4x and
+3.5x). The other gate conditions hold: no job is slower than its limit,
+golden 45/45, and the differential sweeps are identical. The candidates
+not yet tried either change explain() for pruned candidates (11.1, 11.2) or
+are (a), which is deferred. Both are owner decisions. Whether any of them
+reaches 5x has not been measured.
+
 ## 11. Investigations the owner asked for (2026-11-03) — [MEASURED] / [DERIVED], nothing implemented
 
 ### 11.1 Costing cheaper candidates before the tensor network

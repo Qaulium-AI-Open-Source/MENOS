@@ -1,0 +1,8 @@
+benchmark                                                       before       after  speed-up  spread  limit
+plan_job/expectation_ising_budgeted/small                     7203.3us    5965.7us     1.21x   65.5%   131%
+plan_job/expectation_ising_budgeted/medium                  325505.9us  191913.5us     1.70x   56.4%   113%
+plan_job/expectation_ising_budgeted/large                  2423462.4us 1022231.5us     2.37x   29.1%    58%
+plan_job/expectation_factorized/small                         1790.6us    1621.4us     1.10x    5.5%    11%
+plan_job/expectation_factorized/medium                      401687.2us  202713.1us     1.98x    5.5%    11%
+plan_job/expectation_factorized/large                      16447256.6us 5294493.8us     3.11x   12.0%    24%
+
