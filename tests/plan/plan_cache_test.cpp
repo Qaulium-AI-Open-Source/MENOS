@@ -20,6 +20,7 @@ namespace {
 
 // A small QAOA-shaped circuit: H on every qubit, then p layers of RZZ on
 // every pair, RZ on every qubit and RX on every qubit, with the given angles.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n qubits, p layers.
 Circuit qaoa_circuit(std::uint32_t n, int layers, const std::vector<double>& angles) {
     Circuit circuit(n, 0);
     for (QubitId q = 0; q < n; ++q) {
@@ -115,7 +116,8 @@ TEST_F(PlanCacheTest, SameStructureDifferentAnglesIsAHitWithTheNewAngles) {
         EXPECT_EQ(b.candidates[i].is_winner, fresh.candidates[i].is_winner) << i;
     }
     EXPECT_EQ(b.explain(), fresh.explain());
-    ASSERT_TRUE(b.reduced_circuit.has_value());
+    ASSERT_TRUE(b.reduced_circuit.has_value() && fresh.reduced_circuit.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): asserted above.
     EXPECT_EQ(b.reduced_circuit->operations().size(), fresh.reduced_circuit->operations().size());
 }
 
@@ -128,6 +130,8 @@ TEST_F(PlanCacheTest, DifferentStructureOrOptionsIsAMiss) {
     EXPECT_EQ(plan_cache_stats().misses, 2u);
 
     JobSpec other_coefficients = expectation_job(qaoa_circuit(4, 1, {0.3}), 4);
+    ASSERT_TRUE(other_coefficients.expectation.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): asserted above.
     other_coefficients.expectation->terms[0].second = {9.0, 0.0};
     (void)plan_job_cached(other_coefficients, kHw);
     EXPECT_EQ(plan_cache_stats().misses, 3u);

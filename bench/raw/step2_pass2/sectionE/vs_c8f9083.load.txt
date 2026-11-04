@@ -1,0 +1,12 @@
+21:49:08 round=1 side=before 2.80 3.16 2.94 gov=performance
+21:50:16 round=1 side=after 2.52 3.00 2.90 gov=performance
+21:50:35 round=2 side=before 2.47 2.97 2.89 gov=performance
+21:51:49 round=2 side=after 3.66 3.18 2.97 gov=performance
+21:52:08 round=3 side=before 3.70 3.22 2.99 gov=performance
+21:53:19 round=3 side=after 3.31 3.30 3.04 gov=performance
+21:53:37 round=4 side=before 2.66 3.15 2.99 gov=performance
+21:54:43 round=4 side=after 1.60 2.74 2.86 gov=performance
+21:55:01 round=5 side=before 1.43 2.62 2.82 gov=performance
+21:56:07 round=5 side=after 1.26 2.33 2.70 gov=performance
+21:56:26 round=6 side=before 1.28 2.28 2.68 gov=performance
+21:57:35 round=6 side=after 2.36 2.37 2.68 gov=performance

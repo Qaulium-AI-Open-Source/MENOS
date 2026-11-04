@@ -25,7 +25,7 @@ actual     state_bytes=40 execute_s=0.000006 sample_s=0.000010
 | `noise` | `channels=… readout_errors=…` in the original circuit. **Only present when the job contains noise** ([Noise Models](/build/noise-models)) |
 | `light_cone` | Qubits and operations before and after [light-cone reduction](/observables/light-cone-reduction) |
 | `time_budget` | The budget in seconds. **Only present when the job set one** |
-| `candidate i` | One per enumerated candidate: strategy, feasible, winner, peak bytes, work units. A refused candidate shows `reason="…"` instead. With a time budget each feasible one also shows `est_seconds` |
+| `candidate i` | One per enumerated candidate: strategy, feasible, winner, peak bytes, work units. A refused or [pruned](#pruned-candidates) candidate shows `reason="…"` instead. With a time budget each feasible one also shows `est_seconds` |
 | `strategy` | The chosen strategy and `(exact)` or `(approximate)` |
 | `region i` | A region's qubits, engine and backend; for factorized plans `why=` explains the engine choice |
 | `cut` | Present for `cut_and_recombine`: cuts, fragments, branches, distinct evaluations, peak bytes |
@@ -54,6 +54,24 @@ candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operat
 ```
 
 That is usually all you need to understand why a large job was planned the way it was.
+
+## Pruned candidates
+
+::: info Not in a published release yet
+Pruning is on the development branch (up to Phase 21, planner performance) and is not in a published release. A released version costs every candidate in full.
+:::
+
+Costing a tensor-network or cut-and-recombine candidate is itself a search. Once a cheaper feasible candidate is known, the planner stops such a search as soon as its running total passes that candidate's work units. A candidate stopped this way could never have won: the winner is the feasible candidate with the fewest work units. Its line shows where it was stopped instead of its full figures:
+
+```text
+candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped before any elimination search: a lower bound of 20857968 work units over its 127 observable terms (from each term's network size) is already more than the 2105344 of a cheaper feasible alternative"
+```
+
+The same applies to the engine choice inside each `factorized` region. An engine stopped there is listed in the region's `why=` as `(tensor_network rejected: pruned by branch-and-bound: …)`.
+
+To give these searches a bound early, the cheaper candidates are costed first. The table still lists candidates in the [fixed order](/execution/plan#candidates-in-a-fixed-order). With a time budget, pruning works the same way on the CPU: only a candidate that is also within the budget can be the bound. When the CUDA backend can be chosen, every candidate is costed in full.
+
+Pruning never changes the chosen plan or its estimate. It only shortens planning and changes the losing lines.
 
 ## After a replan
 

@@ -70,6 +70,10 @@ inline std::complex<double> from_zero(std::complex<double> p) {
 
 // lo[i], hi[i] <- m * (lo[i], hi[i]) for i in [0, n): one 1-qubit gate on n
 // pairs whose two members are n apart.
+// The (lo, hi) pointers and the four matrix entries follow the fixed
+// row-major order of every gate kernel in this file; NOLINT for the two
+// kernels below only.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 MENOS_KERNEL_CLONES
 void pair_run(std::complex<double>* lo,
               std::complex<double>* hi,
@@ -96,6 +100,7 @@ MENOS_KERNEL_CLONES void pair_blocks(std::complex<double>* amps,
                                      std::complex<double> m01,
                                      std::complex<double> m10,
                                      std::complex<double> m11) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     constexpr std::size_t kHalf = std::size_t{1} << Q;
     for (std::size_t base = 0; base < total; base += 2 * kHalf) {
         std::complex<double>* const lo = amps + base;

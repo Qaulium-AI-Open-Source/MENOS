@@ -18,6 +18,16 @@ option(MENOS_BUILD_BENCHMARKS "Build the Google Benchmark programs under benchma
 # presets, which also pin CMAKE_CUDA_COMPILER -- see those presets for why the
 # pin is required rather than optional.
 option(MENOS_ENABLE_CUDA "Build the CUDA dense backend" OFF)
+# Phase 21 (docs/adr/0025 section 6): build the frozen d89dde3 planner and the
+# differential test against it (tests/plan/frozen_d89dde3). Needs commit
+# d89dde3 in this repository's history, so it is off by default (a wheel
+# built from an sdist has no history) and on in the Linux presets that
+# scripts/verify.sh runs.
+option(MENOS_BUILD_FROZEN_PLANNER "Build the frozen-planner differential test" OFF)
+# Phase 21 (docs/adr/0025 section 12.3, C.3): compile the planner's
+# Schmidt-rank-cache counters into menos_analysis so menos_planner_benchmark
+# can report them. OFF in every preset: timing builds never carry them.
+option(MENOS_PLANNER_COUNTERS "Compile planner cache counters for benchmark reports" OFF)
 
 # Multi-threaded CPU gate application (Phase 15, docs/adr/0019 section 3.1)
 # runs on MENOS's own thread pool, built on the platform thread library.

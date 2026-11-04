@@ -1,0 +1,16 @@
+[ differential ]   THROWS ResourceExceeded: 12336
+[ differential ]   cut_and_recombine: 63
+[ differential ]   direct_dense: 9791
+[ differential ]   direct_density_matrix: 3089
+[ differential ]   direct_mps: 9395
+[ differential ]   direct_pauli: 27
+[ differential ]   direct_stabilizer: 4057
+[ differential ]   direct_tensor_network: 361
+[ differential ]   direct_trajectory: 202
+[ differential ]   factorized: 10679
+[       OK ] PlannerDifferential.LivePlannerMatchesTheFrozenPlannerOnRandomJobs (294077 ms)
+[----------] 1 test from PlannerDifferential (294077 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (294077 ms total)
+[  PASSED  ] 1 test.

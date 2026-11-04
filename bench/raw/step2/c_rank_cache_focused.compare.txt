@@ -1,0 +1,19 @@
+benchmark                                                       before       after  speed-up  spread  limit
+plan_job/expectation_ising/small                               311.1us     222.1us     1.40x    7.7%    15%
+plan_job/expectation_ising/large                             32900.2us   31582.1us     1.04x    8.4%    17%
+plan_job/counts_clifford/small                                 184.8us      52.2us     3.54x   10.6%    21%
+plan_job/counts_clifford/medium                               2942.0us     733.9us     4.01x    9.3%    19%
+plan_job/counts_clifford/large                               38446.9us   12585.6us     3.05x    7.3%    15%
+plan_job/counts_random_pairs/small                             133.9us      51.2us     2.62x    6.7%    13%
+plan_job/counts_random_pairs/medium                            793.7us     133.4us     5.95x   13.3%    27%
+plan_job/counts_random_pairs/large                            3133.0us     480.4us     6.52x    5.2%    10%
+plan_job/expectation_random_pairs_controlled/small             664.2us     573.6us     1.16x   27.7%    55%
+plan_job/expectation_random_pairs_controlled/medium          17894.7us   17087.9us     1.05x   17.7%    35%
+plan_job/expectation_random_pairs_controlled/large          292610.1us  268028.9us     1.09x   16.3%    33%
+plan_job/counts_factorized/small                               119.5us      53.3us     2.24x    8.1%    16%
+plan_job/counts_factorized/medium                              805.9us     286.2us     2.82x    8.7%    17%
+plan_job/counts_factorized/large                              3491.0us    1064.4us     3.28x    9.7%    19%
+plan_job/expectation_factorized/small                         1475.2us    1360.5us     1.08x    7.6%    15%
+plan_job/expectation_factorized/medium                      174879.5us  171965.0us     1.02x   10.9%    22%
+
+0 job(s) slower than the gate's limit: none

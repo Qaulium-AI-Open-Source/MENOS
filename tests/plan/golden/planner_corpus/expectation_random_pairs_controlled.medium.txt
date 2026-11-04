@@ -1,0 +1,15 @@
+MENOS EXECUTION REPORT
+circuit    qubits=32 clbits=0 operations=960 depth=77 global_phase=0
+light_cone qubits 32->32 operations 960->960
+candidate 0strategy=direct_dense feasible=false winner=false reason="direct dense simulation requires 68719476736 bytes, budget is 8589934592 bytes"
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (rx) is not a Clifford gate"
+candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
+candidate 3strategy=direct_mps feasible=true winner=true peak_bytes=2796160 work_units=1882751008
+candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in observable term 1 of 63, at 2646658296 work units (including a lower bound for the remaining terms), already more than the 1882751008 of a cheaper feasible alternative"
+candidate 5strategy=cut_and_recombine feasible=false winner=false reason="cut reconstruction requires exact fragments: no reviewed source bounds how a truncated fragment's error composes across the 8^K signed terms of the reconstruction"
+strategy   direct_mps (approximate)
+region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31] engine=mps backend=cpu
+estimated  state_bytes=2796160 work_units=1882751008
+--- plan fields not printed by explain() ---
+region 0: operations=960 observable_terms=63 state_bytes=2796160 work_units=1882751008 global_to_local_size=32
+reduced_circuit: qubits=32 operations=960

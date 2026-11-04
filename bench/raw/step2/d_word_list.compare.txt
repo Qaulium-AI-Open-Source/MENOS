@@ -1,0 +1,51 @@
+benchmark                                                       before       after  speed-up  spread  limit
+plan_job/statevector_brickwork/small                            20.5us      20.4us     1.01x   42.9%    86%
+plan_job/statevector_brickwork/medium                           96.2us      96.9us     0.99x    3.5%     7%
+plan_job/statevector_brickwork/large                           289.4us     289.2us     1.00x    8.5%    17%
+plan_job/counts_brickwork/small                                 64.7us      64.9us     1.00x    6.1%    12%
+plan_job/counts_brickwork/medium                               279.0us     278.4us     1.00x    4.5%     9%
+plan_job/counts_brickwork/large                                724.8us     721.4us     1.00x    4.2%     8%
+plan_job/expectation_z_all/small                               493.8us     520.6us     0.95x    3.1%     6%
+plan_job/expectation_z_all/medium                             8360.5us    7451.4us     1.12x    7.5%    15%
+plan_job/expectation_z_all/large                             79469.8us   52924.1us     1.50x    5.8%    12%
+plan_job/expectation_ising/small                               326.8us     335.1us     0.98x   13.9%    28%
+plan_job/expectation_ising/medium                             8278.7us    7430.9us     1.11x    6.7%    13%
+plan_job/expectation_ising/large                             78043.1us   52784.6us     1.48x    6.5%    13%
+plan_job/expectation_heisenberg/small                          321.8us     332.3us     0.97x    5.1%    10%
+plan_job/expectation_heisenberg/medium                        8219.5us    7489.5us     1.10x    6.8%    14%
+plan_job/expectation_heisenberg/large                        78914.8us   52839.0us     1.49x    6.9%    14%
+plan_job/expectation_random_paulis/small                       328.2us     334.7us     0.98x   14.3%    29%
+plan_job/expectation_random_paulis/medium                     8408.0us    7552.1us     1.11x    9.8%    20%
+plan_job/expectation_random_paulis/large                     79531.6us   53635.2us     1.48x    6.4%    13%
+plan_job/expectation_ising_budgeted/small                     6105.3us    6438.4us     0.95x   11.2%    22%
+plan_job/expectation_ising_budgeted/medium                  285399.1us  256962.7us     1.11x   15.0%    30%
+plan_job/expectation_ising_budgeted/large                  1883367.3us 1254051.5us     1.50x   10.9%    22%
+plan_job/counts_clifford/small                                 179.3us     177.4us     1.01x    6.8%    14%
+plan_job/counts_clifford/medium                               2825.7us    2798.4us     1.01x    8.3%    17%
+plan_job/counts_clifford/large                               36678.6us   35963.5us     1.02x    9.5%    19%
+plan_job/counts_random_pairs/small                             128.4us     127.7us     1.01x    9.1%    18%
+plan_job/counts_random_pairs/medium                            773.4us     752.6us     1.03x   11.3%    23%
+plan_job/counts_random_pairs/large                            3055.7us    2991.8us     1.02x   12.4%    25%
+plan_job/expectation_random_pairs_controlled/small             679.8us     727.9us     0.93x    5.3%    11%
+plan_job/expectation_random_pairs_controlled/medium          21796.5us   18541.0us     1.18x    5.1%    10%
+plan_job/expectation_random_pairs_controlled/large          392373.0us  223488.4us     1.76x   26.6%    53%
+plan_job/counts_factorized/small                               116.1us     115.1us     1.01x    8.3%    17%
+plan_job/counts_factorized/medium                              901.7us     901.7us     1.00x    7.4%    15%
+plan_job/counts_factorized/large                              3851.6us    3826.7us     1.01x    3.3%     7%
+plan_job/expectation_factorized/small                         1457.8us    1680.5us     0.87x    7.4%    15%  SLOWER
+plan_job/expectation_factorized/medium                      357712.5us  336415.6us     1.06x   10.5%    21%
+plan_job/expectation_factorized/large                      13057375.9us 10801333.2us     1.21x    7.7%    15%
+plan_job/expectation_cut/small                                 262.0us     278.3us     0.94x    2.3%     5%  SLOWER
+plan_job/expectation_cut/medium                               3452.2us    3344.1us     1.03x    0.9%     5%
+plan_job/expectation_cut/large                               30449.1us   24497.2us     1.24x    2.4%     5%
+plan_job/counts_noisy_density_matrix/small                      14.4us      14.5us     1.00x    3.7%     7%
+plan_job/counts_noisy_density_matrix/medium                     58.5us      58.4us     1.00x    3.2%     6%
+plan_job/counts_noisy_density_matrix/large                     144.6us     145.6us     0.99x    1.4%     5%
+plan_job/counts_noisy_trajectory/small                          30.3us      30.4us     1.00x    1.1%     5%
+plan_job/counts_noisy_trajectory/medium                         89.5us      90.1us     0.99x    2.6%     5%
+plan_job/counts_noisy_trajectory/large                         198.2us     199.3us     0.99x    2.4%     5%
+cache_hit/statevector_brickwork/medium                         109.6us     110.5us     0.99x    2.8%     6%
+cache_hit/counts_brickwork/large                               331.0us     329.1us     1.01x    1.6%     5%
+cache_hit/expectation_ising/medium                             113.6us     114.5us     0.99x    3.1%     6%
+
+2 job(s) slower than the gate's limit: plan_job/expectation_factorized/small, plan_job/expectation_cut/small

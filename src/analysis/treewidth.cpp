@@ -1,11 +1,19 @@
 #include "analysis/treewidth.h"
 
+#if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
+#include <immintrin.h>
+#endif
+
+#include "analysis/bit_adjacency.h"
+#include "analysis/min_fill_queue.h"
+
 #include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <limits>
 #include <set>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/checked_math.h"
@@ -246,78 +254,87 @@ LineGraphSize line_graph_size(const ClosedTimelines& timelines) {
     return LineGraphSize{wires.size(), edges};
 }
 
+namespace detail {
+
+#if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
+#define MENOS_TREEWIDTH_AVX2 1
 namespace {
 
-// Dense bitset adjacency for the min-fill search. The graph the search
-// runs on (the closed network's line graph) is small -- hundreds to a few
-// thousand nodes -- but DENSE once fill-in edges accumulate, which made the
-// previous std::set<std::size_t>-per-vertex representation the planner's
-// dominant cost (measured: ~96% of menos.run on a 10-qubit, 55-term QAOA
-// estimate, almost all of it red-black-tree traversal). A row of 64-bit words
-// per vertex turns "how many edges are there among v's neighbours" into
-// popcounts of word-wise ANDs, and every neighbour set is still walked in
-// ascending vertex order, so the elimination order, its tie-breaking (lowest
-// index) and every reported width are unchanged -- only the data structure is.
-class BitAdjacency {
-public:
-    explicit BitAdjacency(std::size_t n) : n_(n), words_((n + 63) / 64), bits_(n * words_, 0) {}
+// sum over w in [first, last) of popcount(a[w] & b[w]), four words at a time
+// with AVX2: each byte's popcount is looked up from its two nibbles
+// (vpshufb), and the byte counts are summed into four 64-bit lanes (vpsadbw).
+// The tail and short spans use the scalar popcount. Exact integer arithmetic,
+// so the same count as the scalar loop (docs/adr/0025 section 12.3, C.1c).
+[[gnu::target("avx2,popcnt")]] std::size_t and_popcount_avx2(const std::uint64_t* a,
+                                                             const std::uint64_t* b,
+                                                             std::size_t first,
+                                                             std::size_t last) {
+    const __m256i lookup = _mm256_setr_epi8(0,
+                                            1,
+                                            1,
+                                            2,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            2,
+                                            3,
+                                            3,
+                                            4,
+                                            0,
+                                            1,
+                                            1,
+                                            2,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            1,
+                                            2,
+                                            2,
+                                            3,
+                                            2,
+                                            3,
+                                            3,
+                                            4);
+    const __m256i low_nibble = _mm256_set1_epi8(0x0f);
+    __m256i total = _mm256_setzero_si256();
+    std::size_t w = first;
+    for (; w + 4 <= last; w += 4) {
+        // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads
+        const __m256i x =
+            _mm256_and_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + w)),
+                             _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b + w)));
+        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+        const __m256i lo = _mm256_and_si256(x, low_nibble);
+        const __m256i hi = _mm256_and_si256(_mm256_srli_epi16(x, 4), low_nibble);
+        const __m256i bytes =
+            _mm256_add_epi8(_mm256_shuffle_epi8(lookup, lo), _mm256_shuffle_epi8(lookup, hi));
+        total = _mm256_add_epi64(total, _mm256_sad_epu8(bytes, _mm256_setzero_si256()));
+    }
+    std::size_t c = static_cast<std::size_t>(_mm256_extract_epi64(total, 0)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 1)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 2)) +
+                    static_cast<std::size_t>(_mm256_extract_epi64(total, 3));
+    for (; w < last; ++w) {
+        c += static_cast<std::size_t>(std::popcount(a[w] & b[w]));
+    }
+    return c;
+}
 
-    void set(std::size_t a, std::size_t b) {
-        row(a)[b / 64] |= std::uint64_t{1} << (b % 64);
-    }
-    void reset(std::size_t a, std::size_t b) {
-        row(a)[b / 64] &= ~(std::uint64_t{1} << (b % 64));
-    }
-    void clear_row(std::size_t a) {
-        std::fill_n(row(a), words_, std::uint64_t{0});
-    }
+// Evaluated once, at static initialisation; __builtin_cpu_init makes the
+// check safe whatever order the static initialisers run in.
+const bool kHasAvx2 = [] {
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx2") != 0;
+}();
 
-    [[nodiscard]] std::size_t degree(std::size_t a) const {
-        std::size_t d = 0;
-        const std::uint64_t* r = row(a);
-        for (std::size_t w = 0; w < words_; ++w) {
-            d += static_cast<std::size_t>(std::popcount(r[w]));
-        }
-        return d;
-    }
-    [[nodiscard]] std::size_t common(std::size_t a, std::size_t b) const {
-        std::size_t c = 0;
-        const std::uint64_t* ra = row(a);
-        const std::uint64_t* rb = row(b);
-        for (std::size_t w = 0; w < words_; ++w) {
-            c += static_cast<std::size_t>(std::popcount(ra[w] & rb[w]));
-        }
-        return c;
-    }
-    // Calls f(u) for every neighbour u of a, in ascending order of u.
-    template <typename F>
-    void for_each_neighbor(std::size_t a, F&& f) const {
-        const std::uint64_t* r = row(a);
-        for (std::size_t w = 0; w < words_; ++w) {
-            std::uint64_t word = r[w];
-            while (word != 0) {
-                const auto bit = static_cast<std::size_t>(std::countr_zero(word));
-                f(w * 64 + bit);
-                word &= word - 1;
-            }
-        }
-    }
-    [[nodiscard]] std::size_t num_nodes() const {
-        return n_;
-    }
-
-private:
-    std::uint64_t* row(std::size_t a) {
-        return bits_.data() + a * words_;
-    }
-    [[nodiscard]] const std::uint64_t* row(std::size_t a) const {
-        return bits_.data() + a * words_;
-    }
-
-    std::size_t n_;
-    std::size_t words_;
-    std::vector<std::uint64_t> bits_;
-};
+}  // namespace
+#endif
 
 // fill(v) = C(deg(v), 2) - |{edges already present among v's neighbors}|
 // -- the number of NEW fill-in edges eliminating v right now would add.
@@ -334,15 +351,43 @@ private:
 #if defined(__x86_64__) && defined(__linux__) && (defined(__GNUC__) || defined(__clang__))
 [[gnu::target_clones("popcnt", "default")]]
 #endif
-std::size_t compute_fill(const BitAdjacency& adjacency, std::size_t v) {
-    std::size_t k = 0;
+std::size_t compute_fill(const BitAdjacency& adjacency,
+                         std::size_t v,
+                         std::vector<std::size_t>& scratch) {
+    const BitAdjacency::WordRange range = adjacency.nonzero_range(v);
+    const std::size_t k = adjacency.degree(v);
     std::size_t twice_edges = 0;
-    adjacency.for_each_neighbor(v, [&](std::size_t a) {
-        ++k;
-        twice_edges += adjacency.common(a, v);
-    });
+    if (k < range.last - range.first) {
+        // Fewer neighbours than words in the span: k bit tests per neighbour
+        // count |N(a) & N(v)| more cheaply than one popcount per span word.
+        // The same integer either way.
+        scratch.clear();
+        adjacency.for_each_neighbor_in(v, range, [&](std::size_t u) { scratch.push_back(u); });
+        for (const std::size_t a : scratch) {
+            for (const std::size_t u : scratch) {
+                twice_edges += adjacency.test(a, u) ? 1U : 0U;
+            }
+        }
+    } else {
+#ifdef MENOS_TREEWIDTH_AVX2
+        if (kHasAvx2 && range.last - range.first >= 4) {
+            const std::uint64_t* rv = adjacency.row_words(v);
+            adjacency.for_each_neighbor_in(v, range, [&](std::size_t a) {
+                twice_edges +=
+                    and_popcount_avx2(adjacency.row_words(a), rv, range.first, range.last);
+            });
+            return k * (k - 1) / 2 - twice_edges / 2;
+        }
+#endif
+        adjacency.for_each_neighbor_in(
+            v, range, [&](std::size_t a) { twice_edges += adjacency.common(a, v, range); });
+    }
     return k * (k - 1) / 2 - twice_edges / 2;
 }
+
+}  // namespace detail
+
+namespace {
 
 // The original std::set-based fill count, kept as the fallback for graphs too
 // large for a dense bitset (see estimate_treewidth_min_fill) and as the
@@ -389,6 +434,10 @@ bool degree_exceeds_budget(std::size_t degree, std::uint64_t max_peak_bytes) {
 
 }  // namespace
 
+using detail::BitAdjacency;
+using detail::compute_fill;
+using detail::MinFillQueue;
+
 EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& graph,
                                                    std::uint64_t max_peak_bytes,
                                                    const MinFillStopPredicate& stop_after_step) {
@@ -399,12 +448,14 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         adjacency.set(a, b);
         adjacency.set(b, a);
     }
-    std::vector<bool> eliminated(graph.num_nodes, false);
-
-    std::vector<std::size_t> fill(graph.num_nodes);
+    std::vector<std::size_t> scratch;
+    std::vector<std::size_t> initial_fill(graph.num_nodes);
     for (std::size_t v = 0; v < graph.num_nodes; ++v) {
-        fill[v] = compute_fill(adjacency, v);
+        initial_fill[v] = compute_fill(adjacency, v, scratch);
     }
+    // The next vertex: the remaining one with the smallest fill, ties to the
+    // lowest index (min_fill_queue.h).
+    MinFillQueue queue(initial_fill);
 
     EliminationOrder result;
     result.order.reserve(graph.num_nodes);
@@ -414,28 +465,13 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
     std::vector<std::size_t> neighbors;
     std::vector<bool> is_affected(graph.num_nodes, false);
     std::vector<std::size_t> affected;
+    std::vector<std::size_t> drop(graph.num_nodes, 0);
+    std::vector<std::pair<std::size_t, std::size_t>> new_edges;
 
     for (std::size_t step = 0; step < graph.num_nodes; ++step) {
-        std::size_t best_vertex = 0;
-        std::size_t best_fill = std::numeric_limits<std::size_t>::max();
-        bool found = false;
-
-        for (std::size_t v = 0; v < graph.num_nodes; ++v) {
-            if (eliminated[v]) {
-                continue;
-            }
-            // Strict less-than: iterating v in increasing order and only
-            // replacing best_vertex on a strictly smaller fill count
-            // means ties resolve to the lowest vertex index,
-            // deterministically (never hash order).
-            if (!found || fill[v] < best_fill) {
-                best_fill = fill[v];
-                best_vertex = v;
-                found = true;
-            }
-        }
-
-        common::ensure(found, "estimate_treewidth_min_fill: no remaining vertex found");
+        const std::size_t best_vertex = queue.pop_min();
+        common::ensure(best_vertex != MinFillQueue::kNone,
+                       "estimate_treewidth_min_fill: no remaining vertex found");
         neighbors.clear();
         adjacency.for_each_neighbor(best_vertex, [&](std::size_t u) { neighbors.push_back(u); });
         const std::size_t degree = neighbors.size();
@@ -458,38 +494,56 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
             break;
         }
 
+        // The fill-in edges eliminating best_vertex adds: every pair of its
+        // neighbours not yet adjacent.
+        new_edges.clear();
         for (std::size_t i = 0; i < neighbors.size(); ++i) {
             for (std::size_t j = i + 1; j < neighbors.size(); ++j) {
-                adjacency.set(neighbors[i], neighbors[j]);
-                adjacency.set(neighbors[j], neighbors[i]);
+                if (!adjacency.test(neighbors[i], neighbors[j])) {
+                    new_edges.emplace_back(neighbors[i], neighbors[j]);
+                    adjacency.set(neighbors[i], neighbors[j]);
+                    adjacency.set(neighbors[j], neighbors[i]);
+                }
             }
         }
         for (const std::size_t nb : neighbors) {
             adjacency.reset(nb, best_vertex);
         }
         adjacency.clear_row(best_vertex);
-        eliminated[best_vertex] = true;
 
-        // A new fill-in edge is always between two members of
-        // `neighbors`, so only a vertex with two or more of them as its
-        // own neighbors could have its own fill count change. Every
-        // neighbor of a member of `neighbors` is a safe (if slightly
-        // generous) superset of that set -- cheap to build, and correct
-        // regardless of how generous, since compute_fill is idempotent.
-        affected.clear();
-        const auto mark = [&](std::size_t u) {
-            if (!is_affected[u]) {
-                is_affected[u] = true;
-                affected.push_back(u);
-            }
-        };
+        // Exact incremental update (docs/adr/0025 section 12.3, C.2b).
+        // fill(u) counts the non-adjacent pairs among u's neighbours.
+        //  - A neighbour of best_vertex loses it as a neighbour and gains
+        //    the others: its fill is recomputed in full.
+        //  - Any other remaining vertex u keeps exactly its neighbourhood
+        //    (it was not adjacent to best_vertex, and every new edge joins
+        //    two neighbours of best_vertex), and the only adjacency that
+        //    changes among its neighbours is the new edges. Its fill drops
+        //    by the number of new edges with both ends adjacent to u, and
+        //    by nothing else -- so only the common neighbours of a new
+        //    edge's two ends change at all.
         for (const std::size_t nb : neighbors) {
-            mark(nb);
-            adjacency.for_each_neighbor(nb, mark);
+            is_affected[nb] = true;
         }
-        for (const std::size_t v : affected) {
-            fill[v] = compute_fill(adjacency, v);
-            is_affected[v] = false;
+        affected.clear();
+        for (const auto& [a, b] : new_edges) {
+            adjacency.for_each_common_neighbor(a, b, [&](std::size_t u) {
+                if (is_affected[u]) {
+                    return;  // a neighbour of best_vertex: recomputed below
+                }
+                if (drop[u] == 0) {
+                    affected.push_back(u);
+                }
+                ++drop[u];
+            });
+        }
+        for (const std::size_t u : affected) {
+            queue.set_fill(u, queue.fill(u) - drop[u]);
+            drop[u] = 0;
+        }
+        for (const std::size_t nb : neighbors) {
+            queue.set_fill(nb, compute_fill(adjacency, nb, scratch));
+            is_affected[nb] = false;
         }
     }
     return result;

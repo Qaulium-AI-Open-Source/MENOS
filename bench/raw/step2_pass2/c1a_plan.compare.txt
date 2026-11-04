@@ -1,0 +1,19 @@
+[cpu_time]
+benchmark                                          before med    after med  med x  min x  spread  limit
+plan_job/expectation_z_all/small                        515.1        421.9   1.22   1.09   30.4%    61%
+plan_job/expectation_z_all/medium                      5625.4       5007.4   1.12   1.12   40.6%    81%
+plan_job/expectation_z_all/large                      45785.0      34898.7   1.31   1.19   37.8%    76%
+plan_job/expectation_ising/large                      46241.7      38145.6   1.21   1.25   25.3%    51%
+plan_job/expectation_ising_budgeted/small              6314.8       6216.1   1.02   1.06    9.1%    18%
+plan_job/expectation_ising_budgeted/medium           203943.7     191074.5   1.07   1.09   15.5%    31%
+plan_job/expectation_ising_budgeted/large           1027344.0     794492.0   1.29   1.27   27.2%    54%
+plan_job/expectation_random_pairs_controlled/small        701.2        654.4   1.07   1.07   28.5%    57%
+plan_job/expectation_random_pairs_controlled/medium      23532.8      22329.4   1.05   1.10   35.3%    71%
+plan_job/expectation_random_pairs_controlled/large     650251.3     552373.5   1.18   1.02   67.8%   136%
+plan_job/expectation_factorized/small                  1750.4       1944.1   0.90   1.02   28.0%    56%
+plan_job/expectation_factorized/medium               211915.1     193044.8   1.10   1.20   28.4%    57%
+plan_job/expectation_factorized/large               5302557.1    3099599.7   1.71   1.64   30.1%    60%
+plan_job/expectation_cut/small                          226.8        222.8   1.02   1.03   31.0%    62%
+plan_job/expectation_cut/medium                        2603.5       2369.9   1.10   1.09   17.6%    35%
+plan_job/expectation_cut/large                        17406.1      15060.3   1.16   1.14   30.2%    60%
+

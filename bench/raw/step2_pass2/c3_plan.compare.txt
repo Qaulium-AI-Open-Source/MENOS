@@ -1,0 +1,16 @@
+[cpu_time]
+benchmark                                          before med    after med  med x  min x  spread  limit
+plan_job/counts_brickwork/small                          30.5         33.0   0.92   1.01   66.8%   134%
+plan_job/counts_brickwork/medium                        128.3        140.4   0.91   1.01   25.8%    52%
+plan_job/counts_brickwork/large                         370.2        393.3   0.94   1.02   46.9%    94%
+plan_job/expectation_ising/small                        191.7        196.4   0.98   1.02   34.8%    70%
+plan_job/counts_clifford/small                           58.3         56.6   1.03   0.96  205.2%   410%
+plan_job/counts_clifford/medium                         853.6        864.9   0.99   1.04  175.3%   351%
+plan_job/counts_clifford/large                        15151.5      14699.2   1.03   0.99  221.2%   442%
+plan_job/counts_random_pairs/small                       60.0         56.6   1.06   0.97  254.8%   510%
+plan_job/counts_random_pairs/medium                     140.6        148.2   0.95   0.97  211.6%   423%
+plan_job/counts_random_pairs/large                      513.7        593.5   0.87   0.99  224.6%   449%
+plan_job/counts_factorized/small                         57.8         59.3   0.98   0.99  249.3%   499%
+plan_job/counts_factorized/medium                       329.3        334.0   0.99   0.98  240.2%   480%
+plan_job/counts_factorized/large                       1362.6       1244.8   1.09   1.03  233.4%   467%
+plan_job/expectation_factorized/small                  1199.3       1014.6   1.18   1.04  182.4%   365%

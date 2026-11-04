@@ -1,0 +1,15 @@
+MENOS EXECUTION REPORT
+circuit    qubits=8 clbits=0 operations=92 depth=16 global_phase=0
+light_cone qubits 8->8 operations 92->92
+candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=4096 work_units=61952
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (rz) is not a Clifford gate"
+candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
+candidate 3strategy=direct_mps feasible=true winner=false peak_bytes=10880 work_units=120840
+candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in observable term 1 of 1, at 62752 work units (including a lower bound for the remaining terms), already more than the 61952 of a cheaper feasible alternative"
+candidate 5strategy=cut_and_recombine feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in fragment 1 of 2, at 377856 work units, already more than the 61952 of a cheaper feasible alternative"
+strategy   direct_dense (exact)
+region 0   qubits=[0,1,2,3,4,5,6,7] engine=dense backend=cpu
+estimated  state_bytes=4096 work_units=61952
+--- plan fields not printed by explain() ---
+region 0: operations=92 observable_terms=1 state_bytes=4096 work_units=61952 global_to_local_size=8
+reduced_circuit: qubits=8 operations=92

@@ -1,0 +1,10 @@
+benchmark                                          before med    after med  med x  min x  spread  limit
+plan_job/expectation_ising_budgeted/small              2953.1        161.4  18.30  18.14    4.5%     9%
+plan_job/expectation_ising_budgeted/medium            65910.2       2065.7  31.91  31.92    8.3%    17%
+plan_job/expectation_ising_budgeted/large            227752.7      10326.3  22.06  22.14    6.4%    13%
+plan_job/expectation_factorized/small                   901.5        900.3   1.00   0.99    5.9%    12%
+plan_job/expectation_factorized/medium                36933.2      37227.6   0.99   0.99    3.6%     7%
+plan_job/expectation_factorized/large                654511.5     653968.0   1.00   1.01    3.6%     7%
+plan_job/expectation_cut/small                          140.7        142.1   0.99   1.00    3.1%     6%
+plan_job/expectation_cut/medium                        1146.1       1149.7   1.00   1.00    4.2%     8%
+plan_job/expectation_cut/large                         5224.7       5224.8   1.00   1.00    7.1%    14%

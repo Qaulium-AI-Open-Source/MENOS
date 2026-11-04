@@ -10,9 +10,9 @@ The authoritative plan is `docs/BUILD_PLAN.md`. Read the current phase specifica
 
 ## Current phase
 
-**Phase 20 is COMPLETE: the owner instructed on 2026-10-17 that its gate be marked passed once every criterion passed, and it was recorded passed on 2026-10-18, on the evidence in `docs/adr/0024` section 10 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `5da898e`), recorded in section 10.7. Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is COMPLETE (gate accepted 2026-10-18 on the evidence on `7fa38ce`, `docs/adr/0022` section 10.4). Phases 12–17 are COMPLETE. On 2026-10-18 the owner placed the memory roadmap (Phases 21–23: memory accounting and copy removal, CUDA memory efficiency, tiered VRAM/RAM/disk memory) next in `docs/BUILD_PLAN.md`; Phase 21 is NOT STARTED and starts only on the owner's instruction. The rest of the interoperability roadmap, renumbered to Phases 24–29, is a proposal only, and the owner sets its order and scope.**
+**Phase 20 is COMPLETE: the owner instructed on 2026-10-17 that its gate be marked passed once every criterion passed, and it was recorded passed on 2026-10-18, on the evidence in `docs/adr/0024` section 10 (`scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on `5da898e`), recorded in section 10.7. Phase 19 is COMPLETE (gate accepted 2026-10-16, `docs/adr/0023` section 10.4). Phase 18 (native Windows) is COMPLETE (gate accepted 2026-10-18 on the evidence on `7fa38ce`, `docs/adr/0022` section 10.4). Phases 12–17 are COMPLETE. On 2026-10-18 the owner placed the memory roadmap (memory accounting and copy removal, CUDA memory efficiency, tiered VRAM/RAM/disk memory) next in `docs/BUILD_PLAN.md`; on 2026-11-03 the owner renumbered it to Phases 22–24, NOT STARTED, each starting only on the owner's instruction. The rest of the interoperability roadmap, renumbered to Phases 25–30, is a proposal only, and the owner sets its order and scope.**
 
-Platform note (2026-10-02, `docs/adr/0014` section 17): the CUDA backend supports toolkits 12.0 and later. On the WSL machine (driver 566.14), only the `cuda12-dev`/`cuda12-release` presets reach the GPU; `scripts/lsan-wsl-libcuda.supp` suppresses, by path, a leak inside WSL's CUDA driver shim. Git inside WSL has no identity configured; commits use the repository's existing author.
+Platform note (2026-10-02, `docs/adr/0014` section 17): the CUDA backend supports toolkits 12.0 and later. On the WSL machine (driver 566.14), only the `cuda12-dev`/`cuda12-release` presets reach the GPU; `scripts/lsan-wsl-libcuda.supp` suppresses, by path, a leak inside WSL's CUDA driver shim. Git inside WSL has no identity configured; commits use the repository's existing author. **Build location (owner, 2026-11-03):** from Phase 21 on, builds and `scripts/verify.sh` run natively on Linux in this repository (Ubuntu 26.04, GCC 15.2, RTX 3050 Laptop GPU), not in a WSL clone; the WSL notes and the `~/MENOS` clone in the frozen phase records below are historical.
 
 The rest of this section is the Phase 11 closure record, kept as written.
 
@@ -121,6 +121,10 @@ Invariants:
 - Every refusal raises `MENOSDeviceUnsupportedError` (both `menos.UnsupportedFeatureError` and PennyLane's `DeviceError`) naming the construct, including `backprop`/`adjoint`/`device` derivatives, program capture and `qml.qjit`.
 - PennyLane's own Kraus matrices are used for channels; there is no per-channel convention table.
 - No shared frontend code is extracted, and `MENOSBackend.max_circuits` stays 1.
+
+## Phase 21
+
+**Planner performance.** The owner started the phase on 2026-11-03, ahead of the memory roadmap (now Phases 22–24). Scope: `plan_job` latency plus the one-time hardware calibration. Specification: `docs/BUILD_PLAN.md`, Phase 21. Design: `docs/adr/0025` (draft; section 9 open). Branch `phase-21-planner-performance`, from `main` at `d89dde3`. The work runs in steps 0–6, and the owner reviews each step before the next starts. Step 0 (discovery) is recorded in `docs/ARCHITECTURE_NOTES.md`. Proposed invariant: plans and `explain()` stay byte-identical.
 
 ## Definition of done
 

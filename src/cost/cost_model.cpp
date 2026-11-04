@@ -20,7 +20,12 @@ using common::checked_pow2;
 using common::ResourceExceeded;
 
 EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engines,
-                                  const EngineEstimateRequest& request) {
+                                  const EngineEstimateRequest& request,
+                                  std::vector<CostEstimate>* estimates) {
+    if (estimates != nullptr) {
+        estimates->clear();
+        estimates->reserve(engines.size());
+    }
     std::optional<std::size_t> best;
     CostEstimate best_estimate{/*feasible=*/false, 0, 0, "", {}};
     std::string reasons;
@@ -37,6 +42,9 @@ EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engin
                 ? std::min(request.prune_above_work_units, best_estimate.estimated_work_units)
                 : request.prune_above_work_units;
         const CostEstimate estimate = engines[i]->estimate(bounded);
+        if (estimates != nullptr) {
+            estimates->push_back(estimate);
+        }
         if (!estimate.feasible) {
             if (!reasons.empty()) {
                 reasons += "; ";

@@ -2,6 +2,15 @@
 
 MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
 
+## Phase 21: planner performance (in progress, not released)
+
+Planning is faster; what it chooses is not. Every plan, and its estimate, is the same as before; this is checked against a frozen copy of the earlier planner on 45 fixed jobs and on randomised ones.
+
+- Faster analysis inside planning: the tensor-network cost search (min-fill elimination order) and the MPS bond-dimension bound. The data structures are described for maintainers in `docs/ENGINE_TECHNIQUES.md`.
+- Expensive candidates (tensor network, cut-and-recombine, and the tensor network inside each factorized region) are stopped once they cannot beat a cheaper feasible candidate, and the cheaper candidates are costed first. With a time budget this now also applies on the CPU.
+- **`explain()` change:** a candidate stopped this way shows `reason="pruned by branch-and-bound: …"` instead of its full figures, and a factorized region's `why=` lists such an engine as pruned. Only losing lines change; see [Pruned candidates](/planning/explain#pruned-candidates).
+- A plan-cache hit is cheaper than planning the job again.
+
 ## Phase 20: PennyLane device
 
 - New PennyLane device **`menos.qubit`** (`menos.pennylane.MENOSQubitDevice`), registered through PennyLane's `pennylane.plugins` entry point and installed with the `pennylane` extra (PennyLane 0.45.1, CPython 3.11 or later).

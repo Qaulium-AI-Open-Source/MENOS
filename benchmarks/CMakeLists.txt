@@ -9,6 +9,42 @@ target_include_directories(menos_benchmark_environment PUBLIC ${CMAKE_CURRENT_SO
 target_link_libraries(menos_benchmark_environment PUBLIC menos_plan)
 target_compile_options(menos_benchmark_environment PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 21 step 1 (docs/adr/0025 section 5): plan_job latency and heap
+# traffic over the fixed planner corpus shared with the golden-plan test, and
+# a cold-calibration probe run once per fresh process by bench/run_calibration.sh.
+add_executable(menos_planner_benchmark
+    planner_benchmark.cpp
+    counting_allocator.cpp
+    menos_benchmark_main.cpp
+)
+target_include_directories(menos_planner_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_planner_benchmark PRIVATE
+    menos_plan menos_benchmark_environment benchmark::benchmark
+)
+target_compile_options(menos_planner_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 21 step 2 pass 2 (docs/adr/0025 section 12): each planner data
+# structure timed alone.
+add_executable(menos_planner_structures_benchmark
+    planner_structures_benchmark.cpp
+    menos_benchmark_main.cpp
+)
+target_include_directories(menos_planner_structures_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_planner_structures_benchmark PRIVATE
+    menos_plan menos_benchmark_environment benchmark::benchmark
+)
+target_compile_options(menos_planner_structures_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+add_executable(menos_calibration_probe calibration_probe.cpp)
+target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
+target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 21 owner question 4: does calibration noise change the chosen plan?
+add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
+target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_calibration_sensitivity PRIVATE menos_plan)
+target_compile_options(menos_calibration_sensitivity PRIVATE ${MENOS_WARNING_FLAGS})
+
 add_executable(menos_dense_gate_application_benchmark
     dense_gate_application_benchmark.cpp
     menos_benchmark_main.cpp

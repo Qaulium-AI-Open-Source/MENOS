@@ -385,18 +385,29 @@ Plan plan_job(const JobSpec& job_spec,
     // stopped and explain() reports it as pruned, with the figure it reached.
     //
     // Enabled only where no later step of plan_job can change a candidate
-    // after enumeration: with a time budget a cheaper-in-work candidate can
-    // still be rejected on seconds (and a replan raises figures from
-    // observations), and the CUDA backend step can replace the dense
-    // candidate's work units. In every such job the bound stays at its
-    // default and every candidate is costed in full, exactly as before.
+    // after enumeration: the CUDA backend step can replace the dense
+    // candidate's work units, and Factorized's per-region backends set its
+    // seconds. In such a job (CUDA forced, or CUDA and CPU both calibrated and
+    // CUDA not refused) the bound stays at its default and every candidate is
+    // costed in full, exactly as before.
+    //
+    // A time budget no longer turns it off (docs/adr/0025 sections 11.2 and
+    // 13, D.1b). In a CPU-only job, apply_time_budget depends only on the
+    // candidate's own figures and on observations known before planning
+    // starts, so each candidate already costed is held to the budget before it
+    // can serve as the bound, and the bound is the fewest work units among
+    // candidates feasible in both memory and time. Selection is fewest work
+    // units among exactly those, so a candidate stopped strictly above the
+    // bound could never have won. apply_time_budget gives the same answer
+    // when it runs again after enumeration.
     const bool branch_and_bound =
-        !job_spec.time_budget_seconds.has_value() && job_spec.backend != Backend::Cuda &&
+        job_spec.backend != Backend::Cuda &&
         !(job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated);
     const auto incumbent_work_units = [&]() {
         std::uint64_t bound = std::numeric_limits<std::uint64_t>::max();
         if (branch_and_bound) {
-            for (const CandidateSummary& candidate : candidates) {
+            for (CandidateSummary& candidate : candidates) {
+                apply_time_budget(candidate);
                 if (candidate.feasible) {
                     bound = std::min(bound, candidate.estimated_work_units);
                 }
@@ -479,42 +490,6 @@ Plan plan_job(const JobSpec& job_spec,
         .estimated_work_units = direct_mps_estimate.estimated_work_units,
         .is_winner = false,
     });
-
-    // Candidate: DirectTensorNetwork, only enumerated for an expectation
-    // request (mirrors DirectPauli's own placement above, for the same
-    // reason: its capabilities() can never satisfy a counts/statevector-only
-    // request). It competes on estimated_work_units like every other
-    // candidate below -- no last-resort gate, no qubit-count exclusion, no
-    // special casing of any kind (docs/BUILD_PLAN.md Phase 8; MENOS is
-    // cost-driven, so an engine is selected because its estimate wins, never
-    // because it exists). Its own estimate() bounds its internal elimination
-    // search by the job's own budget (EngineEstimateRequest::budget_bytes),
-    // which is what keeps an unconditionally-enumerated combinatorial search
-    // from hanging planning -- the principled alternative to gating the
-    // candidate itself.
-    std::optional<cost::CostEstimate> direct_tensor_network_estimate;
-    std::optional<std::size_t> tensor_network_index;
-    if (want_expectation) {
-        direct_tensor_network_estimate = cost::estimate_direct(circuit,
-                                                               tensor_network_engine,
-                                                               job_spec.want_statevector,
-                                                               want_counts,
-                                                               want_expectation,
-                                                               reduced_observable,
-                                                               budget,
-                                                               job_spec.accuracy_policy,
-                                                               /*trajectories=*/0,
-                                                               incumbent_work_units());
-        tensor_network_index = candidates.size();
-        candidates.push_back(CandidateSummary{
-            .strategy = Strategy::DirectTensorNetwork,
-            .feasible = direct_tensor_network_estimate->feasible,
-            .infeasible_reason = direct_tensor_network_estimate->infeasible_reason,
-            .estimated_peak_bytes = direct_tensor_network_estimate->estimated_peak_bytes,
-            .estimated_work_units = direct_tensor_network_estimate->estimated_work_units,
-            .is_winner = false,
-        });
-    }
 
     // Candidate: DirectDensityMatrix, only for a noisy job (Phase 12,
     // docs/adr/0016 section 5). It is the only Direct candidate that can run
@@ -624,6 +599,50 @@ Plan plan_job(const JobSpec& job_spec,
         });
     }
 
+    // Candidate: DirectTensorNetwork, only enumerated for an expectation
+    // request (mirrors DirectPauli's own placement above, for the same
+    // reason: its capabilities() can never satisfy a counts/statevector-only
+    // request). It competes on estimated_work_units like every other
+    // candidate below -- no last-resort gate, no qubit-count exclusion, no
+    // special casing of any kind (docs/BUILD_PLAN.md Phase 8; MENOS is
+    // cost-driven, so an engine is selected because its estimate wins, never
+    // because it exists). Its own estimate() bounds its internal elimination
+    // search by the job's own budget (EngineEstimateRequest::budget_bytes),
+    // which is what keeps an unconditionally-enumerated combinatorial search
+    // from hanging planning -- the principled alternative to gating the
+    // candidate itself.
+    //
+    // It is listed after DirectMPS but costed here, after DensityMatrix,
+    // Trajectory and Factorized (it is moved into its listed place below).
+    // Its costing is a search the branch-and-bound bound can stop, so the
+    // cheaper candidates are costed first to give it a bound (docs/adr/0025
+    // section 13, D.1). The winner cannot change: a candidate is stopped only
+    // above a feasible alternative. Only its explain() line can, from its
+    // full figures to the pruned reason, and only when it loses either way.
+    std::optional<cost::CostEstimate> direct_tensor_network_estimate;
+    std::optional<std::size_t> tensor_network_index;
+    if (want_expectation) {
+        direct_tensor_network_estimate = cost::estimate_direct(circuit,
+                                                               tensor_network_engine,
+                                                               job_spec.want_statevector,
+                                                               want_counts,
+                                                               want_expectation,
+                                                               reduced_observable,
+                                                               budget,
+                                                               job_spec.accuracy_policy,
+                                                               /*trajectories=*/0,
+                                                               incumbent_work_units());
+        tensor_network_index = candidates.size();
+        candidates.push_back(CandidateSummary{
+            .strategy = Strategy::DirectTensorNetwork,
+            .feasible = direct_tensor_network_estimate->feasible,
+            .infeasible_reason = direct_tensor_network_estimate->infeasible_reason,
+            .estimated_peak_bytes = direct_tensor_network_estimate->estimated_peak_bytes,
+            .estimated_work_units = direct_tensor_network_estimate->estimated_work_units,
+            .is_winner = false,
+        });
+    }
+
     // Candidate: CutAndRecombine, appended after Factorized (docs/adr/0013
     // section 8, Phase 9). Expectation requests only, and only when a cut plan
     // actually exists for this circuit. It competes on estimated_work_units
@@ -654,6 +673,24 @@ Plan plan_job(const JobSpec& job_spec,
                 .is_winner = false,
             });
         }
+    }
+
+    // Back into the listed order: DirectTensorNetwork directly after DirectMPS,
+    // ahead of the candidates costed before it. Indices are fixed up so every
+    // one still names its own candidate.
+    if (tensor_network_index.has_value()) {
+        const std::size_t to = mps_index + 1;
+        const std::size_t from = *tensor_network_index;
+        std::rotate(candidates.begin() + static_cast<std::ptrdiff_t>(to),
+                    candidates.begin() + static_cast<std::ptrdiff_t>(from),
+                    candidates.begin() + static_cast<std::ptrdiff_t>(from) + 1);
+        for (std::optional<std::size_t>* index :
+             {&density_matrix_index, &trajectory_index, &factorized_index}) {
+            if (index->has_value() && **index >= to && **index < from) {
+                ++**index;
+            }
+        }
+        tensor_network_index = to;
     }
 
     // Backend selection for the dense candidate (Phase 10, docs/adr/0014).
@@ -1108,17 +1145,19 @@ Plan plan_job(const JobSpec& job_spec,
 }
 
 Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec) {
-    common::ensure(cached.regions.size() == 1 && cached.reduced_circuit.has_value(),
-                   "reparameterize_direct_plan: not a Direct plan");
+    if (cached.regions.size() != 1 || !cached.reduced_circuit.has_value()) {
+        throw common::InternalError("reparameterize_direct_plan: not a Direct plan");
+    }
+    const Circuit& cached_circuit = *cached.reduced_circuit;
     const bool want_counts = job_spec.shots > 0;
     const std::vector<QubitId> support = compute_light_cone_support(
         job_spec.circuit, job_spec.want_statevector, want_counts, job_spec.expectation);
     analysis::LightConeResult reduced = analysis::compute_light_cone(job_spec.circuit, support);
 
     const std::vector<Operation>& fresh = reduced.reduced_circuit.operations();
-    const std::vector<Operation>& stale = cached.reduced_circuit->operations();
+    const std::vector<Operation>& stale = cached_circuit.operations();
     common::ensure(
-        reduced.reduced_circuit.num_qubits() == cached.reduced_circuit->num_qubits() &&
+        reduced.reduced_circuit.num_qubits() == cached_circuit.num_qubits() &&
             fresh.size() == stale.size(),
         "reparameterize_direct_plan: reduced circuit shape differs from the cached plan");
     for (std::size_t i = 0; i < fresh.size(); ++i) {
@@ -1142,9 +1181,14 @@ Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec) {
             },
             fresh[i],
             stale[i]);
-        common::ensure(same,
-                       "reparameterize_direct_plan: operation " + std::to_string(i) +
-                           " differs in structure from the cached plan");
+        // The message is built only on failure: built eagerly, for every
+        // operation of every hit, it was about 17% of a hit (docs/adr/0025
+        // sections 11.3 and 13, D.3).
+        if (!same) {
+            common::ensure(false,
+                           "reparameterize_direct_plan: operation " + std::to_string(i) +
+                               " differs in structure from the cached plan");
+        }
     }
 
     Plan plan = cached;

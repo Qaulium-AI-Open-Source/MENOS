@@ -1,0 +1,1 @@
+THROWS ResourceExceeded: plan_job: no feasible candidate -- checked_pow2: n = 64 exceeds the maximum of 62; operation 0 (rx) is not a Clifford gate; checked_mul: 1152921504606846976 * 16 overflows uint64_t

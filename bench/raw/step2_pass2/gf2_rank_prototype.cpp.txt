@@ -1,0 +1,217 @@
+// Scratch prototype for docs/adr/0025 section 12, item C.4 (investigation only).
+// Compares the planner's SVD operator Schmidt rank (detail::operator_schmidt_rank)
+// with a GF(2) formula on Clifford unitaries:
+//   OSR(U; A|B) = 2^{rank_GF2(S_BA)}
+// where S is U's symplectic matrix (Pauli conjugation action) and S_BA is the
+// block mapping A-supported input Paulis to the B coordinates of their images.
+// Also reports rank(S_AB), and the singular-value flatness of the reshaped matrix.
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <complex>
+#include <cstdint>
+#include <cstdio>
+#include <map>
+#include <random>
+#include <set>
+#include <vector>
+
+#include "analysis/schmidt_rank_internal.h"
+#include "common/svd.h"
+
+using C = std::complex<double>;
+using M = std::vector<C>;
+
+M mul(const M& a, const M& b, std::size_t d) {
+    M c(d * d);
+    for (std::size_t i = 0; i < d; ++i)
+        for (std::size_t k = 0; k < d; ++k)
+            for (std::size_t j = 0; j < d; ++j) c[i * d + j] += a[i * d + k] * b[k * d + j];
+    return c;
+}
+M dag(const M& a, std::size_t d) {
+    M c(d * d);
+    for (std::size_t i = 0; i < d; ++i)
+        for (std::size_t j = 0; j < d; ++j) c[i * d + j] = std::conj(a[j * d + i]);
+    return c;
+}
+// Single-qubit gate g on operand q of k (operand-order bit convention: bit q of
+// the index is operand q).
+M on(const std::array<C, 4>& g, std::size_t q, std::size_t k) {
+    const std::size_t d = std::size_t{1} << k;
+    M m(d * d);
+    for (std::size_t r = 0; r < d; ++r)
+        for (std::size_t c = 0; c < d; ++c) {
+            if ((r & ~(std::size_t{1} << q)) != (c & ~(std::size_t{1} << q))) continue;
+            m[r * d + c] = g[((r >> q) & 1) * 2 + ((c >> q) & 1)];
+        }
+    return m;
+}
+M cx(std::size_t ctl, std::size_t tgt, std::size_t k) {
+    const std::size_t d = std::size_t{1} << k;
+    M m(d * d);
+    for (std::size_t c = 0; c < d; ++c) {
+        const std::size_t r = ((c >> ctl) & 1) ? c ^ (std::size_t{1} << tgt) : c;
+        m[r * d + c] = 1.0;
+    }
+    return m;
+}
+// Canonical form up to global phase, for de-duplicating the group.
+std::vector<long long> canon(const M& u) {
+    C ph = 0;
+    for (const C& z : u)
+        if (std::abs(z) > 1e-9) { ph = z / std::abs(z); break; }
+    std::vector<long long> key;
+    for (const C& z : u) {
+        const C w = z / ph;
+        key.push_back(std::llround(w.real() * 1e6));
+        key.push_back(std::llround(w.imag() * 1e6));
+    }
+    return key;
+}
+// Pauli on k qubits from (x, z) bit masks: X^x Z^z per qubit.
+M pauli(std::size_t x, std::size_t z, std::size_t k) {
+    const std::size_t d = std::size_t{1} << k;
+    M m(d * d);
+    for (std::size_t c = 0; c < d; ++c) {
+        const std::size_t r = c ^ x;
+        const double sign = (std::popcount(c & z) % 2) ? -1.0 : 1.0;
+        m[r * d + c] = sign;
+    }
+    return m;
+}
+// (x, z) of U P U^dagger, which is +-(i) times a Pauli for a Clifford.
+std::pair<std::size_t, std::size_t> image(const M& u, std::size_t x, std::size_t z, std::size_t k) {
+    const std::size_t d = std::size_t{1} << k;
+    const M q = mul(mul(u, pauli(x, z, k), d), dag(u, d), d);
+    for (std::size_t xx = 0; xx < d; ++xx)
+        for (std::size_t zz = 0; zz < d; ++zz) {
+            const M p = pauli(xx, zz, k);
+            C tr = 0;
+            for (std::size_t i = 0; i < d * d; ++i) tr += std::conj(p[i]) * q[i];
+            if (std::abs(tr) > 0.5 * static_cast<double>(d)) return {xx, zz};
+        }
+    std::fprintf(stderr, "not a Clifford\n");
+    std::exit(2);
+}
+std::size_t gf2_rank(std::vector<std::uint64_t> rows) {
+    std::size_t r = 0;
+    for (int bit = 63; bit >= 0; --bit) {
+        auto it = std::find_if(rows.begin() + static_cast<long>(r), rows.end(),
+                               [&](std::uint64_t v) { return (v >> bit) & 1; });
+        if (it == rows.end()) continue;
+        std::swap(*it, rows[r]);
+        for (std::size_t i = 0; i < rows.size(); ++i)
+            if (i != r && ((rows[i] >> bit) & 1)) rows[i] ^= rows[r];
+        ++r;
+    }
+    return r;
+}
+struct Result { std::size_t svd, gf2_ba, gf2_ab; double flat; };
+Result analyse(const M& u, std::size_t k, const std::vector<std::size_t>& left,
+               const std::vector<std::size_t>& right) {
+    Result res{};
+    res.svd = menos::analysis::detail::operator_schmidt_rank(u, k, left, right);
+    std::size_t amask = 0, bmask = 0;
+    for (auto p : left) amask |= std::size_t{1} << p;
+    for (auto p : right) bmask |= std::size_t{1} << p;
+    auto block = [&](std::size_t in_mask, std::size_t out_mask) {
+        std::vector<std::uint64_t> rows;
+        for (std::size_t q = 0; q < k; ++q) {
+            if (!((in_mask >> q) & 1)) continue;
+            for (int xz = 0; xz < 2; ++xz) {
+                const auto [ix, iz] = xz == 0 ? image(u, std::size_t{1} << q, 0, k)
+                                              : image(u, 0, std::size_t{1} << q, k);
+                rows.push_back(((ix & out_mask) << 32) | (iz & out_mask));
+            }
+        }
+        return gf2_rank(rows);
+    };
+    res.gf2_ba = block(amask, bmask);
+    res.gf2_ab = block(bmask, amask);
+    // Flatness: ratio of the smallest to largest kept singular value of the
+    // reshaped matrix (1.0 means all equal). Recompute through common::svd on
+    // the same reshaping used by operator_schmidt_rank is internal; approximate
+    // with the Pauli-coefficient magnitudes instead: |Tr(P_A x Q_B U)|/d over
+    // the support, all equal for a Clifford.
+    const std::size_t d = std::size_t{1} << k;
+    double mn = 1e300, mx = 0;
+    for (std::size_t x = 0; x < d; ++x)
+        for (std::size_t z = 0; z < d; ++z) {
+            const M p = pauli(x, z, k);
+            C tr = 0;
+            for (std::size_t i = 0; i < d * d; ++i) tr += std::conj(p[i]) * u[i];
+            const double a = std::abs(tr) / static_cast<double>(d);
+            if (a > 1e-9) { mn = std::min(mn, a); mx = std::max(mx, a); }
+        }
+    res.flat = mn / mx;
+    return res;
+}
+
+int main() {
+    const double r = 1.0 / std::sqrt(2.0);
+    const std::array<C, 4> H{r, r, r, -r}, S{1, 0, 0, C(0, 1)};
+    // All 2-qubit Cliffords up to phase, by BFS over {H0, H1, S0, S1, CX01}.
+    {
+        const std::size_t k = 2;
+        const std::vector<M> gens{on(H, 0, k), on(H, 1, k), on(S, 0, k), on(S, 1, k), cx(0, 1, k)};
+        std::set<std::vector<long long>> seen;
+        std::vector<M> group{on({1, 0, 0, 1}, 0, k)};
+        seen.insert(canon(group[0]));
+        for (std::size_t i = 0; i < group.size(); ++i)
+            for (const M& g : gens) {
+                M n = mul(g, group[i], 4);
+                if (seen.insert(canon(n)).second) group.push_back(std::move(n));
+            }
+        std::map<std::pair<std::size_t, std::size_t>, std::size_t> table;
+        std::size_t mismatch = 0, ab_ne_ba = 0;
+        double min_flat = 1.0;
+        for (const M& u : group) {
+            const Result res = analyse(u, k, {0}, {1});
+            ++table[{res.svd, res.gf2_ba}];
+            mismatch += (res.svd != (std::size_t{1} << res.gf2_ba)) ? 1 : 0;
+            ab_ne_ba += res.gf2_ab != res.gf2_ba ? 1 : 0;
+            min_flat = std::min(min_flat, res.flat);
+        }
+        std::printf("2-qubit Cliffords (up to phase): %zu\n", group.size());
+        for (auto& [key, n] : table)
+            std::printf("  svd rank %zu, gf2 rank(S_BA) %zu: %zu\n", key.first, key.second, n);
+        std::printf("  mismatches vs 2^rank(S_BA): %zu; rank(S_AB)!=rank(S_BA): %zu; min coefficient flatness %.17g\n",
+                    mismatch, ab_ne_ba, min_flat);
+    }
+    // Random 3- and 4-qubit Clifford words, every split.
+    for (const std::size_t k : {3U, 4U}) {
+        std::mt19937_64 rng(20261104 + k);
+        std::size_t total = 0, mismatch = 0, ab_ne_ba = 0;
+        std::map<std::size_t, std::size_t> ranks;
+        double min_flat = 1.0;
+        const std::size_t d = std::size_t{1} << k;
+        for (int t = 0; t < 400; ++t) {
+            M u = on({1, 0, 0, 1}, 0, k);
+            const int len = 1 + static_cast<int>(rng() % 40);
+            for (int g = 0; g < len; ++g) {
+                const std::size_t q = rng() % k;
+                std::size_t q2 = rng() % (k - 1);
+                if (q2 >= q) ++q2;
+                const int which = static_cast<int>(rng() % 3);
+                const M gm = which == 0 ? on(H, q, k) : which == 1 ? on(S, q, k) : cx(q, q2, k);
+                u = mul(gm, u, d);
+            }
+            for (std::size_t mask = 1; mask + 1 < d; ++mask) {
+                std::vector<std::size_t> left, right;
+                for (std::size_t p = 0; p < k; ++p) ((mask >> p) & 1 ? left : right).push_back(p);
+                const Result res = analyse(u, k, left, right);
+                ++total;
+                ++ranks[res.svd];
+                mismatch += (res.svd != (std::size_t{1} << res.gf2_ba)) ? 1 : 0;
+                ab_ne_ba += res.gf2_ab != res.gf2_ba ? 1 : 0;
+                min_flat = std::min(min_flat, res.flat);
+            }
+        }
+        std::printf("%zu-qubit random Clifford words: %zu (unitary, split) cases; svd ranks:", k, total);
+        for (auto& [rk, n] : ranks) std::printf(" %zu:%zu", rk, n);
+        std::printf("\n  mismatches vs 2^rank(S_BA): %zu; rank(S_AB)!=rank(S_BA): %zu; min coefficient flatness %.17g\n",
+                    mismatch, ab_ne_ba, min_flat);
+    }
+    return 0;
+}

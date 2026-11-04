@@ -1,0 +1,7 @@
+counts_random_pairs/small budget=0.001000s:  [direct_dense cpu] x18  [refused (ResourceExceeded)] x2
+expectation_random_pairs_controlled/small budget=0.001000s:  [direct_dense cpu] x18  [refused (ResourceExceeded)] x2
+expectation_random_pairs_controlled/medium budget=1.000000s:  [direct_mps cpu] x13  [refused (ResourceExceeded)] x7
+expectation_random_pairs_controlled/large budget=10.000000s:  [direct_mps cpu] x18  [refused (ResourceExceeded)] x2
+counts_factorized/large budget=0.001000s:  [factorized cpu cpu cpu cpu cpu cpu cpu cpu] x16  [refused (ResourceExceeded)] x4
+counts_noisy_trajectory/large budget=100.000000s:  [direct_trajectory cpu] x18  [refused (ResourceExceeded)] x2
+20 samples; 6 of 360 (job, budget) cases change outcome with the sample

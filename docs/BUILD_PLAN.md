@@ -25,14 +25,18 @@
 | 18 | Native Windows (MSVC) | Started 2026-10-13 — ADR `docs/adr/0022` |
 | 19 | OpenQASM 3 import (frontend) | **COMPLETE — acceptance gate passed 2026-10-16 (evidence: `docs/adr/0023` section 10; `scripts/verify.sh` exit 0 on `bb720d8`)** |
 | 20 | PennyLane device (frontend) | Started (2026-10-16) — ADR 0024 answered; plan awaiting approval |
-| 21 | Stim engine for noisy Clifford circuits (backend) | Proposed (2026-10-07) — not approved |
-| 22 | Cirq frontend | Proposed (2026-10-07) — not approved |
-| 23 | Adjoint differentiation | Proposed (2026-10-07) — not approved |
-| 24 | Dynamic circuits | Proposed (2026-10-07) — not approved |
-| 25 | NVIDIA cuQuantum engines (backend) | Proposed (2026-10-07) — not approved |
-| 26 | Further frontends and engines (candidates) | Proposed (2026-10-07) — not approved |
+| 21 | Planner performance | Started 2026-11-03 — step 0 (discovery); ADR `docs/adr/0025` draft |
+| 22 | Memory accounting and copy removal | NOT STARTED (memory roadmap, 2026-10-18) |
+| 23 | CUDA memory efficiency | NOT STARTED (memory roadmap, 2026-10-18) |
+| 24 | Tiered memory across VRAM, RAM and disk | NOT STARTED (memory roadmap, 2026-10-18) |
+| 25 | Stim engine for noisy Clifford circuits (backend) | Proposed (2026-10-07) — not approved |
+| 26 | Cirq frontend | Proposed (2026-10-07) — not approved |
+| 27 | Adjoint differentiation | Proposed (2026-10-07) — not approved |
+| 28 | Dynamic circuits | Proposed (2026-10-07) — not approved |
+| 29 | NVIDIA cuQuantum engines (backend) | Proposed (2026-10-07) — not approved |
+| 30 | Further frontends and engines (candidates) | Proposed (2026-10-07) — not approved |
 
-**Current position.** Phase 11 is COMPLETE and officially closed: `322eca5` is the final implementation and gate commit (`scripts/verify.sh` exit 0) and `9a0f0f7` is the documentation closure commit, on branch `phase-11-monitoring-replanning`. Phase 12 is NOT STARTED. On 2026-10-01 the owner set the scope of Phases 12–14: noise models, delivered in three phases (exact density-matrix simulation, then trajectories, then error mitigation). The specifications below are the plan of record. The owner recorded the Phase 12 decisions on 2026-10-01 and the branch `phase-12-noise-density-matrix` exists. The owner approved the Phase 12 plan and ADR 0016 the same day. Phase 12 is implemented on branch `phase-12-noise-density-matrix` (final code commit `96a7cd0`) and awaits the owner's gate decision; see the Phase 12 verification record. On 2026-10-02 the owner made that decision: Phase 12 closes once criterion 10 is re-verified with GPU tests that actually execute. CUDA 12.x support (commit `e546581`, `docs/adr/0014` section 17) made that possible on this machine, the re-verification passed, and **Phase 12 is COMPLETE** (see the Phase 12 gate record). Phase 13 followed: the owner answered ADR 0017's open questions and approved the plan the same day, Phase 13 was implemented and the owner accepted its gate on 2026-10-03: **Phase 13 is COMPLETE**. Phase 14 is not started. On 2026-10-05 the owner added the performance roadmap (Phases 15–17), which comes after Phase 14 and does not renumber it. Phases 14–17 are COMPLETE (gates accepted 2026-10-07, 2026-10-08, 2026-10-09 and 2026-10-10). On 2026-10-13 the owner started **Phase 18, native Windows (MSVC)**, as the next phase, and renumbered the proposed interoperability roadmap from Phases 18–25 to Phases 19–26 with its content unchanged. On 2026-10-14 the owner started **Phase 19, OpenQASM 3 import**, in parallel with Phase 18, and accepted its gate on 2026-10-16: **Phase 19 is COMPLETE**. On 2026-10-16 the owner started **Phase 20, PennyLane device**, whose gate was recorded passed on 2026-10-18: **Phase 20 is COMPLETE**. The owner accepted the Phase 18 gate on 2026-10-18: **Phase 18 is COMPLETE**. The same day the owner placed the memory roadmap (Phases 21–23: memory accounting, CUDA memory efficiency, tiered memory) next, and renumbered the remaining proposed interoperability phases to 24–29. Phase 21 is NOT STARTED.
+**Current position.** Phase 11 is COMPLETE and officially closed: `322eca5` is the final implementation and gate commit (`scripts/verify.sh` exit 0) and `9a0f0f7` is the documentation closure commit, on branch `phase-11-monitoring-replanning`. Phase 12 is NOT STARTED. On 2026-10-01 the owner set the scope of Phases 12–14: noise models, delivered in three phases (exact density-matrix simulation, then trajectories, then error mitigation). The specifications below are the plan of record. The owner recorded the Phase 12 decisions on 2026-10-01 and the branch `phase-12-noise-density-matrix` exists. The owner approved the Phase 12 plan and ADR 0016 the same day. Phase 12 is implemented on branch `phase-12-noise-density-matrix` (final code commit `96a7cd0`) and awaits the owner's gate decision; see the Phase 12 verification record. On 2026-10-02 the owner made that decision: Phase 12 closes once criterion 10 is re-verified with GPU tests that actually execute. CUDA 12.x support (commit `e546581`, `docs/adr/0014` section 17) made that possible on this machine, the re-verification passed, and **Phase 12 is COMPLETE** (see the Phase 12 gate record). Phase 13 followed: the owner answered ADR 0017's open questions and approved the plan the same day, Phase 13 was implemented and the owner accepted its gate on 2026-10-03: **Phase 13 is COMPLETE**. Phase 14 is not started. On 2026-10-05 the owner added the performance roadmap (Phases 15–17), which comes after Phase 14 and does not renumber it. Phases 14–17 are COMPLETE (gates accepted 2026-10-07, 2026-10-08, 2026-10-09 and 2026-10-10). On 2026-10-13 the owner started **Phase 18, native Windows (MSVC)**, as the next phase, and renumbered the proposed interoperability roadmap from Phases 18–25 to Phases 19–26 with its content unchanged. On 2026-10-14 the owner started **Phase 19, OpenQASM 3 import**, in parallel with Phase 18, and accepted its gate on 2026-10-16: **Phase 19 is COMPLETE**. On 2026-10-16 the owner started **Phase 20, PennyLane device**, whose gate was recorded passed on 2026-10-18: **Phase 20 is COMPLETE**. The owner accepted the Phase 18 gate on 2026-10-18: **Phase 18 is COMPLETE**. The same day the owner placed the memory roadmap (Phases 21–23: memory accounting, CUDA memory efficiency, tiered memory) next, and renumbered the remaining proposed interoperability phases to 24–29. On 2026-11-03 the owner started **Phase 21, planner performance**, ahead of the memory roadmap, which was renumbered to Phases 22–24; the proposed interoperability phases are now 25–30. Phase 21 is in step 0 (discovery).
 
 ### Phase 10 frozen record
 
@@ -458,9 +462,34 @@ Written on 2026-10-13 from `docs/adr/0022` (owner answers in its section 9).
 
 ADR `docs/adr/0022` first, then plan mode and owner approval (both done on 2026-10-13). Windows verification runs through `scripts/verify-windows.ps1`; Linux verification stays `scripts/verify.sh` in the WSL clone.
 
-## Memory roadmap (Phases 21–23) — next, each phase NOT STARTED
+## Phase 21: Planner performance — STARTED 2026-11-03 (step 0)
 
-**Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18).
+**Status.** The owner started this phase on 2026-11-03 and placed it ahead of the memory roadmap, which became Phases 22–24. Design: `docs/adr/0025` (draft; section 9 awaits the owner). Branch: `phase-21-planner-performance`, from `main` at `d89dde3`. The owner works in steps and reviews each one before the next starts. To avoid confusion with MENOS phase numbers, these are called "steps 0–6" here.
+
+**Scope (owner, 2026-11-03).** The latency of one `plan::plan_job` call (`src/plan/planner.cpp`), and also the one-time hardware calibration (`plan::calibrated_hardware_profile`, `src/plan/hardware_profile.cpp`). The execution engines are out of scope.
+
+**Steps.**
+0. Discovery, read-only except for documentation: `docs/ARCHITECTURE_NOTES.md` (call graph, hypotheses), this entry, and the draft ADR.
+1. Measure before changing anything: a release build with symbols, a reproducible planner benchmark (small/medium/large inputs, fixed seeds, every candidate family, plus cold calibration), and a profile (time per plan, allocation count, peak memory, hotspots). The result is recorded in `bench/BASELINE.md`, and every later claim is compared with it.
+2. Algorithmic and data-structure changes that the profile justifies. Each is its own commit with a before/after measurement, and a change that does not measurably help is reverted.
+3. A survey of applicable open-source engine techniques (`docs/ENGINE_TECHNIQUES.md`, credited, no copied code). Only techniques the step-1 profile justifies are implemented.
+4. A Rust kernel behind a C ABI, built only if profiling justifies it, and only with owner approval (the "Rust service layer, C ABI" item under Deferred work needs an ADR). Kept only if it is clearly faster than optimised C++ after FFI overhead.
+5. Correctness: old-versus-new planner equivalence on randomized inputs; ASan/UBSan (and TSan, since planning runs under a mutex-guarded cache); `scripts/verify.sh` and `scripts/verify-windows.ps1`.
+6. Release: README benchmark table (before/after), `CHANGELOG.md`, a semver bump, CI, and draft release notes. Nothing is pushed, tagged or published; the owner runs the commands.
+
+**Invariants (proposed, `docs/adr/0025` section 3).**
+- `plan_job` stays the only planner.
+- For every job, its result (strategy, regions, backends, every candidate's feasibility, reason, bytes and work units) and `explain()` output stay byte-identical to the pre-phase planner, unless the owner approves a change.
+- No tuning constant is introduced. Calibration still yields figures from the same measurements.
+- The Phase 11 replanning, Phase 14 batch and Phase 17 forced-backend invariants hold, and the plan cache (`78bbd49`) still reuses only Direct plans whose structure matches.
+- New dependencies are optional, pinned, behind a CMake option, and approved by the owner first.
+
+**Acceptance gate.** To be set by the owner from the step-1 baseline, as in Phases 15 and 16. It is proposed to include: planning-time ratios against `bench/BASELINE.md` on a fixed fixture set; byte-identical plans and `explain()` on a randomized equivalence corpus; sanitizer runs; and `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
+
+
+## Memory roadmap (Phases 22–24) — after Phase 21, each phase NOT STARTED
+
+**Status (2026-10-18):** the owner placed three memory phases next on the roadmap, ahead of the remaining interoperability phases, which were renumbered from Phases 21–26 to Phases 24–29 with their content unchanged. The order is decided. Each phase is NOT STARTED: it starts only on the owner's instruction, and then follows the usual process (an ADR, owner answers to its section 9, plan mode and owner approval, a `phase-<N>-<slug>` branch). The scope, thresholds and gate of each are set at its kickoff; the text below is the proposal. Problem statement and proposal for the owner: the "MENOS Memory: Problem and Proposed Roadmap" document (2026-10-18). *Renumbered by the owner on 2026-11-03 from Phases 21–23 to Phases 22–24, content unchanged, when planner performance became Phase 21. The "Phase 21–23" in the 2026-10-18 document now means Phases 22–24.*
 
 ### Why
 
@@ -484,7 +513,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 - The Phase 11 invariants hold (no tuning constants; an observation only raises a cost; state migration needs a measurement and an ADR first). The Phase 15 and 16 invariants hold (bitwise-identical kernels, `-fmad=false`, one synchronisation per gate).
 - New dependencies are optional, pinned (ADR 0001), behind a CMake option, and added only after a measurement shows they beat what MENOS does without them.
 
-### Phase 21: Memory accounting and copy removal — NOT STARTED
+### Phase 22: Memory accounting and copy removal — NOT STARTED
 
 **Goal.** Every estimate is an upper bound on the memory the job really uses, shown by measurement, and the avoidable copies are removed. No new dependency.
 
@@ -498,7 +527,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 **Acceptance gate (proposed).** Estimate ≥ measured peak on a fixture set covering every engine and output kind; the peak of the statevector and counts paths reduced by a measured amount; every count, statevector and expectation bitwise identical to before; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
 
-### Phase 22: CUDA memory efficiency — NOT STARTED
+### Phase 23: CUDA memory efficiency — NOT STARTED
 
 **Goal.** Less time spent allocating and copying on the GPU, using only CUDA runtime features MENOS already links (CUDA 12.0 and later). No new library.
 
@@ -511,7 +540,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 **Acceptance gate (proposed).** Measured reductions in allocation and device-to-host time as same-run ratios (`docs/adr/0020`: the GPU's clock state varies about 2× between runs); pool memory counted in the device feasibility check; bitwise-identical results; GPU tests that actually execute in the CUDA 12 presets; `scripts/verify.sh` exits 0.
 
-### Phase 23: Tiered memory across VRAM, RAM and disk — NOT STARTED
+### Phase 24: Tiered memory across VRAM, RAM and disk — NOT STARTED
 
 **Goal.** A dense state larger than the fastest memory still runs, by keeping it in a slower tier and streaming chunks of 2^L amplitudes to where the work happens. Consecutive gates on the L local qubits are applied in one pass; a gate on a global qubit pairs chunks or is preceded by a qubit-index swap. `plan_job` prices each tier with calibrated bandwidths and chooses; `explain()` names the tier.
 
@@ -520,13 +549,13 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 2. Unified memory (managed memory oversubscribing VRAM), compared by measurement with explicit chunking.
 3. Out-of-core CPU dense: the state in a memory-mapped file (`mmap` / `CreateFileMapping`); reaches the disk limit. [DERIVED] One pass over a 34-qubit state (256 GiB) at about 3 GB/s takes about 90 s, so this is useful only with deep gate grouping.
 
-**Owner decisions needed.** Which candidate plans are in scope; the disk location and size limit; whether NVIDIA cuStateVec (Phase 28, licence decision) is used here.
+**Owner decisions needed.** Which candidate plans are in scope; the disk location and size limit; whether NVIDIA cuStateVec (Phase 29, licence decision) is used here.
 
 **Acceptance gate (proposed).** Each tier runs a circuit too large for the tier above it; results bitwise identical to the in-memory dense engine on overlapping sizes; predicted time within a factor the owner sets of measured time; the planner picks a tier only when it is the cheapest feasible plan, shown in `explain()`; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
 
-## Interoperability roadmap (Phases 19–20 complete; 24–29 proposed)
+## Interoperability roadmap (Phases 19–20 complete; 25–30 proposed)
 
-**Status (2026-10-07): proposal only.** The owner asked for MENOS to work with other open-source quantum SDKs, both as frontends (other SDKs submit circuits to MENOS) and as backends (MENOS plans over external engines). Nothing in this section is approved. The owner sets the order, the scope and every threshold at each phase's kickoff. Every phase follows the usual process: an ADR, then plan mode, then owner approval, on a `phase-<N>-<slug>` branch. The roadmap comes after Phase 17 and does not renumber it. *Renumbered by the owner on 2026-10-13 from Phases 18–25 to Phases 19–26, when native Windows became Phase 18; the content is unchanged. Renumbered again by the owner on 2026-10-18: the memory roadmap became Phases 21–23, so the proposed Phases 21–26 became Phases 24–29 with their content unchanged (Stim 24, Cirq 25, adjoint differentiation 26, dynamic circuits 27, cuQuantum 28, further candidates 29). The Phase 19 and 20 records and their ADRs are kept as written: their "Phase 24" (dynamic circuits, `reset`) now means Phase 27.*
+**Status (2026-10-07): proposal only.** The owner asked for MENOS to work with other open-source quantum SDKs, both as frontends (other SDKs submit circuits to MENOS) and as backends (MENOS plans over external engines). Nothing in this section is approved. The owner sets the order, the scope and every threshold at each phase's kickoff. Every phase follows the usual process: an ADR, then plan mode, then owner approval, on a `phase-<N>-<slug>` branch. The roadmap comes after Phase 17 and does not renumber it. *Renumbered by the owner on 2026-10-13 from Phases 18–25 to Phases 19–26, when native Windows became Phase 18; the content is unchanged. Renumbered again by the owner on 2026-10-18: the memory roadmap became Phases 21–23, so the proposed Phases 21–26 became Phases 24–29 with their content unchanged (Stim 24, Cirq 25, adjoint differentiation 26, dynamic circuits 27, cuQuantum 28, further candidates 29). The Phase 19 and 20 records and their ADRs are kept as written: their "Phase 24" (dynamic circuits, `reset`) now means Phase 27.* *Renumbered again by the owner on 2026-11-03, when planner performance became Phase 21: the proposed Phases 24–29 became Phases 25–30 with their content unchanged (Stim 25, Cirq 26, adjoint differentiation 27, dynamic circuits 28, cuQuantum 29, further candidates 30). The Phase 19 and 20 records' "Phase 24" (dynamic circuits, `reset`) now means Phase 28.*
 
 ### Why
 
@@ -620,7 +649,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Every measurement type agrees with `default.qubit` on a fixture set within tolerance (exact) or by chi-square (counts); the parameter-shift gradient of a VQE fixture agrees with `default.qubit`; PennyLane's device test suite passes for the supported features; unsupported operations are refused by name; the Qiskit adapter's tests pass unmodified; `scripts/verify.sh` passes with the extra installed.
 
-### Phase 24: Stim engine for noisy Clifford circuits (backend) — PROPOSED
+### Phase 25: Stim engine for noisy Clifford circuits (backend) — PROPOSED
 
 **Goal.** Add Stim (Apache-2.0, C++) as a `SimulationEngine` for Clifford circuits with Pauli noise. Noisy stabilizer simulation was deferred in Phase 13 (`docs/adr/0017`). With this engine the planner can run error-correction-scale noisy Clifford circuits (thousands of qubits, millions of shots), which the density-matrix and trajectory engines cannot.
 
@@ -634,7 +663,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** On small fixtures, Stim counts agree with the Phase 12 density matrix by chi-square; noiseless results agree exactly with `StabilizerEngine`; non-Clifford or non-Pauli circuits are never sent to Stim; the planner chooses Stim for a large noisy-Clifford fixture that no other engine can run within budget, and `explain()` says why; `scripts/verify.sh` passes.
 
-### Phase 25: Cirq frontend — PROPOSED
+### Phase 26: Cirq frontend — PROPOSED
 
 **Goal.** A Cirq simulator (`menos.cirq.MENOSSimulator`, implementing `cirq.SimulatesSamples` and `cirq.SimulatesExpectationValues`) that converts Cirq circuits directly. Cirq's own QASM export is OpenQASM 2, which loses some gates and parameters, so a direct converter is more faithful.
 
@@ -642,7 +671,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Agreement with `cirq.Simulator` on a fixture set (tolerance for exact outputs, chi-square for samples); refused constructs tested; `scripts/verify.sh` passes with the extra installed.
 
-### Phase 26: Adjoint differentiation — PROPOSED
+### Phase 27: Adjoint differentiation — PROPOSED
 
 **Goal.** Gradients of expectation values in one forward and one backward pass, for the dense CPU and CUDA engines. Parameter-shift needs 2 circuits per parameter. Adjoint differentiation is what users of PennyLane's `lightning.qubit` expect, and it makes MENOS practical for variational workloads.
 
@@ -650,7 +679,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Adjoint gradients agree with parameter-shift and with finite differences within tolerance on a fixture set; the speed-up over parameter-shift is measured and recorded; `scripts/verify.sh` passes.
 
-### Phase 27: Dynamic circuits — PROPOSED
+### Phase 28: Dynamic circuits — PROPOSED
 
 **Goal.** Mid-circuit measurement, reset, and classical feed-forward (`if` on measured bits). Qiskit, OpenQASM 3, PennyLane (`qml.measure`, `qml.cond`) and Cirq all express these, and the frontends above must refuse them until this phase.
 
@@ -660,7 +689,7 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Agreement with Aer's dynamic-circuit support on a fixture set (teleportation, active reset, repeat-until-success); existing static-circuit results unchanged; `scripts/verify.sh` passes.
 
-### Phase 28: NVIDIA cuQuantum engines (backend) — PROPOSED
+### Phase 29: NVIDIA cuQuantum engines (backend) — PROPOSED
 
 **Goal.** cuStateVec and cuTensorNet as additional CUDA engines, competing with MENOS's own CUDA dense engine and CPU tensor-network engine on cost. Phase 8's engine stays closed and stays as the oracle; this adds engines beside it and does not reopen it.
 
@@ -668,14 +697,14 @@ Approved by the owner with the implementation plan on 2026-10-14 (`docs/adr/0023
 
 **Acceptance gate (proposed).** Differential agreement with the existing engines; measured crossovers recorded; planner changes recorded; GPU tests that actually execute; `scripts/verify.sh` passes.
 
-### Phase 29: Further frontends and engines (candidates) — PROPOSED
+### Phase 30: Further frontends and engines (candidates) — PROPOSED
 
-The owner chooses from these at kickoff, using what Phases 19–28 have shown:
+The owner chooses from these at kickoff, using what Phases 19–29 have shown:
 
 1. **pytket** (Quantinuum TKET) backend.
 2. **Amazon Braket** local-simulator interface.
 3. **MQT** (Munich Quantum Toolkit) integration, for example its decision-diagram simulator as an engine for highly structured circuits.
-4. **Stim circuit import with detector sampling**, if it was not in Phase 24.
+4. **Stim circuit import with detector sampling**, if it was not in Phase 25.
 5. **A plugin registry for third-party engines and frontends**, only if at least two frontends and two external engines exist and show a common shape.
 
 ### Contributing a frontend or an engine
@@ -696,7 +725,7 @@ The owner plans to write some frontends and engines directly. This checklist is 
 
 ## Deferred work
 
-Rust service layer, C ABI, sparse engine, distributed/multi-GPU, ROCm, lineage cache, cloud API and other unscheduled platform work remain deferred and require owner approval plus an ADR. Density matrix and noise support moved out of this list into the Phase 12–14 noise roadmap on 2026-10-01; noisy MPS and tensor-network engines, CUDA density-matrix support, and noise-model fitting from device calibration data stay deferred. On 2026-10-07 the PennyLane device and OpenQASM 3 moved out of this list into the proposed interoperability roadmap (Phases 19–26), which is not yet approved. On 2026-10-13 native Windows (x64, MSVC, CPU) moved out of this list into Phase 18; CUDA on Windows, Windows ARM64 and other Windows toolchains stay deferred. On 2026-10-18 the owner placed memory accounting, CUDA memory pools and pinned memory, and tiered VRAM/RAM/disk execution in the memory roadmap (Phases 21–23); multi-GPU and the sparse engine stay deferred, and the proposed interoperability phases are now numbered 24–29.
+Rust service layer, C ABI, sparse engine, distributed/multi-GPU, ROCm, lineage cache, cloud API and other unscheduled platform work remain deferred and require owner approval plus an ADR. Density matrix and noise support moved out of this list into the Phase 12–14 noise roadmap on 2026-10-01; noisy MPS and tensor-network engines, CUDA density-matrix support, and noise-model fitting from device calibration data stay deferred. On 2026-10-07 the PennyLane device and OpenQASM 3 moved out of this list into the proposed interoperability roadmap (Phases 19–26), which is not yet approved. On 2026-10-13 native Windows (x64, MSVC, CPU) moved out of this list into Phase 18; CUDA on Windows, Windows ARM64 and other Windows toolchains stay deferred. On 2026-10-18 the owner placed memory accounting, CUDA memory pools and pinned memory, and tiered VRAM/RAM/disk execution in the memory roadmap (Phases 21–23); multi-GPU and the sparse engine stay deferred, and the proposed interoperability phases are now numbered 24–29. On 2026-11-03 planner performance became Phase 21, the memory roadmap Phases 22–24 and the interoperability proposal Phases 25–30.
 
 ## Phase 11 kickoff (historical: used; Phase 11 is complete)
 
