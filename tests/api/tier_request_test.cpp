@@ -30,6 +30,7 @@ namespace {
 // Non-Clifford and entangled across the whole register (CX between the two
 // halves, then along the chain), so neither the stabilizer nor the MPS
 // engine can take the job and the dense algorithm is the only candidate.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Circuit entangled(std::uint32_t n, int layers) {
     Circuit circuit(n, n);
     for (int layer = 0; layer < layers; ++layer) {
@@ -115,8 +116,10 @@ TEST(TierRequestTest, AJobWhoseStateDoesNotFitRunsOnTheDiskTierWithTheSameOutput
     EXPECT_EQ(actual.plan().regions[0].tier, Tier::Disk);
     EXPECT_EQ(actual.counts(), expected.counts());
     ASSERT_TRUE(actual.expectation_value().has_value());
-    EXPECT_TRUE(same_bits(*actual.expectation_value(), *expected.expectation_value()))
-        << *actual.expectation_value() << " vs " << *expected.expectation_value();
+    const std::complex<double> actual_value = actual.expectation_value().value_or({});
+    const std::complex<double> expected_value = expected.expectation_value().value_or({});
+    EXPECT_TRUE(same_bits(actual_value, expected_value))
+        << actual_value << " vs " << expected_value;
     EXPECT_EQ(actual.peak_disk_bytes(), std::uint64_t{16} << kN);
     EXPECT_LE(actual.peak_host_bytes(), kSmallBudget);
     EXPECT_LE(actual.peak_host_bytes(), actual.plan().estimated_state_bytes);

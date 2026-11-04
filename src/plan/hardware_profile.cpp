@@ -330,6 +330,7 @@ ScratchBandwidth measure_scratch_bandwidth(const std::filesystem::path& director
     } catch (const common::Error&) {
         // Not writable, or no longer roomy: unmeasured, and the planner says
         // so rather than guessing.
+        result = ScratchBandwidth{};
     }
     return result;
 }

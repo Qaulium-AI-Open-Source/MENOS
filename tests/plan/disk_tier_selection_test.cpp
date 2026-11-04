@@ -25,6 +25,7 @@ namespace {
 // Non-Clifford and entangled across the whole register (CX between the two
 // halves, then along the chain), so neither the stabilizer nor the MPS
 // engine can take the job and the dense algorithm is the only candidate.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Circuit entangled(std::uint32_t n, int layers) {
     Circuit circuit(n, n);
     for (int layer = 0; layer < layers; ++layer) {
@@ -116,7 +117,8 @@ TEST(DiskTierSelectionTest, AStateOverTheBudgetWithCountsReachesTheDiskTier) {
     EXPECT_EQ(plan.estimated_state_bytes, dense.estimated_peak_bytes);
     // The scratch figures the decision rested on.
     ASSERT_TRUE(plan.scratch_directory.has_value());
-    EXPECT_EQ(*plan.scratch_directory, std::filesystem::path("/scratch"));
+    EXPECT_EQ(plan.scratch_directory.value_or(std::filesystem::path()),
+              std::filesystem::path("/scratch"));
     EXPECT_EQ(plan.disk_available_bytes, std::optional<std::uint64_t>{std::uint64_t{1} << 39});
     EXPECT_FALSE(plan.requested_tier.has_value());
 

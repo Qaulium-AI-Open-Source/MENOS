@@ -72,9 +72,13 @@ echo "== clang-tidy (C++ dev/release targets) =="
 # database has no entry for them. They are tidied in the CUDA stage below,
 # against build/cuda-dev. (.cu files are never passed to clang-tidy at all --
 # it cannot parse CUDA without a matching --cuda-path configuration.)
+# docs/benchmarks/ holds the measurement records' own driver sources (Phase
+# 23's pass-count driver, built by hand against the commit it measured); they
+# are records, not translation units of any build.
 mapfile -t cxx_files_no_python < <(git ls-files -- '*.cpp' '*.cc' \
     | grep -v '^src/python/' \
     | grep -v '^benchmarks/' \
+    | grep -v '^docs/' \
     | grep -v '^src/kernels/cuda/' \
     | grep -v '^src/engines/dense_cuda/' \
     | grep -v '^src/plan/cuda_calibration\.cpp$' \

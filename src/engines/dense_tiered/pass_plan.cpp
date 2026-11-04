@@ -37,11 +37,12 @@ std::uint64_t global_mask_of(const std::vector<QubitId>& qubits, std::uint32_t c
 }  // namespace
 
 // Three qubit counts with distinct roles, named at every call site.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 PassPlan build_pass_plan(std::span<const Operation> operations,
                          std::uint32_t num_qubits,
                          std::uint32_t chunk_qubits,
                          std::uint32_t window_qubits) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     PassPlan plan;
     plan.num_qubits = num_qubits;
     plan.chunk_qubits = chunk_qubits;
