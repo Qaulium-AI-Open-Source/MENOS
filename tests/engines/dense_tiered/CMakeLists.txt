@@ -1,6 +1,7 @@
 add_executable(menos_engines_dense_tiered_tests
     pass_plan_test.cpp
     file_backing_store_test.cpp
+    disk_dense_engine_test.cpp
 )
 
 target_link_libraries(menos_engines_dense_tiered_tests PRIVATE menos_engines_dense_tiered menos_ir GTest::gtest_main)

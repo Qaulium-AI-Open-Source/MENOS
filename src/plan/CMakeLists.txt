@@ -18,7 +18,8 @@ target_link_libraries(menos_plan PUBLIC menos_analysis menos_cost menos_ir menos
                                         menos_engines_pauli menos_engines_mps
                                         menos_engines_tensor_network
                                         menos_engines_density_matrix
-                                        menos_engines_trajectory)
+                                        menos_engines_trajectory
+                                        menos_engines_dense_tiered)
 if(MENOS_ENABLE_CUDA)
     # execution_engines.cpp is the one file that names the CUDA engine, the
     # same containment available_engines.cpp gives the CPU engines.

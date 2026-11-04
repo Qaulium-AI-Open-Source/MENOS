@@ -175,31 +175,35 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
         return CostEstimate{/*feasible=*/false, 0, 0, *reason, {}};
     }
     try {
-        std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
-            if (k == 0) {
-                continue;  // MeasureOp
-            }
-            work =
-                checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
-        }
-        if (request.want_statevector) {
-            work = checked_add(work, checked_pow2(request.num_qubits));
-        }
-        if (request.want_counts) {
-            work = checked_add(work, checked_pow2(request.num_qubits));
-        }
-        if (request.want_expectation) {
-            const std::uint64_t num_terms =
-                static_cast<std::uint64_t>(request.observable->terms.size());
-            work = checked_add(work, checked_mul(num_terms, checked_pow2(request.num_qubits)));
-        }
+        const std::uint64_t work = dense_work_units(request);
         return CostEstimate{
             /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
+}
+
+std::uint64_t dense_work_units(const EngineEstimateRequest& request) {
+    std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
+    for (const Operation& op : *request.operations) {
+        const std::size_t k = operand_count(op);
+        if (k == 0) {
+            continue;  // MeasureOp
+        }
+        work = checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
+    }
+    if (request.want_statevector) {
+        work = checked_add(work, checked_pow2(request.num_qubits));
+    }
+    if (request.want_counts) {
+        work = checked_add(work, checked_pow2(request.num_qubits));
+    }
+    if (request.want_expectation) {
+        const std::uint64_t num_terms =
+            static_cast<std::uint64_t>(request.observable->terms.size());
+        work = checked_add(work, checked_mul(num_terms, checked_pow2(request.num_qubits)));
+    }
+    return work;
 }
 
 EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request) const {

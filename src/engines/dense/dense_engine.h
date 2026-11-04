@@ -19,4 +19,14 @@ public:
         const EngineExecutionRequest& request) const override;
 };
 
+// The work-unit cost of the dense algorithm for request, the figure
+// DenseEngine::estimate reports (docs/BUILD_PLAN.md Phase 3, 3.5 / Phase 5's
+// expectation extension): 2^m (init) + sum over gates of 2^(m + operand count)
+// + [2^m if want_statevector] + [2^m if want_counts] + [num_terms * 2^m if
+// want_expectation]. Shared with the disk-tier engine (Phase 23,
+// docs/adr/0027), which does the same arithmetic on the same amplitudes and
+// differs only in where they live; the tier's own cost is its TierCost.
+// Throws common::ResourceExceeded when the figure overflows.
+[[nodiscard]] std::uint64_t dense_work_units(const EngineEstimateRequest& request);
+
 }  // namespace menos::engines::dense

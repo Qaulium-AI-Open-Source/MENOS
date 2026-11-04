@@ -2,6 +2,7 @@
 
 #include <complex>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -160,6 +161,17 @@ struct EngineExecutionRequest {
     // built directly (calibration, benchmarks, tests) measures and exercises
     // the configuration jobs run in rather than silently running on one.
     std::uint32_t max_threads = common::default_thread_count();
+    // Where the disk tier creates its scratch file (Phase 23, docs/adr/0027
+    // section 3.3); empty means the system's temporary directory. Read only
+    // by the disk-tier engine.
+    std::filesystem::path scratch_directory;
+    // The chunked executor's chunk and window sizes, as qubit counts, for
+    // tests that run the tier on a small state (docs/adr/0027 section 9
+    // Q10: an internal seam, not public API). 0 lets the engine choose, which
+    // every job does; a set chunk with an unset window takes the smallest
+    // window that fits the gates. Read only by the disk-tier engine.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
@@ -251,6 +263,12 @@ struct EngineEstimateRequest {
     std::uint64_t shots = 0;
     std::uint32_t bitstring_width = 0;
     bool is_sole_region = true;
+    // The chunked executor's chunk and window sizes, as EngineExecutionRequest
+    // takes them (Phase 23, docs/adr/0027): 0, the default, lets the engine
+    // choose. Read only by the disk-tier engine, whose estimate() reports the
+    // plan it will execute.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
 };
 
 // A simulation engine: something that can estimate the cost of, and

@@ -30,9 +30,20 @@ TEST(ExecutionEnginesTest, TheDefaultTierIsInMemory) {
     EXPECT_EQ(dense, find_execution_engine(Engine::Dense, Backend::Cpu, Tier::InMemory));
 }
 
+TEST(ExecutionEnginesTest, TheDiskTierIsADenseCpuImplementationOfItsOwn) {
+    const SimulationEngine* disk = find_execution_engine(Engine::Dense, Backend::Cpu, Tier::Disk);
+    ASSERT_NE(disk, nullptr);
+    EXPECT_EQ(disk->tier(), Tier::Disk);
+    EXPECT_EQ(disk->engine_id(), Engine::Dense);
+    EXPECT_EQ(disk->backend(), Backend::Cpu);
+    EXPECT_NE(disk, find_execution_engine(Engine::Dense, Backend::Cpu));
+    EXPECT_FALSE(disk->capabilities().statevector);
+}
+
 TEST(ExecutionEnginesTest, ATierThisBuildHasNoEngineForIsNull) {
     // The host-offloaded tier was measured and not built (docs/adr/0027
-    // section 10.1); no engine reports it.
+    // section 10.1); no engine reports it. Only the dense algorithm has a
+    // disk tier.
     EXPECT_EQ(find_execution_engine(Engine::Dense, Backend::Cuda, Tier::HostOffloaded), nullptr);
     EXPECT_EQ(find_execution_engine(Engine::Stabilizer, Backend::Cpu, Tier::Disk), nullptr);
 }
