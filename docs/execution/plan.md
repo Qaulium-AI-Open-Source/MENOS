@@ -4,7 +4,7 @@ Planning turns the estimates into one decision.
 
 ## Candidates, in a fixed order
 
-The planner considers these strategies, in this order. The order matters because ties go to the earlier candidate. It is the order `explain()` lists them in. The tensor network is *costed* after the cheaper candidates (dense through factorized), so that its search can be stopped early; see [Pruned candidates](/planning/explain#pruned-candidates).
+The planner considers these strategies, in this order. The order matters because ties go to the earlier candidate. It is the order `explain()` lists them in. The tensor network is *costed* after the cheaper candidates (dense through factorized), so that its search can be stopped early (development branch, not yet released); see [Pruned candidates](/planning/explain#pruned-candidates).
 
 | # | Strategy | Enumerated when |
 |---|---|---|
@@ -25,7 +25,7 @@ Candidates that cannot be useful for the request (for example Pauli propagation 
 3. **Ties go to the earlier candidate** in the table above.
 4. If no candidate is feasible, planning throws `ResourceExceeded` and the message lists every candidate's reason.
 
-A tensor-network or cut-and-recombine candidate whose costing passes a cheaper feasible candidate's work units is stopped and reported as pruned. It could not have won, so the choice is the same as if it had been costed in full.
+A tensor-network or cut-and-recombine candidate whose costing passes a cheaper feasible candidate's work units is stopped and reported as pruned (development branch, not yet released). It could not have won, so the choice is the same as if it had been costed in full.
 
 There is no special rule such as "Clifford circuits use the stabilizer engine". A 200-qubit Clifford GHZ circuit is planned onto MPS because MPS costs 3,400 work units against the stabilizer engine's 361,000.
 
@@ -43,4 +43,4 @@ Planning is deterministic. The same circuit, options and (for time budgets) cali
 
 ## Planning cost
 
-Planning is cheap next to running the job. On one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.
+Planning is cheap next to running the job. With the Phase 21 planner (development branch, not yet released), on one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.

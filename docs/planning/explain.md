@@ -57,6 +57,10 @@ That is usually all you need to understand why a large job was planned the way i
 
 ## Pruned candidates
 
+::: info Not in a published release yet
+Pruning is on the development branch (up to Phase 21, planner performance) and is not in a published release. A released version costs every candidate in full.
+:::
+
 Costing a tensor-network or cut-and-recombine candidate is itself a search. Once a cheaper feasible candidate is known, the planner stops such a search as soon as its running total passes that candidate's work units. A candidate stopped this way could never have won: the winner is the feasible candidate with the fewest work units. Its line shows where it was stopped instead of its full figures:
 
 ```text
