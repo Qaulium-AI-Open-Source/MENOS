@@ -7,26 +7,37 @@
 namespace menos::analysis {
 namespace {
 
-// Qubits an operation touches, including a MeasureOp's own qubit
-// (unlike src/analysis/interaction_graph.cpp's operands_of, which
-// excludes MeasureOp since it creates no interaction-graph edge -- a
+// Calls f(q) for each qubit an operation touches, including a MeasureOp's
+// own qubit (unlike src/analysis/interaction_graph.cpp's operands_of,
+// which excludes MeasureOp since it creates no interaction-graph edge -- a
 // measurement is still causally relevant to the light cone of its own
-// clbit). A ChannelOp is in the cone exactly like a gate: it is validated as
-// trace preserving, so one acting entirely outside the causal past of the
+// clbit), stopping as soon as f returns true; returns whether it did. A
+// ChannelOp is in the cone exactly like a gate: it is validated as trace
+// preserving, so one acting entirely outside the causal past of the
 // requested outputs cannot change their reduced state and is dropped, while
 // one touching the cone is kept and pulls its qubits in (docs/adr/0016
 // section 5). Exhaustive over Operation, like append_remapped below: a new
 // alternative fails the static_assert until it is given its own rule.
-std::vector<QubitId> touched_qubits(const Operation& op) {
+//
+// Walks the operation's own qubit list rather than returning a copy of it:
+// the backward walk below visits every operation, and on a plan-cache hit
+// the copies were most of its cost (docs/adr/0025 section 13, D.3).
+template <typename F>
+bool any_touched_qubit(const Operation& op, F&& f) {
     return std::visit(
-        [](const auto& o) -> std::vector<QubitId> {
+        [&](const auto& o) -> bool {
             using T = std::decay_t<decltype(o)>;
             if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp> ||
                           std::is_same_v<T, ChannelOp>) {
-                return o.qubits;
+                for (QubitId q : o.qubits) {
+                    if (f(q)) {
+                        return true;
+                    }
+                }
+                return false;
             } else {
                 static_assert(std::is_same_v<T, MeasureOp>);
-                return {o.qubit};
+                return f(o.qubit);
             }
         },
         op);
@@ -73,19 +84,13 @@ LightConeResult compute_light_cone(const Circuit& circuit, const std::vector<Qub
     const std::vector<Operation>& ops = circuit.operations();
     std::vector<bool> op_in_cone(ops.size(), false);
     for (std::size_t i = ops.size(); i-- > 0;) {
-        const std::vector<QubitId> touched = touched_qubits(ops[i]);
-        bool any_in_cone = false;
-        for (QubitId q : touched) {
-            if (in_cone[q]) {
-                any_in_cone = true;
-                break;
-            }
-        }
+        const bool any_in_cone = any_touched_qubit(ops[i], [&](QubitId q) { return in_cone[q]; });
         if (any_in_cone) {
             op_in_cone[i] = true;
-            for (QubitId q : touched) {
+            any_touched_qubit(ops[i], [&](QubitId q) {
                 in_cone[q] = true;
-            }
+                return false;
+            });
         }
     }
 

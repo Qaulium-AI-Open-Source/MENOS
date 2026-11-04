@@ -1181,9 +1181,14 @@ Plan reparameterize_direct_plan(const Plan& cached, const JobSpec& job_spec) {
             },
             fresh[i],
             stale[i]);
-        common::ensure(same,
-                       "reparameterize_direct_plan: operation " + std::to_string(i) +
-                           " differs in structure from the cached plan");
+        // The message is built only on failure: built eagerly, for every
+        // operation of every hit, it was about 17% of a hit (docs/adr/0025
+        // sections 11.3 and 13, D.3).
+        if (!same) {
+            common::ensure(false,
+                           "reparameterize_direct_plan: operation " + std::to_string(i) +
+                               " differs in structure from the cached plan");
+        }
     }
 
     Plan plan = cached;
