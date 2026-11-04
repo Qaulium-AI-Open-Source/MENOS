@@ -7,7 +7,8 @@
 # the real allocator.
 
 set(MENOS_MEMORY_FIXTURE_LIBS
-    menos_api menos_engines_dense menos_engines_density_matrix menos_engines_trajectory
+    menos_api menos_engines_dense menos_engines_dense_tiered menos_engines_density_matrix
+    menos_engines_trajectory
     menos_engines_stabilizer menos_engines_pauli menos_engines_mps
     menos_engines_tensor_network nlohmann_json::nlohmann_json)
 if(MENOS_ENABLE_CUDA)

@@ -6,6 +6,7 @@
 #include <complex>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -17,6 +18,7 @@
 #include "common/rng.h"
 #include "common/svd.h"
 #include "engines/dense/dense_engine.h"
+#include "engines/dense_tiered/disk_dense_engine.h"
 #include "engines/density_matrix/density_matrix_engine.h"
 #include "engines/mps/mps_engine.h"
 #include "engines/pauli/pauli_propagation_engine.h"
@@ -293,10 +295,43 @@ void add_dense_family(std::vector<Fixture>& out, const std::string& engine) {
     }
 }
 
+// The disk tier (Phase 23, docs/adr/0027 section 4): the dense counts and
+// expectation fixtures run through the chunked executor at n = 18 in chunks
+// of 2^12 amplitudes and a window of 2^15, so every pass, chunk pairing and
+// output path is exercised in milliseconds; their outputs are bitwise the
+// dense fixtures' (the same seed, targets and observable), which the
+// baseline pins. The file is 16 * 2^18 bytes in the test's directory.
+void add_disk_family(std::vector<Fixture>& out) {
+    constexpr std::uint32_t kN = 18;
+    constexpr std::uint32_t kChunkQubits = 12;
+    constexpr std::uint32_t kWindowQubits = 15;
+    {
+        Fixture f = engine_fixture("dense_disk_counts", "dense_disk", measured(layered(kN, 3, kN)));
+        f.shots = 20000;
+        f.tier_chunk_qubits = kChunkQubits;
+        f.tier_window_qubits = kWindowQubits;
+        out.push_back(std::move(f));
+    }
+    {
+        Fixture f = engine_fixture("dense_disk_expectation", "dense_disk", layered(kN, 3, 0));
+        f.observable = three_terms(kN);
+        f.tier_chunk_qubits = kChunkQubits;
+        f.tier_window_qubits = kWindowQubits;
+        out.push_back(std::move(f));
+    }
+    {
+        Fixture f = engine_fixture("dense_disk_b", "dense_disk", measured(layered(1, 1, 1)));
+        f.shots = 1;
+        f.rss_baseline = true;
+        out.push_back(std::move(f));
+    }
+}
+
 std::vector<Fixture> build_fixtures() {
     std::vector<Fixture> out;
 
     add_dense_family(out, "dense");
+    add_disk_family(out);
 #ifdef MENOS_MEMORY_WITH_CUDA
     add_dense_family(out, "dense_cuda");
 #endif
@@ -497,6 +532,9 @@ std::unique_ptr<SimulationEngine> make_engine(const std::string& name) {
     if (name == "dense") {
         return std::make_unique<engines::dense::DenseEngine>();
     }
+    if (name == "dense_disk") {
+        return std::make_unique<engines::dense_tiered::DiskDenseEngine>();
+    }
 #ifdef MENOS_MEMORY_WITH_CUDA
     if (name == "dense_cuda") {
         return std::make_unique<engines::dense_cuda::CudaDenseEngine>();
@@ -617,7 +655,9 @@ Measurement run_engine_fixture(const Fixture& fixture,
         .trajectories = fixture.trajectories,
         .shots = fixture.shots,
         .bitstring_width = circuit.num_clbits(),
-        .is_sole_region = fixture.sole_region};
+        .is_sole_region = fixture.sole_region,
+        .tier_chunk_qubits = fixture.tier_chunk_qubits,
+        .tier_window_qubits = fixture.tier_window_qubits};
     const CostEstimate estimate = engine->estimate(estimate_request);
     if (!estimate.feasible) {
         throw std::runtime_error(fixture.name +
@@ -643,6 +683,11 @@ Measurement run_engine_fixture(const Fixture& fixture,
         .accuracy_policy = fixture.accuracy_policy,
         .monitor = nullptr,
         .trajectories = fixture.trajectories,
+        // The disk tier's file goes beside the test, on a real disk (a
+        // temporary directory can be a tmpfs under WSL).
+        .scratch_directory = std::filesystem::current_path(),
+        .tier_chunk_qubits = fixture.tier_chunk_qubits,
+        .tier_window_qubits = fixture.tier_window_qubits,
     };
     // The CUDA engine's host figure is 0 for an expectation-only job, which
     // allocates nothing on the host to budget.
@@ -653,6 +698,7 @@ Measurement run_engine_fixture(const Fixture& fixture,
     Measurement m;
     m.estimated_peak_bytes = estimate.estimated_peak_bytes;
     m.estimated_device_bytes = estimate.device.device_bytes;
+    m.estimated_disk_bytes = estimate.tier.file_bytes;
     m.strategy = fixture.engine;
 
     if (on_window_start) {
@@ -674,6 +720,7 @@ Measurement run_engine_fixture(const Fixture& fixture,
         }
         m.ledger_host_bytes = ledger.peak_host_bytes();
         m.ledger_device_bytes = ledger.peak_device_bytes();
+        m.ledger_disk_bytes = ledger.peak_disk_bytes();
         std::map<BitString, std::uint64_t> drawn;
         if (result.counts_sampler && draw_samples) {
             common::Rng rng(99);
@@ -758,6 +805,7 @@ void record_result(const Result& result, Measurement& m) {
     m.reported_actual_bytes = result.actual_state_bytes();
     m.ledger_host_bytes = std::max(m.ledger_host_bytes, result.peak_host_bytes());
     m.ledger_device_bytes = std::max(m.ledger_device_bytes, result.peak_device_bytes());
+    m.ledger_disk_bytes = std::max(m.ledger_disk_bytes, result.peak_disk_bytes());
     m.strategy = strategy_name(result.plan().strategy);
     if (!result.counts().empty()) {
         m.counts_digest = digest_counts(result.counts());

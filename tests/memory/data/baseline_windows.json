@@ -35,6 +35,24 @@
     "statevector": "-",
     "expectation": "-"
   },
+  "dense_disk_counts": {
+    "strategy": "dense_disk",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_disk_expectation": {
+    "strategy": "dense_disk",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "98430fa7b9441793"
+  },
+  "dense_disk_b": {
+    "strategy": "dense_disk",
+    "counts": "ae6764b6b43a5e5e",
+    "statevector": "-",
+    "expectation": "-"
+  },
   "density_matrix_counts": {
     "strategy": "density_matrix",
     "counts": "f3f24553859a14b5",

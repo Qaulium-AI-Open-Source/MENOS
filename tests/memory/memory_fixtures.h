@@ -47,6 +47,10 @@ struct Fixture {
     bool rss_baseline = false;
     // Too large for the test binary (the n = 24 gate sizes); probe only.
     bool probe_only = false;
+    // The disk tier's chunk and window seams (Phase 23, docs/adr/0027 section
+    // 9 Q10), for the "dense_disk" engine fixtures; 0 lets the engine choose.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
 };
 
 // Every fixture this build can run: the CUDA ones only when built with CUDA.
@@ -72,6 +76,11 @@ struct Measurement {
     // the largest of its three runs' peaks.
     std::uint64_t ledger_host_bytes = 0;
     std::uint64_t ledger_device_bytes = 0;
+    // The disk tier's scratch file (Phase 23, docs/adr/0027): the estimate's
+    // file size and the ledger's disk peak, Result::peak_disk_bytes() for a
+    // run.
+    std::uint64_t estimated_disk_bytes = 0;
+    std::uint64_t ledger_disk_bytes = 0;
     std::string strategy;
     // FNV-1a 64-bit digests of the outputs' exact bits, as 16 hex digits, or
     // "-" for an output the fixture does not request.

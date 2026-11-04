@@ -84,7 +84,9 @@ TEST_P(MemoryFixtureTest, OutputsMatchTheBaselineAndMemoryIsReported) {
               << (heap_tracker::available() ? std::to_string(m.tracked_peak_bytes)
                                             : std::string("n/a"))
               << " ledger_host=" << m.ledger_host_bytes
-              << " ledger_device=" << m.ledger_device_bytes << "\n";
+              << " ledger_device=" << m.ledger_device_bytes
+              << " disk_estimate=" << m.estimated_disk_bytes
+              << " ledger_disk=" << m.ledger_disk_bytes << "\n";
     RecordProperty("estimate", std::to_string(m.estimated_peak_bytes));
     RecordProperty("tracked_peak", std::to_string(m.tracked_peak_bytes));
     RecordProperty("ledger_host", std::to_string(m.ledger_host_bytes));
@@ -99,6 +101,10 @@ TEST_P(MemoryFixtureTest, OutputsMatchTheBaselineAndMemoryIsReported) {
     }
     EXPECT_LE(m.ledger_host_bytes, m.estimated_peak_bytes) << fixture->name;
     EXPECT_LE(m.ledger_device_bytes, m.estimated_device_bytes) << fixture->name;
+    // The disk tier's file is the whole state, charged for the run (Phase 23,
+    // docs/adr/0027 section 4): the ledger's disk peak is exactly the
+    // estimate's file size, and 0 for every other fixture.
+    EXPECT_EQ(m.ledger_disk_bytes, m.estimated_disk_bytes) << fixture->name;
     // Every fixture allocates a state, a tableau or a term list, so a zero
     // ledger would mean an engine charges nothing.
     EXPECT_GT(m.ledger_host_bytes + m.ledger_device_bytes, 0U) << fixture->name;
