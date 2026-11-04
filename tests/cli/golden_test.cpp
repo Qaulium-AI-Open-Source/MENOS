@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -280,6 +281,102 @@ TEST(CliGoldenTest, AnUnknownBackendIsAUsageError) {
     std::ostringstream err;
     EXPECT_EQ(run({"explain", path, "--backend"}, out, err), 1);
     EXPECT_NE(err.str().find("--backend requires an argument"), std::string::npos) << err.str();
+}
+
+// Phase 23 (docs/adr/0027): --tier disk runs the job on the disk tier, with
+// the scratch file in --scratch-dir, and the same counts as in memory; the
+// report names the request, the tier's figures and the scratch directory.
+constexpr const char* kRotatedBellQasm = R"(OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+rx(0.3) q[0];
+cx q[0],q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+)";
+
+TEST(CliGoldenTest, TierDiskRunsOnTheDiskTierWithTheSameCounts) {
+    // Non-Clifford, so the in-memory run is the dense engine's and draws
+    // the same counts as the disk tier.
+    const std::string path = write_temp_qasm("run_bell_tier_disk", kRotatedBellQasm);
+    const std::string scratch = std::filesystem::current_path().string();
+    std::ostringstream disk_out;
+    std::ostringstream disk_err;
+    ASSERT_EQ(run({"run",
+                   path,
+                   "--shots",
+                   "100",
+                   "--seed",
+                   "1",
+                   "--tier",
+                   "disk",
+                   "--scratch-dir",
+                   scratch},
+                  disk_out,
+                  disk_err),
+              0)
+        << disk_err.str();
+    std::ostringstream cpu_out;
+    std::ostringstream cpu_err;
+    ASSERT_EQ(
+        run({"run", path, "--shots", "100", "--seed", "1", "--backend", "cpu"}, cpu_out, cpu_err),
+        0);
+    const std::string report = disk_out.str();
+    EXPECT_NE(report.find("tier       disk (requested)\n"), std::string::npos) << report;
+    EXPECT_NE(report.find(" tier=disk passes=1 chunk_qubits=2 disk_bytes=64\n"), std::string::npos)
+        << report;
+    EXPECT_NE(report.find("engine=dense backend=cpu tier=disk\n"), std::string::npos) << report;
+    EXPECT_NE(report.find(" scratch_directory=\"" + scratch + "\""), std::string::npos) << report;
+    EXPECT_NE(report.find(" peak_disk_bytes=64"), std::string::npos) << report;
+    // The counts, after the report, are the in-memory run's.
+    ASSERT_NE(cpu_out.str().find("strategy   direct_dense (exact)"), std::string::npos)
+        << cpu_out.str();
+    const auto counts_of = [](const std::string& text) {
+        const std::size_t first = text.find("\n00: ");
+        return text.substr(first == std::string::npos ? text.find("\n01: ") : first);
+    };
+    EXPECT_EQ(counts_of(report), counts_of(cpu_out.str()));
+    // explain previews the same plan.
+    std::ostringstream explain_out;
+    std::ostringstream explain_err;
+    ASSERT_EQ(run({"explain", path, "--tier", "disk", "--scratch-dir", scratch},
+                  explain_out,
+                  explain_err),
+              0)
+        << explain_err.str();
+    EXPECT_NE(explain_out.str().find("tier       disk (requested)\n"), std::string::npos);
+    EXPECT_NE(explain_out.str().find("engine=dense backend=cpu tier=disk\n"), std::string::npos);
+}
+
+TEST(CliGoldenTest, TierInMemoryAddsOnlyTheRequestLine) {
+    const std::string path = write_temp_qasm("explain_bell_tier_in_memory", kBellQasm);
+    std::ostringstream plain_out;
+    std::ostringstream plain_err;
+    ASSERT_EQ(run({"explain", path}, plain_out, plain_err), 0);
+    std::ostringstream out;
+    std::ostringstream err;
+    ASSERT_EQ(run({"explain", path, "--tier", "in_memory"}, out, err), 0) << err.str();
+    std::string expected = plain_out.str();
+    const std::string after = "light_cone qubits 2->2 operations 4->4\n";
+    expected.insert(expected.find(after) + after.size(), "tier       in_memory (requested)\n");
+    EXPECT_EQ(out.str(), expected);
+}
+
+TEST(CliGoldenTest, AnUnknownTierOrAMissingScratchDirIsAUsageError) {
+    const std::string path = write_temp_qasm("explain_bell_bad_tier", kBellQasm);
+    for (const char* value : {"ram", "Disk", ""}) {
+        std::ostringstream out;
+        std::ostringstream err;
+        EXPECT_EQ(run({"explain", path, "--tier", value}, out, err), 1) << value;
+        EXPECT_NE(err.str().find("--tier must be 'disk' or 'in_memory'"), std::string::npos)
+            << err.str();
+    }
+    std::ostringstream out;
+    std::ostringstream err;
+    EXPECT_EQ(run({"explain", path, "--scratch-dir"}, out, err), 1);
+    EXPECT_NE(err.str().find("--scratch-dir requires an argument"), std::string::npos) << err.str();
 }
 
 TEST(CliGoldenTest, ParserFailurePathSurfacesThroughTheCli) {

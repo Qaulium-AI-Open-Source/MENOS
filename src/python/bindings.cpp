@@ -2,6 +2,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/complex.h>
+#include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
@@ -172,6 +173,14 @@ NB_MODULE(_core, m) {
         .value("Cpu", menos::Backend::Cpu)
         .value("Cuda", menos::Backend::Cuda);
 
+    // Phase 23 (docs/adr/0027): where a job's state lives while it runs, for
+    // RunOptions.tier. Tier.HostOffloaded was measured and not built, and a
+    // request for it raises UnsupportedFeatureError.
+    nb::enum_<menos::Tier>(m, "Tier")
+        .value("InMemory", menos::Tier::InMemory)
+        .value("Disk", menos::Tier::Disk)
+        .value("HostOffloaded", menos::Tier::HostOffloaded);
+
     nb::class_<menos::RunOptions>(m, "RunOptions")
         .def(nb::init<>())
         .def_rw("shots", &menos::RunOptions::shots)
@@ -207,7 +216,13 @@ NB_MODULE(_core, m) {
         // Phase 17 (docs/adr/0021 section 2): None = the planner chooses (the
         // default); Backend.Cpu or Backend.Cuda forces one, and a request that
         // cannot be honoured raises rather than falling back.
-        .def_rw("backend", &menos::RunOptions::backend);
+        .def_rw("backend", &menos::RunOptions::backend)
+        // Phase 23 (docs/adr/0027): None = the planner chooses (the disk tier
+        // only when the in-memory state does not fit); Tier.Disk forces it and
+        // never falls back. scratch_directory is where the disk tier's file
+        // goes; None = the system's temporary directory.
+        .def_rw("tier", &menos::RunOptions::tier)
+        .def_rw("scratch_directory", &menos::RunOptions::scratch_directory);
 
     nb::class_<menos::Result>(m, "Result")
         .def_prop_ro("counts",

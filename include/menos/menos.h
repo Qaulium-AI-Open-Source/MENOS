@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 
 #include "menos/accuracy_policy.h"
@@ -112,6 +113,34 @@ struct RunOptions {
     // sample of the same distribution for the same seed, because a different
     // engine draws them.
     std::optional<Backend> backend = std::nullopt;
+    // The memory tier (Phase 23, docs/adr/0027). The planner reaches for the
+    // disk tier -- the dense state in a scratch file, the gates applied chunk
+    // by chunk through a window in memory -- only when the in-memory state
+    // does not fit the memory budget and no statevector is wanted, so no job
+    // that fits is planned differently. A request, not a preference, like
+    // `backend`:
+    //
+    // - Unset (the default): the planner chooses.
+    // - Tier::Disk: the job runs on the disk tier whether or not it would have
+    //   fit in memory, and never falls back. run() throws UnsupportedFeature
+    //   for a request the tier cannot serve at all (a statevector, a noisy
+    //   circuit, or backend=cuda), and ResourceExceeded when it has no room
+    //   (too little scratch space beside the reserve, or a window that does
+    //   not fit the memory budget).
+    // - Tier::InMemory: the disk tier is never used; a job that does not fit
+    //   is refused as it was before Phase 23.
+    // - Tier::HostOffloaded was measured and not built (docs/adr/0027 section
+    //   10.1); requesting it raises UnsupportedFeature.
+    //
+    // Counts and expectation values on the disk tier are bitwise the
+    // in-memory engine's for the same circuit, options and seed.
+    std::optional<Tier> tier = std::nullopt;
+    // Where the disk tier creates its scratch file (16 * 2^n bytes, deleted
+    // when the run ends, also on an exception). Unset: the system's temporary
+    // directory, std::filesystem::temp_directory_path(). The planner leaves
+    // 5% of the volume or 8 GiB, whichever is larger, untouched; a directory
+    // without room for the file beside that reserve refuses the disk tier.
+    std::optional<std::filesystem::path> scratch_directory = std::nullopt;
 };
 
 // Validates circuit and the output request, plans, executes, and returns

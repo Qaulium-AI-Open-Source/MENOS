@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <utility>
 
 #include "api/replan_controller.h"
@@ -71,6 +72,11 @@ PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) 
     const std::uint32_t max_threads =
         std::min(options.max_threads.value_or(hardware_threads), hardware_threads);
 
+    // The disk tier's scratch directory (Phase 23, docs/adr/0027 section 3.3):
+    // the caller's, or the system's temporary directory.
+    const std::filesystem::path scratch_directory = options.scratch_directory.has_value()
+                                                        ? *options.scratch_directory
+                                                        : std::filesystem::temp_directory_path();
     plan::JobSpec job_spec{
         .circuit = circuit,
         .shots = options.shots,
@@ -84,12 +90,20 @@ PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) 
         .expectation_precision = options.expectation_precision,
         .max_threads = max_threads,
         .backend = options.backend,
+        .tier = options.tier,
+        .scratch_directory = scratch_directory,
     };
     // Calibrated, not merely detected: the time budget is evaluated against
     // measured throughput. Cached after the first call, so only the first job
     // in a process pays for the microbenchmarks. The device's free memory is
-    // read again for every job (docs/adr/0025, Q3).
-    const plan::HardwareProfile hardware_profile = plan::current_hardware_profile();
+    // read again for every job (docs/adr/0025, Q3), and so is the scratch
+    // directory's. Its bandwidth is measured, once per directory per process,
+    // only when this job could reach the disk tier (docs/adr/0027 section 9,
+    // Q3): the planner's own reach test, on the whole circuit.
+    const bool measure_scratch =
+        plan::may_reach_disk_tier(job_spec, plan::calibrated_hardware_profile());
+    const plan::HardwareProfile hardware_profile =
+        plan::current_hardware_profile(scratch_directory, measure_scratch);
     Plan job_plan = plan::plan_job(job_spec, hardware_profile);
     return {std::move(job_plan), std::move(job_spec), hardware_profile};
 }

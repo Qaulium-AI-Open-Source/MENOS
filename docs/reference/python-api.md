@@ -134,12 +134,18 @@ RunOptions()
 | `expectation_precision` | `float` or `None` | `None` | Target standard error of the expectation value. Finite and `> 0`, and requires `expectation`. Lets a noisy expectation be sampled by trajectories |
 | `max_threads` | `int` or `None` | `None` | Most CPU threads for gate application. `None` means every hardware thread; a value above the hardware count is treated as it; `0` raises `InvalidCircuitError`. Results are bit-for-bit identical for every value |
 | `backend` | `Backend` or `None` | `None` | `None`: the planner chooses. `Backend.Cpu` or `Backend.Cuda` forces one (Phase 17); see [Forcing a backend](/planning/backend-selection#forcing-a-backend). A CUDA request that cannot be honoured raises `UnsupportedFeatureError` or `ResourceExceededError`, never runs on the CPU |
+| `tier` | `Tier` or `None` | `None` | `None`: the planner reaches for the disk tier only when the dense state does not fit `memory_budget_bytes` and no statevector is wanted (Phase 23). `Tier.Disk` forces it and never falls back: a statevector request, a noisy circuit or `Backend.Cuda` raises `UnsupportedFeatureError`, too little scratch space or a window over the budget raises `ResourceExceededError`. `Tier.InMemory` never uses it. Counts and expectation values on the disk tier are bit-for-bit the in-memory engine's |
+| `scratch_directory` | `pathlib.Path` or `None` | `None` | Where the disk tier keeps its scratch file (16 × 2ⁿ bytes, removed when the run ends). `None` means the system's temporary directory. The planner leaves 5% of the volume or 8 GiB, whichever is larger, untouched |
 
 At least one of counts (`shots > 0` with a measured circuit), a statevector, or an expectation must be requested. All fields are read/write.
 
 ## `Backend`
 
 `Backend.Cpu` and `Backend.Cuda`, for `RunOptions.backend` (Phase 17).
+
+## `Tier`
+
+`Tier.InMemory`, `Tier.Disk` and `Tier.HostOffloaded`, for `RunOptions.tier` (Phase 23). `Tier.HostOffloaded` was measured and not built; requesting it raises `UnsupportedFeatureError`. See [Memory Constraints](/planning/memory-constraints).
 
 ## `Result`
 
@@ -209,7 +215,7 @@ assert sig(core.from_qasm3) == (
 
 assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
     ["shots", "want_statevector", "seed", "memory_budget_bytes", "expectation", "time_budget_seconds",
-     "noise_method", "expectation_precision", "max_threads", "backend"]
+     "noise_method", "expectation_precision", "max_threads", "backend", "tier", "scratch_directory"]
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
@@ -220,7 +226,7 @@ assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP CCX".split()
 )
 assert sorted(menos.__all__) == sorted(
-    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "run", "run_batch", "ReadoutMitigationOptions",
+    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "Tier", "run", "run_batch", "ReadoutMitigationOptions",
      "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "release_device_memory", "MenosError",
      "InvalidCircuitError", "UnsupportedFeatureError", "ResourceExceededError", "InternalError"]
 )
@@ -236,4 +242,5 @@ assert defaults.memory_budget_bytes is None and defaults.time_budget_seconds is 
 assert defaults.expectation is None
 assert defaults.noise_method == menos.NoiseMethod.Exact and defaults.expectation_precision is None
 assert defaults.max_threads is None
+assert defaults.backend is None and defaults.tier is None and defaults.scratch_directory is None
 ```
