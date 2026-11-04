@@ -73,7 +73,14 @@ std::string env_or(const char* name, const std::string& fallback) {
 menos::Circuit gate_circuit(std::uint32_t n, std::size_t gates) {
     std::mt19937_64 rng(2301);
     menos::Circuit circuit(n, n);
-    for (std::size_t g = 0; g < gates; ++g) {
+    // A CX chain first, so the interaction graph is one component whatever
+    // the random pairs touch: a disconnected graph is a Factorized plan of
+    // smaller dense regions, not the one dense state the gate is about (the
+    // first attempt at n = 29 found exactly that).
+    for (menos::QubitId q = 0; q + 1 < n && q < gates; ++q) {
+        circuit.append(menos::Opcode::CX, {q, static_cast<menos::QubitId>(q + 1)});
+    }
+    for (std::size_t g = circuit.operations().size(); g < gates; ++g) {
         const auto a = static_cast<menos::QubitId>(rng() % n);
         if (g % 2 == 0) {
             const double angle =
