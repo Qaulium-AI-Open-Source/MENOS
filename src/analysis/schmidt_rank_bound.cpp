@@ -1,11 +1,14 @@
 #include "analysis/schmidt_rank_bound.h"
 
+#include "analysis/planner_counters.h"
 #include "analysis/schmidt_rank_internal.h"
 
 #include <algorithm>
+#include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <span>
 #include <string>
@@ -148,16 +151,28 @@ std::uint64_t operator_schmidt_rank(std::span<const Complex> u,
     return common::numerical_rank(svd_result.singular_values, m_rows, m_cols);
 }
 
+namespace {
+
+void append_field(std::string& key, std::size_t value) {
+    const auto field = static_cast<std::uint32_t>(value);
+    common::ensure(field == value, "SchmidtRankCache: key field does not fit 32 bits");
+    std::array<char, sizeof(field)> bytes{};
+    std::memcpy(bytes.data(), &field, sizeof(field));
+    key.append(bytes.data(), bytes.size());
+}
+
+}  // namespace
+
 std::uint64_t SchmidtRankCache::rank(std::span<const Complex> u,
                                      std::size_t k,
                                      const std::vector<std::size_t>& left_positions,
                                      const std::vector<std::size_t>& right_positions) {
     key_.clear();
-    key_.push_back(static_cast<char>(k));
+    append_field(key_, k);
+    append_field(key_, left_positions.size());
     for (const std::size_t p : left_positions) {
-        key_.push_back(static_cast<char>(p));
+        append_field(key_, p);
     }
-    key_.push_back('|');
     key_.append(reinterpret_cast<const char*>(u.data()), u.size() * sizeof(Complex));
     const auto cached = ranks_.find(key_);
     if (cached != ranks_.end()) {
@@ -165,10 +180,20 @@ std::uint64_t SchmidtRankCache::rank(std::span<const Complex> u,
         return cached->second;
     }
     ++stats_.misses;
+    const std::uint64_t rank = operator_schmidt_rank(u, k, left_positions, right_positions);
+    if (key_.size() > cap_bytes_) {
+        ++stats_.uncached;
+        return rank;
+    }
+    if (stats_.bytes + key_.size() > cap_bytes_) {
+        ranks_.clear();
+        stats_.bytes = 0;
+        ++stats_.evictions;
+    }
+    ranks_.emplace(key_, rank);
     stats_.bytes += key_.size();
     stats_.peak_bytes = std::max(stats_.peak_bytes, stats_.bytes);
-    return ranks_.emplace(key_, operator_schmidt_rank(u, k, left_positions, right_positions))
-        .first->second;
+    return rank;
 }
 
 }  // namespace detail
@@ -233,6 +258,9 @@ SchmidtRankBound compute_schmidt_rank_bound(std::uint32_t num_qubits,
         }
     }
 
+#ifdef MENOS_PLANNER_COUNTERS
+    detail::planner_counters.add(rank_cache.stats());
+#endif
     return result;
 }
 

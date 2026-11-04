@@ -817,3 +817,82 @@ Mutation check: dropping the outside-N(v) update fails both tests.
 | expectation_cut/large | 10.7 ms | 6.87 ms | 1.56x | 1.79x |
 
 Every job in the run is faster: 1.13–4.55x on medians.
+
+C.1c and C.2a equivalence: one differential 50,000-seed sweep at C.2a
+(310000–359999), covering both: identical. C.1c had no sweep of its own.
+
+#### C.3 (c): fixed-width cache key, a byte cap, and counters — KEPT (safety; speed neutral)
+
+Three changes:
+- **Key.** Four-byte fields: k, the number of left operands, each left
+  position. Then the matrix bytes. Every field has a fixed width and k fixes
+  the matrix length, so two different (k, split, matrix) triples can never
+  give the same key. This removes risk 3 of 12.1. A field that does not fit
+  32 bits is refused with `InternalError`.
+- **Cap.** At most 16 MiB of stored key bytes (`kDefaultCapBytes`; the
+  constructor takes a cap for tests).
+  - An insertion that would cross the cap first clears the cache. This is
+    deterministic, and correct because a hit equals a recompute.
+  - A single key larger than the cap (a k ≥ 10 `UnitaryOp`) is computed
+    and not stored.
+  - This removes risk 2 of 12.1. The cap does not change any result, only
+    how often the SVD runs, so it is not a tuning constant of the planner.
+- **Counters.** `SchmidtRankCacheStats` counts hits, misses, evictions,
+  uncached keys and peak bytes.
+  - A new CMake option, `MENOS_PLANNER_COUNTERS` (OFF in every preset, so
+    timed and shipped builds never carry it), compiles a thread-local total
+    into `menos_analysis` (`src/analysis/planner_counters.h`).
+  - `menos_planner_benchmark` then reports them per job.
+
+New tests:
+- splits that differ only in their last position are distinct;
+- a reached cap evicts, and every rank after the eviction is still exact;
+- an over-cap key is computed and not stored.
+
+**Hit rate per corpus job** (counters build,
+`bench/raw/step2_pass2/c3_rank_cache_counters.json`). The cache is earning
+its memory: 81–100% hits on every job that computes a rank, a peak of at
+most 1,072 bytes, and no eviction or uncached key anywhere in the corpus.
+
+| Job | Hits | Misses | Hit rate | Evictions | Uncached | Peak cache bytes |
+|---|---|---|---|---|---|---|
+| counts_brickwork/small | 15 | 1 | 93.8% | 0 | 0 | 268 |
+| counts_brickwork/medium | 63 | 1 | 98.4% | 0 | 0 | 268 |
+| counts_brickwork/large | 143 | 1 | 99.3% | 0 | 0 | 268 |
+| expectation_z_all/small | 30 | 2 | 93.8% | 0 | 0 | 268 |
+| expectation_z_all/medium | 126 | 2 | 98.4% | 0 | 0 | 268 |
+| expectation_z_all/large | 286 | 2 | 99.3% | 0 | 0 | 268 |
+| expectation_ising/small | 30 | 2 | 93.8% | 0 | 0 | 268 |
+| expectation_ising/medium | 126 | 2 | 98.4% | 0 | 0 | 268 |
+| expectation_ising/large | 286 | 2 | 99.3% | 0 | 0 | 268 |
+| expectation_heisenberg/small | 30 | 2 | 93.8% | 0 | 0 | 268 |
+| expectation_heisenberg/medium | 126 | 2 | 98.4% | 0 | 0 | 268 |
+| expectation_heisenberg/large | 286 | 2 | 99.3% | 0 | 0 | 268 |
+| expectation_random_paulis/small | 30 | 2 | 93.8% | 0 | 0 | 268 |
+| expectation_random_paulis/medium | 126 | 2 | 98.4% | 0 | 0 | 268 |
+| expectation_random_paulis/large | 286 | 2 | 99.3% | 0 | 0 | 268 |
+| expectation_ising_budgeted/small | 240 | 16 | 93.8% | 0 | 0 | 268 |
+| expectation_ising_budgeted/medium | 2016 | 32 | 98.4% | 0 | 0 | 268 |
+| expectation_ising_budgeted/large | 6864 | 48 | 99.3% | 0 | 0 | 268 |
+| counts_clifford/small | 54 | 1 | 98.2% | 0 | 0 | 268 |
+| counts_clifford/medium | 879 | 1 | 99.9% | 0 | 0 | 268 |
+| counts_clifford/large | 10299 | 1 | 100.0% | 0 | 0 | 268 |
+| counts_random_pairs/small | 32 | 4 | 88.9% | 0 | 0 | 1072 |
+| counts_random_pairs/medium | 252 | 4 | 98.4% | 0 | 0 | 1072 |
+| counts_random_pairs/large | 1020 | 4 | 99.6% | 0 | 0 | 1072 |
+| expectation_random_pairs_controlled/small | 32 | 4 | 88.9% | 0 | 0 | 1072 |
+| expectation_random_pairs_controlled/medium | 252 | 4 | 98.4% | 0 | 0 | 1072 |
+| expectation_random_pairs_controlled/large | 1020 | 4 | 99.6% | 0 | 0 | 1072 |
+| counts_factorized/small | 23 | 5 | 82.1% | 0 | 0 | 268 |
+| counts_factorized/medium | 181 | 9 | 95.3% | 0 | 0 | 268 |
+| counts_factorized/large | 883 | 17 | 98.1% | 0 | 0 | 268 |
+| expectation_factorized/small | 26 | 6 | 81.2% | 0 | 0 | 268 |
+| expectation_factorized/medium | 189 | 10 | 95.0% | 0 | 0 | 268 |
+| expectation_factorized/large | 913 | 19 | 98.0% | 0 | 0 | 268 |
+| expectation_cut/small | 24 | 2 | 92.3% | 0 | 0 | 268 |
+| expectation_cut/medium | 108 | 2 | 98.2% | 0 | 0 | 268 |
+| expectation_cut/large | 340 | 2 | 99.4% | 0 | 0 | 268 |
+
+**Speed** (vs C.2b, rank-heavy jobs, 3 × 5 repetitions). This run had the
+worst noise of the pass (before-side spreads up to 255%). Fastest
+repetitions are 0.96–1.04x and medians 0.87–1.18x: neutral within noise.

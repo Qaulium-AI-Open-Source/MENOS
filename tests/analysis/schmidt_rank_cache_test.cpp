@@ -173,5 +173,52 @@ TEST(SchmidtRankCacheTest, KeysOfDifferentOperandCountsDoNotCollide) {
     EXPECT_EQ(cache.stats().misses, 2U);
 }
 
+TEST(SchmidtRankCacheTest, KeyFieldsAreFixedWidthSoPositionsCannotAlias) {
+    // With one-byte fields a split listing position 124 would have looked like
+    // the old '|' separator; four-byte fields make every split distinct. Two
+    // splits of one 3-qubit matrix that differ only in their last position:
+    std::mt19937_64 rng(5);
+    const std::vector<Complex> u = random_matrix(3, rng);
+    SchmidtRankCache cache;
+    static_cast<void>(cache.rank(u, 3, {0, 1}, {2}));
+    static_cast<void>(cache.rank(u, 3, {0, 2}, {1}));
+    static_cast<void>(cache.rank(u, 3, {0}, {1, 2}));
+    EXPECT_EQ(cache.stats().misses, 3U);
+    EXPECT_EQ(cache.stats().hits, 0U);
+}
+
+TEST(SchmidtRankCacheTest, ACapThatIsReachedClearsTheCacheAndResultsStayExact) {
+    // A 2-qubit key is 4 + 4 + 4 + 256 = 268 bytes; a cap of 600 holds two.
+    SchmidtRankCache cache(600);
+    const std::vector<std::size_t> left{0};
+    const std::vector<std::size_t> right{1};
+    const std::vector<Complex> cx = gate(Opcode::CX);
+    const std::vector<Complex> cz = gate(Opcode::CZ);
+    const std::vector<Complex> swap = gate(Opcode::SWAP);
+    EXPECT_EQ(cache.rank(cx, 2, left, right), 2U);
+    EXPECT_EQ(cache.rank(cz, 2, left, right), 2U);
+    EXPECT_EQ(cache.stats().bytes, 536U);
+    EXPECT_EQ(cache.rank(swap, 2, left, right), 4U);  // evicts
+    EXPECT_EQ(cache.stats().evictions, 1U);
+    EXPECT_EQ(cache.stats().bytes, 268U);
+    EXPECT_EQ(cache.rank(swap, 2, left, right), 4U);  // hit
+    EXPECT_EQ(cache.rank(cx, 2, left, right), 2U);    // recomputed after eviction
+    EXPECT_EQ(cache.stats().hits, 1U);
+    EXPECT_EQ(cache.stats().misses, 4U);
+    EXPECT_LE(cache.stats().peak_bytes, 600U);
+}
+
+TEST(SchmidtRankCacheTest, AKeyLargerThanTheCapIsComputedButNotStored) {
+    SchmidtRankCache cache(100);
+    const std::vector<std::size_t> left{0};
+    const std::vector<std::size_t> right{1};
+    const std::vector<Complex> cx = gate(Opcode::CX);
+    EXPECT_EQ(cache.rank(cx, 2, left, right), 2U);
+    EXPECT_EQ(cache.rank(cx, 2, left, right), 2U);
+    EXPECT_EQ(cache.stats().misses, 2U);
+    EXPECT_EQ(cache.stats().uncached, 2U);
+    EXPECT_EQ(cache.stats().bytes, 0U);
+}
+
 }  // namespace
 }  // namespace menos::analysis::detail

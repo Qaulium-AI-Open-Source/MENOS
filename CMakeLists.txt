@@ -24,6 +24,10 @@ option(MENOS_ENABLE_CUDA "Build the CUDA dense backend" OFF)
 # built from an sdist has no history) and on in the Linux presets that
 # scripts/verify.sh runs.
 option(MENOS_BUILD_FROZEN_PLANNER "Build the frozen-planner differential test" OFF)
+# Phase 21 (docs/adr/0025 section 12.3, C.3): compile the planner's
+# Schmidt-rank-cache counters into menos_analysis so menos_planner_benchmark
+# can report them. OFF in every preset: timing builds never carry them.
+option(MENOS_PLANNER_COUNTERS "Compile planner cache counters for benchmark reports" OFF)
 
 # Multi-threaded CPU gate application (Phase 15, docs/adr/0019 section 3.1)
 # runs on MENOS's own thread pool, built on the platform thread library.

@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "analysis/planner_counters.h"
 #include "common/error.h"
 #include "counting_allocator.h"
 #include "plan/plan_cache.h"
@@ -43,6 +44,9 @@ std::optional<menos::Plan> plan_or_refuse(const CorpusJob& job) {
 
 void report_allocations(benchmark::State& state, const CorpusJob& job) {
     menos_benchmark::reset_peak_to_current();
+#ifdef MENOS_PLANNER_COUNTERS
+    menos::analysis::detail::planner_counters = {};
+#endif
     const menos_benchmark::AllocationSnapshot before = menos_benchmark::allocation_snapshot();
     {
         std::optional<menos::Plan> plan = plan_or_refuse(job);
@@ -54,6 +58,14 @@ void report_allocations(benchmark::State& state, const CorpusJob& job) {
     state.counters["alloc_bytes"] =
         static_cast<double>(after.bytes_requested - before.bytes_requested);
     state.counters["peak_bytes"] = static_cast<double>(after.peak_live_bytes - before.live_bytes);
+#ifdef MENOS_PLANNER_COUNTERS
+    const menos::analysis::detail::PlannerCounters& c = menos::analysis::detail::planner_counters;
+    state.counters["rank_hits"] = static_cast<double>(c.rank_hits);
+    state.counters["rank_misses"] = static_cast<double>(c.rank_misses);
+    state.counters["rank_evictions"] = static_cast<double>(c.rank_evictions);
+    state.counters["rank_uncached"] = static_cast<double>(c.rank_uncached);
+    state.counters["rank_peak_bytes"] = static_cast<double>(c.rank_peak_bytes);
+#endif
 }
 
 void plan_job_benchmark(benchmark::State& state, const CorpusJob& job) {
