@@ -5,6 +5,7 @@ add_executable(menos_engines_dense_tests
     threaded_kernels_test.cpp
     thread_pool_test.cpp
     sample_test.cpp
+    chunked_kernels_test.cpp
     dense_engine_test.cpp
 )
 

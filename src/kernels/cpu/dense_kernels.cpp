@@ -215,19 +215,31 @@ std::complex<double> i_power(int k) {
 
 }  // namespace
 
+void expectation_of_term_accumulate(std::span<const std::complex<double>> chunk,
+                                    std::span<const std::complex<double>> partner,
+                                    std::uint64_t x_local,
+                                    std::uint64_t z_local,
+                                    bool global_negative,
+                                    std::complex<double>& acc) {
+    for (std::size_t j = 0; j < chunk.size(); ++j) {
+        const std::uint64_t k = j ^ x_local;
+        const bool negative = ((std::popcount(z_local & k) & 1) != 0) != global_negative;
+        const std::complex<double> term = std::conj(chunk[j]) * partner[k];
+        acc += negative ? -term : term;
+    }
+}
+
+std::complex<double> expectation_term_phase(std::uint64_t x_mask, std::uint64_t z_mask) {
+    return i_power(std::popcount(x_mask & z_mask));
+}
+
 std::complex<double> expectation_of_term(std::span<const std::complex<double>> state,
                                          std::uint64_t x_mask,
                                          std::uint64_t z_mask) {
-    const int y_count = std::popcount(x_mask & z_mask);
-
+    // The whole state is one chunk: no high bits, so no global sign.
     std::complex<double> sum{0.0, 0.0};
-    for (std::size_t m = 0; m < state.size(); ++m) {
-        const std::uint64_t k = m ^ x_mask;
-        const bool negative = (std::popcount(z_mask & k) & 1) != 0;
-        const std::complex<double> term = std::conj(state[m]) * state[k];
-        sum += negative ? -term : term;
-    }
-    return i_power(y_count) * sum;
+    expectation_of_term_accumulate(state, state, x_mask, z_mask, /*global_negative=*/false, sum);
+    return expectation_term_phase(x_mask, z_mask) * sum;
 }
 
 }  // namespace menos::kernels::cpu

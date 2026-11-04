@@ -145,9 +145,46 @@ void apply_matrix_generic(std::span<std::complex<double>> state,
 //
 // The coefficient is NOT applied: the caller combines coefficients
 // (src/runtime/combine_expectation.h). Complexity: O(2^n).
+//
+// Implemented as one expectation_of_term_accumulate call over the whole state
+// followed by expectation_term_phase, so the chunked executor (Phase 23,
+// docs/adr/0027 section 3.4) and this function run the same loop body in the
+// same order and agree bit for bit.
 [[nodiscard]] std::complex<double> expectation_of_term(std::span<const std::complex<double>> state,
                                                        std::uint64_t x_mask,
                                                        std::uint64_t z_mask);
+
+// The per-amplitude part of expectation_of_term for the amplitudes of one
+// chunk, carried in the caller's accumulator (Phase 23, docs/adr/0027 section
+// 3.4). A chunk holds the amplitudes whose index has the chunk's number in its
+// high bits and j = 0 .. chunk.size()-1 in its low bits; `partner` holds the
+// chunk the term's X mask pairs it with (the chunk itself when the mask has no
+// bit above the chunk's bits), of the same size. x_local and z_local are the
+// masks' low bits, within the chunk; global_negative is the parity of
+// popcount(z_high & (chunk ^ x_high)), the sign the masks' high bits
+// contribute to every amplitude of this chunk. For every j in increasing
+// order, exactly as expectation_of_term does for every m:
+//
+//   k = j ^ x_local
+//   negative = parity(popcount(z_local & k)) xor global_negative
+//   term = conj(chunk[j]) * partner[k]
+//   acc += negative ? -term : term
+//
+// Calling it for every chunk in increasing order, then expectation_term_phase
+// on the accumulator, gives expectation_of_term's result bit for bit: the
+// same products, added in the same order. Precondition: chunk.size() ==
+// partner.size(), a power of two above x_local and z_local.
+void expectation_of_term_accumulate(std::span<const std::complex<double>> chunk,
+                                    std::span<const std::complex<double>> partner,
+                                    std::uint64_t x_local,
+                                    std::uint64_t z_local,
+                                    bool global_negative,
+                                    std::complex<double>& acc);
+
+// i^popcount(x_mask & z_mask), the factor expectation_of_term applies once to
+// the accumulated sum (Y = i * X * Z).
+[[nodiscard]] std::complex<double> expectation_term_phase(std::uint64_t x_mask,
+                                                          std::uint64_t z_mask);
 
 }  // namespace cpu
 
