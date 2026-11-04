@@ -506,6 +506,19 @@ TEST(DiskDenseEngineTest, RefusesWhatItCannotDoWithTheReason) {
     EXPECT_NE(too_small.infeasible_reason.find("a gate has 2 operands above the chunk"),
               std::string::npos)
         << too_small.infeasible_reason;
+    // A qubit count beyond the dense ceiling is refused for its size before
+    // any pass plan is built (a 100-qubit mask would not fit a word).
+    Circuit huge(100, 0);
+    huge.append(Opcode::H, {99});
+    const std::vector<Operation>& huge_ops = huge.operations();
+    request.operations = &huge_ops;
+    request.num_qubits = 100;
+    request.tier_chunk_qubits = 0;
+    request.tier_window_qubits = 0;
+    const CostEstimate beyond = engine.estimate(request);
+    EXPECT_FALSE(beyond.feasible);
+    EXPECT_NE(beyond.infeasible_reason.find("checked_pow2"), std::string::npos)
+        << beyond.infeasible_reason;
     EXPECT_EQ(engine.capabilities().statevector, false);
     EXPECT_EQ(engine.tier(), Tier::Disk);
     EXPECT_EQ(engine.engine_id(), Engine::Dense);

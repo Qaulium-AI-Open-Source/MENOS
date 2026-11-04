@@ -1325,8 +1325,10 @@ bool may_reach_disk_tier(const JobSpec& job_spec, const HardwareProfile& hardwar
     if (job_spec.tier == Tier::Disk) {
         return true;
     }
+    // 62 is the dense ceiling (common::checked_pow2): above it no dense
+    // state exists on any tier, so there is nothing to measure for.
     if (job_spec.tier == Tier::InMemory || job_spec.backend == Backend::Cuda ||
-        job_spec.want_statevector ||
+        job_spec.want_statevector || job_spec.circuit.num_qubits() > 62 ||
         ir::first_noise_reason(job_spec.circuit.operations()).has_value()) {
         return false;
     }

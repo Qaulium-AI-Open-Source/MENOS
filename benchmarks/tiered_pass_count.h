@@ -9,6 +9,7 @@
 // is now a view of that plan in the benchmark's own terms, so the benchmark's
 // table is produced by the code the executor runs.
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 
@@ -36,12 +37,14 @@ struct PassCountRequest {
 inline PassCount count_passes(std::span<const menos::Operation> operations,
                               PassCountRequest request) {
     // The qubit count does not enter the count: only which operands are at
-    // or above local_qubits does.
-    const engines::dense_tiered::PassPlan plan =
-        engines::dense_tiered::build_pass_plan(operations,
-                                               /*num_qubits=*/64,
-                                               request.local_qubits,
-                                               request.local_qubits + request.window_globals);
+    // or above local_qubits does. The plan's qubit counts are capped at the
+    // dense ceiling, which is wider than any window the table asks about.
+    constexpr std::uint32_t kCeiling = 62;
+    const engines::dense_tiered::PassPlan plan = engines::dense_tiered::build_pass_plan(
+        operations,
+        /*num_qubits=*/kCeiling,
+        request.local_qubits,
+        std::min<std::uint32_t>(request.local_qubits + request.window_globals, kCeiling));
     return PassCount{
         plan.pass_count(), plan.global_gates, plan.max_global_operands, plan.window_too_small};
 }

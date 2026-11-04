@@ -168,6 +168,10 @@ Layout lay_out(const Shape& shape) {
     }
     try {
         const std::uint32_t n = shape.num_qubits;
+        // The state's size first: a qubit count beyond the dense ceiling is
+        // refused here, before any pass plan would shift by its global
+        // qubits.
+        layout.file_bytes = checked_mul(checked_pow2(n), sizeof(std::complex<double>));
         const std::uint64_t fixed =
             checked_add(std::max(gate_transient_bytes(shape.operations), outputs_bytes(shape)),
                         pass_vector_bound(shape));
@@ -226,7 +230,6 @@ Layout lay_out(const Shape& shape) {
                 return layout;
             }
         }
-        layout.file_bytes = checked_mul(checked_pow2(n), sizeof(std::complex<double>));
         layout.peak_bytes = checked_add(Window::heap_bytes(plan->window_qubits), fixed);
         // The link: the initial write, each pass's read and write, the
         // sampling read, and each term's read (two when its chunks pair).

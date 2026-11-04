@@ -5,6 +5,8 @@
 #include <type_traits>
 #include <variant>
 
+#include "common/error.h"
+
 namespace menos::engines::dense_tiered {
 namespace {
 
@@ -43,6 +45,11 @@ PassPlan build_pass_plan(std::span<const Operation> operations,
                          std::uint32_t chunk_qubits,
                          std::uint32_t window_qubits) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
+    // The global qubits are a 64-bit mask; the dense ceiling (checked_pow2,
+    // 62 qubits) keeps every caller well inside it.
+    common::ensure(chunk_qubits <= window_qubits && window_qubits <= num_qubits &&
+                       num_qubits - chunk_qubits < 64,
+                   "build_pass_plan: chunk <= window <= qubits, under 64 global qubits");
     PassPlan plan;
     plan.num_qubits = num_qubits;
     plan.chunk_qubits = chunk_qubits;
