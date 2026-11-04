@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 
 namespace menos::plan {
 
@@ -67,7 +68,48 @@ struct HardwareProfile {
     double cuda_kernel_launch_seconds = 0.0;
     // Marginal device throughput, launch overhead already subtracted out.
     double cuda_device_work_units_per_second = 0.0;
+
+    // --- The disk tier's scratch directory (Phase 23, docs/adr/0027 section
+    // 3.3), all empty/zero until current_hardware_profile() is asked about
+    // one. The directory a disk-tier job would create its scratch file in;
+    // its volume's capacity and the space available on it now, read at every
+    // plan like the CUDA device's free memory, so the planner's reserve
+    // (scratch_reserve_bytes) and the file's size are checked against the
+    // figures of the moment; and its sequential write and read bandwidth,
+    // measured lazily (section 9 Q3) with at most 1 GiB written, once per
+    // directory per process, and only when a job could reach the disk tier.
+    // Zero bandwidth means unmeasured, and the planner treats a disk-tier
+    // candidate's runtime as unknown then.
+    std::filesystem::path scratch_directory = {};
+    std::uint64_t scratch_capacity_bytes = 0;
+    std::uint64_t scratch_available_bytes = 0;
+    double scratch_write_bytes_per_second = 0.0;
+    double scratch_read_bytes_per_second = 0.0;
 };
+
+// The space the disk tier leaves untouched on its volume (docs/adr/0027
+// section 9, Q2): 5% of the volume's capacity or 8 GiB, whichever is larger.
+[[nodiscard]] std::uint64_t scratch_reserve_bytes(std::uint64_t capacity_bytes);
+
+// The sequential bandwidth of a scratch directory, as the disk tier moves
+// data: whole chunks of 256 MiB through FileBackingStore (unbuffered where
+// the file system allows), written once and read back once, on a file of
+// `bytes` (rounded down to whole chunks, at most 1 GiB, at least one chunk).
+// The file is gone when this returns. Zero figures when the directory cannot
+// take the file (too little space beside the reserve, or not writable).
+struct ScratchBandwidth {
+    double write_bytes_per_second = 0.0;
+    double read_bytes_per_second = 0.0;
+    std::uint64_t measured_bytes = 0;
+};
+inline constexpr std::uint64_t kScratchMeasurementBytes = std::uint64_t{1} << 30;
+[[nodiscard]] ScratchBandwidth measure_scratch_bandwidth(
+    const std::filesystem::path& directory, std::uint64_t bytes = kScratchMeasurementBytes);
+
+// measure_scratch_bandwidth(directory), measured at most once per directory
+// per process and cached: the second call for the same directory returns the
+// first call's figures without touching the disk.
+[[nodiscard]] ScratchBandwidth scratch_bandwidth_for(const std::filesystem::path& directory);
 
 // The default memory budget is a fixed fraction of total_memory_bytes,
 // used when JobSpec.memory_budget_bytes is not set. Decided with the
@@ -83,7 +125,7 @@ inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
 // Total memory from sysconf on Linux, sysctlbyname("hw.memsize") on
 // macOS, GlobalMemoryStatusEx on Windows, with both calibrated figures left
 // at zero. Throws InternalError if the platform call fails.
-//
+
 // Zero means "not calibrated", and the planner treats it that way: a job with
 // a time budget against an uncalibrated profile is refused rather than
 // silently passed, since dividing by zero would otherwise make every
@@ -111,6 +153,16 @@ inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
 // same device memory. Identical to calibrated_hardware_profile() when there is
 // no CUDA device.
 [[nodiscard]] HardwareProfile current_hardware_profile();
+
+// current_hardware_profile() with the scratch directory's figures (Phase 23,
+// docs/adr/0027 section 3.3): its capacity and available space read now, and
+// its bandwidth from scratch_bandwidth_for() when measure_scratch is true
+// (the api layer asks for it only when a job could reach the disk tier, so
+// the one-off measurement is never paid by a job that cannot). A directory
+// that cannot be read leaves every scratch figure zero, which the planner
+// reports as the disk tier being out of reach.
+[[nodiscard]] HardwareProfile current_hardware_profile(
+    const std::filesystem::path& scratch_directory, bool measure_scratch);
 
 // The measurement itself, exposed so tests can check it directly rather than
 // only through the cache. Runs the microbenchmarks every call. Both are

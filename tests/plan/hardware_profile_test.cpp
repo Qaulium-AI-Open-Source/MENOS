@@ -2,8 +2,17 @@
 
 #include <gtest/gtest.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <string>
 #include <vector>
 
 #ifdef _WIN32
@@ -115,6 +124,90 @@ TEST(CalibratedHardwareProfileTest, CarriesTheCalibratedFigures) {
     EXPECT_GT(hw.total_memory_bytes, 0U);
     EXPECT_GT(hw.memory_bandwidth_bytes_per_second, 0.0);
     EXPECT_GT(hw.work_units_per_second, 0.0);
+}
+
+// ---- The scratch directory (Phase 23, docs/adr/0027 section 3.3) ---------
+
+std::size_t scratch_files_in(const std::filesystem::path& directory) {
+#if defined(_WIN32)
+    const auto pid = static_cast<unsigned long>(_getpid());
+#else
+    const auto pid = static_cast<unsigned long>(getpid());
+#endif
+    // This process's files only: other test processes share the directory.
+    const std::string prefix = "menos-scratch-" + std::to_string(pid) + "-";
+    std::size_t count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.path().filename().string().starts_with(prefix)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+TEST(ScratchProfileTest, TheDirectorysSpaceIsReadAndItsBandwidthOnlyOnRequest) {
+    const std::filesystem::path directory = std::filesystem::current_path();
+    const HardwareProfile unmeasured =
+        current_hardware_profile(directory, /*measure_scratch=*/false);
+    EXPECT_EQ(unmeasured.scratch_directory, directory);
+    EXPECT_GT(unmeasured.scratch_capacity_bytes, 0U);
+    EXPECT_GT(unmeasured.scratch_available_bytes, 0U);
+    EXPECT_LE(unmeasured.scratch_available_bytes, unmeasured.scratch_capacity_bytes);
+    EXPECT_EQ(unmeasured.scratch_write_bytes_per_second, 0.0);
+    EXPECT_EQ(unmeasured.scratch_read_bytes_per_second, 0.0);
+    // Everything else is the calibrated profile.
+    EXPECT_EQ(unmeasured.total_memory_bytes, calibrated_hardware_profile().total_memory_bytes);
+    EXPECT_EQ(unmeasured.work_units_per_second,
+              calibrated_hardware_profile().work_units_per_second);
+
+    // A directory that does not exist leaves every scratch figure zero.
+    const HardwareProfile missing =
+        current_hardware_profile(directory / "no-such-directory-2311", /*measure_scratch=*/true);
+    EXPECT_TRUE(missing.scratch_directory.empty());
+    EXPECT_EQ(missing.scratch_capacity_bytes, 0U);
+    EXPECT_EQ(missing.scratch_available_bytes, 0U);
+}
+
+TEST(ScratchProfileTest, TheMeasurementWritesWholeChunksAndRemovesItsFile) {
+    const std::filesystem::path directory = std::filesystem::current_path();
+    const std::size_t before = scratch_files_in(directory);
+    // 64 MiB asked: rounded up to one chunk of 256 MiB, the smallest the
+    // tier prefers.
+    const ScratchBandwidth small = measure_scratch_bandwidth(directory, std::uint64_t{64} << 20);
+    EXPECT_EQ(small.measured_bytes, std::uint64_t{256} << 20);
+    EXPECT_GT(small.write_bytes_per_second, 0.0);
+    EXPECT_GT(small.read_bytes_per_second, 0.0);
+    EXPECT_EQ(scratch_files_in(directory), before);
+    // Never more than 1 GiB, whatever is asked.
+    const ScratchBandwidth capped = measure_scratch_bandwidth(directory, std::uint64_t{1} << 40);
+    EXPECT_EQ(capped.measured_bytes, std::uint64_t{1} << 30);
+    EXPECT_EQ(scratch_files_in(directory), before);
+    // A directory that cannot be written measures nothing.
+    const ScratchBandwidth none =
+        measure_scratch_bandwidth(directory / "no-such-directory-2311", std::uint64_t{64} << 20);
+    EXPECT_EQ(none.measured_bytes, 0U);
+    EXPECT_EQ(none.write_bytes_per_second, 0.0);
+}
+
+TEST(ScratchProfileTest, ASecondCallForTheSameDirectoryDoesNotMeasureAgain) {
+    const std::filesystem::path directory = std::filesystem::current_path();
+    const ScratchBandwidth first = scratch_bandwidth_for(directory);
+    const ScratchBandwidth second = scratch_bandwidth_for(directory);
+    EXPECT_GT(first.measured_bytes, 0U);
+    // Bit for bit the same figures: a second measurement would not be.
+    EXPECT_EQ(first.write_bytes_per_second, second.write_bytes_per_second);
+    EXPECT_EQ(first.read_bytes_per_second, second.read_bytes_per_second);
+    EXPECT_EQ(first.measured_bytes, second.measured_bytes);
+    const HardwareProfile measured = current_hardware_profile(directory, /*measure_scratch=*/true);
+    EXPECT_EQ(measured.scratch_write_bytes_per_second, first.write_bytes_per_second);
+    EXPECT_EQ(measured.scratch_read_bytes_per_second, first.read_bytes_per_second);
+}
+
+TEST(ScratchProfileTest, TheReserveIsFivePercentOfTheVolumeOrEightGiB) {
+    EXPECT_EQ(scratch_reserve_bytes(std::uint64_t{2} << 40), (std::uint64_t{2} << 40) / 20);
+    EXPECT_EQ(scratch_reserve_bytes(std::uint64_t{100} << 30), std::uint64_t{8} << 30);
+    EXPECT_EQ(scratch_reserve_bytes(std::uint64_t{160} << 30), std::uint64_t{8} << 30);
+    EXPECT_EQ(scratch_reserve_bytes((std::uint64_t{160} << 30) + 20), (std::uint64_t{8} << 30) + 1);
 }
 
 }  // namespace
