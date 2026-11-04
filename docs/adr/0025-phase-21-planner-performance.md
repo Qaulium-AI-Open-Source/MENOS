@@ -978,3 +978,42 @@ A per-plan `std::pmr` arena cannot remove most of that:
 Removing it means reusing buffers across calls (thread-local or
 caller-owned scratch). That is a state-ownership change, and it overlaps
 the memory roadmap (Phase 22). Not implemented; listed as an open question.
+
+C.2b and C.3 equivalence: one differential 50,000-seed sweep at C.3
+(360000–409999), covering both: identical.
+
+### 12.4 Where pass 2 leaves the gate jobs — [MEASURED], before section E
+
+The head is the C.3 code, 31dd27b; later commits change documentation only.
+Pinned to CPU 13, CPU time, 3 rounds × 5 repetitions per side, alternating.
+
+**Gate jobs against the pre-phase planner** (`passC_gate_vs_d89dde3.compare.txt`):
+
+| Job | d89dde3 | Head | Median | Fastest | Gate target |
+|---|---|---|---|---|---|
+| expectation_ising_budgeted/large | 2129 ms | 300 ms | **7.11x** | 8.00x | ≥ 5x |
+| expectation_factorized/large | 15000 ms | 1696 ms | **8.84x** | 9.38x | ≥ 5x |
+
+**Against c8f9083**, the start of this pass (`passC_vs_c8f9083.compare.txt`),
+the whole corpus:
+
+| Jobs | Median | Fastest |
+|---|---|---|
+| expectation_ising_budgeted/large | 5.31x | 3.94x |
+| expectation_factorized/large | 4.02x | 2.56x |
+| Large expectation jobs (z_all, ising, heisenberg, random_paulis) | 4.6–5.2x | 3.5–3.7x |
+| expectation_random_pairs_controlled/large | 13.4x | 8.2x |
+| expectation_cut/large | 2.36x | 2.73x |
+| Counts, statevector and noisy jobs, which do no min-fill search | 0.87–2.1x | 0.96–1.14x |
+
+No job is slower than its limit, max(5%, 2 × spread).
+
+This run was very noisy: before-side spreads were 52–407%, and the medians
+of the c8f9083 side are 1.3–2x higher than in quieter runs. The ratios
+against c8f9083 are therefore indicative. The d89dde3 gate run had spreads
+of 23–36%. Section E's gate run should repeat it with 30 or more
+repetitions, on a quiet machine if one is confirmed.
+
+Equivalence at every kept commit: golden 45/45 and the 2000-seed
+differential test. The 50,000-seed sweeps, recorded above, cover
+seeds 210000–409999 with no differences.
