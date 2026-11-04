@@ -15,8 +15,8 @@ build/release/cli/menos explain examples/bell.qasm
 ## Commands
 
 ```text
-menos explain <file.qasm> [--shots N] [--seed N] [--time-budget SECONDS] [--backend cpu|cuda] [--input NAME=VALUE]...
-menos run     <file.qasm> --shots N --seed N [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--input NAME=VALUE]...
+menos explain <file.qasm> [--shots N] [--seed N] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
+menos run     <file.qasm> --shots N --seed N [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
 ```
 
 ### `explain`
@@ -62,13 +62,17 @@ Binds an `input` declaration of an OpenQASM 3 program (since Phase 19), for exam
 
 Forces the backend instead of letting the planner choose, the CLI form of `RunOptions.backend` (since Phase 17). The report then contains a `backend    cpu (requested)` (or `cuda`) line. A CUDA request that cannot be honoured exits with `1` and an error, and never runs on the CPU. See [Forcing a backend](/planning/backend-selection#forcing-a-backend). Any value other than `cpu` or `cuda` is a usage error.
 
+### `--tier disk|in_memory` and `--scratch-dir PATH`
+
+The CLI forms of `RunOptions.tier` and `RunOptions.scratch_directory` (since Phase 23). `--tier disk` runs the dense engine from a scratch file in `--scratch-dir` (default: the system's temporary directory) even when the state would fit in memory, and never falls back: with `--statevector`, or with `--backend cuda`, the tool exits with `1` and an error. `--tier in_memory` forbids the disk tier. Without `--tier`, the planner uses the disk tier only when the dense state does not fit the memory budget and no statevector is wanted. The report then contains a `tier       disk (requested)` line, the candidate's `tier=disk passes=… chunk_qubits=… disk_bytes=…`, the region's `tier=disk`, and the scratch directory and its measured bandwidth on the `estimated` line; after a run, `peak_disk_bytes=` on the `actual` line. Any other value for `--tier` is a usage error; see [Memory Constraints](/planning/memory-constraints#the-disk-tier).
+
 ## Exit status
 
 `0` on success. On any error the tool writes `error: …` to standard error and exits with `1`:
 
 ```text
 error: --shots is required for 'run'
-error: usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--input NAME=VALUE]...
+error: usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
 ```
 
 ## OpenQASM support
@@ -99,4 +103,4 @@ error: qasm2: expected '[' after a register name at line 7
 
 ## Limits
 
-The tool has no option for a memory budget; use the [native API](/build/native-api) for that. A time budget is `--time-budget`.
+The tool has no option for a memory budget; use the [native API](/build/native-api) for that. A time budget is `--time-budget`; the disk tier is `--tier disk` with `--scratch-dir`.

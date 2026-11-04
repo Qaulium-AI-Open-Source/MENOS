@@ -50,6 +50,18 @@ Every entry here is a real limitation of this release. None is speculative, and 
 - **MPS:** no statevector; its *time* model is badly optimistic (42× to 1,167× measured).
 - **Tensor network:** expectation only; safe monitoring boundary is per observable term.
 - **Cut and recombine:** expectation only, exact only, at most two cuts, CPU only.
+- **Dense, disk tier:** counts and expectation only (a statevector would be the whole file); noiseless circuits only; a job's sole region only (never inside a factorized or cut plan); CPU only.
+
+## Memory tiers
+
+- **Reach only.** The disk tier is chosen only when the in-memory dense state does not fit the memory budget, never because it would be faster; and a forced `tier=disk` never falls back. The host-offloaded CUDA tier was measured and not built (Phase 23, `docs/adr/0027` section 10.1): `Tier.HostOffloaded` is refused with `UnsupportedFeatureError`.
+- **The scratch file** is `menos-scratch-<pid>-<serial>.state` in `RunOptions.scratch_directory` (default: the system's temporary directory), `16 · 2ⁿ` bytes, written with unbuffered I/O when the file system allows it. It is unlinked at creation on Linux and opened delete-on-close on Windows, so it is gone when the run ends, when an exception is thrown, and when the process is killed; only a power loss or a crash of the operating system itself can leave one behind, to be deleted by hand.
+- **The planner leaves 5% of the volume or 8 GiB free**, whichever is larger, and there is no setting for the reserve.
+- **Under WSL, check the directory.** Some WSL distributions mount `/tmp` as a RAM-backed `tmpfs`: the default scratch directory then lives in memory, which defeats the tier's purpose, and the planner's bandwidth measurement reports memory speed. Name a directory on the ext4 volume with `scratch_directory`. Writing a scratch file there grows the WSL virtual disk, which does not shrink by itself (`docs/adr/0027` section 10.1).
+- **The bandwidth measurement writes and reads up to 1 GiB** in the scratch directory, once per directory per process, before the first job that could reach the tier. Under a time budget an unmeasured directory is a refusal.
+- **The time prediction for the tier is pessimistic on Linux with many threads** (0.35× measured over predicted in one WSL run; 0.51–1.17× in four Windows runs), because the dense work rate is calibrated on a single-threaded 13-qubit circuit (`docs/adr/0027` section 10.3). A threaded calibration is a Phase 24 item.
+- **No overlap of transfers with compute**: each pass reads a window, applies its gates and writes it back in turn (deferred, `docs/adr/0027` section 9, Q6).
+- **The gate-scale runs were on one machine**: an NVMe drive C: under Windows and the ext4 volume under WSL, at 29–31 qubits.
 
 ## GPU
 
@@ -59,7 +71,7 @@ Every entry here is a real limitation of this release. None is speculative, and 
 - The CMake presets pin machine-specific values (`/usr/local/cuda`, compute capability 8.6).
 - **CUDA gate kernels are double-precision-bound on consumer GPUs.** One- and two-qubit gates have specialised kernels, but bitwise identity with the CPU rules out fused multiply-add and kernels that skip zero products, so large circuits run at the GPU's double-precision arithmetic rate. Kernels specialised to diagonal or permutation gates are not implemented.
 - **MENOS keeps GPU memory between jobs.** A finished job's device state stays in MENOS's memory pool for the next job of that size (Phase 22). The planner counts it as available and `explain()` shows it as `device_pool_bytes`; other processes see it as used until `release_device_memory()` (C++ and Python) gives it back or the process exits. A device without memory-pool support falls back to a `cudaMalloc` per job (`pooled=false` in `explain()`).
-- **The pool has no cap below the device's total memory**, and there is no setting for one; `release_device_memory()` is the only control. If another process takes device memory between `plan_job`'s read of free memory and the allocation, the allocation fails inside CUDA and surfaces as `InternalError` naming the CUDA error, not as `ResourceExceeded` (`docs/adr/0026` section 11.5).
+- **The pool has no cap below the device's total memory**, and there is no setting for one; `release_device_memory()` is the only control. If another process takes device memory between `plan_job`'s read of free memory and the allocation, the allocation fails inside CUDA and surfaces as `ResourceExceeded` naming the bytes asked for, the bytes free and the bytes the pool retains (since Phase 23). Under WSL the driver backs device memory with shared system memory and may grant an allocation past the free figure, so there the refusal can come one allocation later than the figure suggests (`docs/adr/0027` section 10.3).
 - **Device-to-host copies are pageable.** Page-locked and staged transfers were measured under WSL and were no faster than the pageable copy, so they are not used (`docs/adr/0026` section 10.1). On that machine the copy runs at 3–6 GB/s and is 3–7% of a statevector job.
 - CUDA on Linux aarch64 and on macOS is not supported.
 - The largest state executed in verification on the 4 GB card was 26 qubits; 27 is the arithmetic ceiling and was not run.
@@ -76,6 +88,7 @@ Every entry here is a real limitation of this release. None is speculative, and 
 ## Reporting
 
 - `explain()` labels of 11 characters or more run into their value (`candidate 0strategy=…`).
+- **`peak_disk_bytes` is the scratch file's size**, charged when the file is created, and `0` for a plan with no disk-tier region.
 - **`peak_host_bytes` and `peak_device_bytes` measure execution buffers, not process memory.** They count the buffers that grow with the problem's state during one execution attempt. They leave out the allocator's own overhead, small fixed-size allocations, and everything allocated while planning, including two structures that grow with the circuit: the tensor network's contraction-order analysis and the cut path's fragment circuits. The figure is a lower bound on the process's own use and never above the estimate. `memory_budget_bytes` likewise governs plan selection only; it is not a process cap. See [Memory Constraints](/planning/memory-constraints#what-the-budget-governs-and-what-the-peak-measures).
 - **The ledger is per execution thread.** It relies on the kernels' worker threads never allocating, which holds for every engine today; an allocation made on a worker thread would not be counted (`docs/adr/0026` section 11.4).
 - **`run_batch` budgets each circuit alone** and holds every result until it returns; a batch whose results together exceed the budget is not refused (`docs/adr/0026` section 11.6).
@@ -86,6 +99,7 @@ Every entry here is a real limitation of this release. None is speculative, and 
 
 - In OpenQASM 2, measurement must be written bit by bit (`measure q[0] -> c[0];`); OpenQASM 3 also accepts whole registers.
 - `--statevector` is limited to 10 qubits; there is no budget option.
+- `--tier disk` writes the scratch file to `--scratch-dir`, or to the system's temporary directory; the CLI has no option for the reserve.
 - The binary is a CMake target and is not installed by `pip`.
 - OpenQASM 3 is imported for its static-circuit subset only: `reset`, control flow, subroutines, timing, calibrations, classical variables and applying a gate to a whole register are refused. `pow` takes integer exponents only, and a controlled gate with no gate-table form is limited to 5 qubits.
 - A program must start with an `OPENQASM` header so the CLI can choose the importer.

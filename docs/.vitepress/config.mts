@@ -200,7 +200,7 @@ export default defineConfig({
   cleanUrls: true,
   // Only the public documentation is built. Architecture decision records and the
   // internal build plan stay in the repository, unpublished by the site.
-  srcExclude: ['adr/**', 'BUILD_PLAN.md', 'node_modules/**'],
+  srcExclude: ['adr/**', 'benchmarks/**', 'BUILD_PLAN.md', 'node_modules/**'],
   head: [['link', { rel: 'icon', type: 'image/png', href: '/favicon.png' }]],
   themeConfig: {
     logo: { src: '/logo.png', alt: 'MENOS' },

@@ -32,7 +32,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 |---|---|
 | Output | Counts, exact statevectors, exact Pauli expectation values, exact noisy simulation |
 | Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix |
-| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds |
+| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds; a disk tier for dense states beyond the memory budget, priced from measured bandwidth |
 | Integration | Qiskit `BackendV2` (`MENOSBackend`), `EstimatorV2` (`MENOSEstimator`) and `SamplerV2` (`MENOSSampler`), with Qiskit Aer noise models; the PennyLane device `menos.qubit`; OpenQASM 3 import (`menos.from_qasm3`, static subset) and OpenQASM 2/3 on the command line |
 | Mitigation | Opt-in readout-error mitigation with calibrated, reported uncertainty; batch execution of several circuits (`run_batch`) |
 | GPU | NVIDIA CUDA dense backend, bitwise identical to the CPU |
@@ -139,7 +139,7 @@ Analytic results are exact and agree with `default.qubit` within 1e-12. Paramete
 
 | Engine | Outputs | Best for |
 |---|---|---|
-| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector |
+| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector. Beyond the memory budget it streams the state through a scratch file (the disk tier: counts and expectation values, bitwise the same) |
 | Stabilizer | counts, expectation | Clifford circuits, hundreds of qubits |
 | Pauli propagation | expectation | local observables on circuits of Clifford gates and rotations |
 | MPS | counts, expectation | low-entanglement circuits, large qubit counts |

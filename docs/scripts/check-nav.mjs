@@ -9,7 +9,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const EXCLUDED_TOP = new Set(['adr', 'node_modules', '.vitepress', 'public', 'scripts'])
+const EXCLUDED_TOP = new Set(['adr', 'benchmarks', 'node_modules', '.vitepress', 'public', 'scripts'])
 const EXCLUDED_FILES = new Set(['BUILD_PLAN.md'])
 
 function pages(dir = root, out = []) {
