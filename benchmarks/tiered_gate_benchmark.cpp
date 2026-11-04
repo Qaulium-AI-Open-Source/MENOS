@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -207,11 +208,11 @@ nlohmann::json describe(const menos::Result& result, double wall_seconds) {
         j["expectation_imag_bits"] = std::bit_cast<std::uint64_t>(value.imag());
     }
     if (plan.disk_write_bytes_per_second.has_value()) {
-        j["disk_write_bytes_per_second"] = *plan.disk_write_bytes_per_second;
-        j["disk_read_bytes_per_second"] = *plan.disk_read_bytes_per_second;
+        j["disk_write_bytes_per_second"] = plan.disk_write_bytes_per_second.value_or(0.0);
+        j["disk_read_bytes_per_second"] = plan.disk_read_bytes_per_second.value_or(0.0);
     }
     if (plan.disk_available_bytes.has_value()) {
-        j["disk_available_bytes"] = *plan.disk_available_bytes;
+        j["disk_available_bytes"] = plan.disk_available_bytes.value_or(0);
     }
     j["explain"] = result.explain();
     return j;
@@ -228,7 +229,7 @@ menos::Result timed_run(const menos::Circuit& circuit,
 
 }  // namespace
 
-int main() {
+int main() try {
     const std::string json_path = env_or("MENOS_TIERED_GATE_JSON", "");
     const std::filesystem::path scratch(env_or("MENOS_TIERED_SCRATCH_DIR", ""));
     if (json_path.empty() || scratch.empty()) {
@@ -355,4 +356,7 @@ int main() {
     out << report.dump(2) << "\n";
     std::cerr << "report: " << json_path << "\n";
     return failures == 0 ? 0 : 1;
+} catch (const std::exception& e) {
+    std::cerr << "tiered_gate_benchmark: " << e.what() << "\n";
+    return 1;
 }
