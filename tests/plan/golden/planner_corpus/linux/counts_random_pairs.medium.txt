@@ -1,0 +1,1 @@
+THROWS ResourceExceeded: plan_job: no feasible candidate -- direct dense simulation requires 68719730024 bytes, budget is 8589934592 bytes; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read; operation 0 (rx) is not a Clifford gate; direct mps simulation requires 698723524160 bytes, budget is 8589934592 bytes

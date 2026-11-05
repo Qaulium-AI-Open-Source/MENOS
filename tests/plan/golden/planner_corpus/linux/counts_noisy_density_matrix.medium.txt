@@ -1,0 +1,14 @@
+MENOS EXECUTION REPORT
+circuit    qubits=8 clbits=8 operations=188 depth=34 global_phase=0
+noise      channels=42 readout_errors=0
+light_cone qubits 8->8 operations 188->188
+candidate 0strategy=direct_dense feasible=false winner=false reason="operation 9 is a noise channel; this engine simulates pure states only"
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 9 is a noise channel; this engine simulates pure states only"
+candidate 2strategy=direct_mps feasible=false winner=false reason="operation 9 is a noise channel; this engine simulates pure states only"
+candidate 3strategy=direct_density_matrix feasible=true winner=true peak_bytes=1123608 work_units=58261760
+strategy   direct_density_matrix (exact)
+region 0   qubits=[0,1,2,3,4,5,6,7] engine=density_matrix backend=cpu
+estimated  state_bytes=1123608 work_units=58261760
+--- plan fields not printed by explain() ---
+region 0: operations=188 observable_terms=0 state_bytes=1123608 work_units=58261760 global_to_local_size=8
+reduced_circuit: qubits=8 operations=188
