@@ -1315,9 +1315,14 @@ numbers cited in code comments are this ADR's own, unchanged.
    from every candidate's by design (`docs/adr/0025` section 10 lists jobs
    whose feasibility changed), so "the same plan up to pruning" against it
    cannot hold and would have to be weakened to "up to memory" to pass. The
-   golden corpus (45 fixed jobs, hand-built profiles, machine-independent)
-   is regenerated once against the merged planner and pins plans from here
-   on; `tests/plan/frozen_d89dde3/`, `planner_differential_test.cpp`,
+   golden corpus (45 fixed jobs, hand-built profiles) is regenerated once
+   against the merged planner and pins plans from here on, recorded per
+   platform (`tests/plan/golden/planner_corpus/{linux,windows}/`) because
+   the memory estimates count standard containers, whose sizes differ
+   between libstdc++ and the MSVC STL (`std::set` is 48 bytes against 16):
+   the first `scripts/verify.sh` run on `073c22b` failed only there, in
+   peak-byte figures of stabilizer and factorized plans, with every
+   strategy, winner, reason and work-unit figure the same; `tests/plan/frozen_d89dde3/`, `planner_differential_test.cpp`,
    `planner_differential.h`, `random_planner_jobs.h`, `prune_equivalence.h`
    and its test, and `MENOS_BUILD_FROZEN_PLANNER` are removed. A randomised
    equivalence test needs a reference planner that includes the memory

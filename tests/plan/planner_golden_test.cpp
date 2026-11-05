@@ -51,7 +51,17 @@ namespace {
             c = '.';
         }
     }
-    return std::filesystem::path(MENOS_PLANNER_GOLDEN_DIR) / (file + ".txt");
+    // One recording per platform, as tests/memory/data's baselines are: the
+    // memory estimates count standard containers (Phase 21, docs/adr/0025
+    // section 3.4), whose sizes differ between libstdc++ and the MSVC STL
+    // (std::set is 48 bytes against 16), so a plan's peak_bytes does too.
+    // Strategies, winners, reasons and work units are the same on both.
+#if defined(_WIN32)
+    constexpr const char* kPlatform = "windows";
+#else
+    constexpr const char* kPlatform = "linux";
+#endif
+    return std::filesystem::path(MENOS_PLANNER_GOLDEN_DIR) / kPlatform / (file + ".txt");
 }
 
 TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
