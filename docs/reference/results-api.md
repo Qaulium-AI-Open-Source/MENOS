@@ -33,6 +33,8 @@ Returned by `menos.run`. See [Python API](/reference/python-api#result) for the 
 | `actual_state_bytes` | `int` |
 | `peak_host_bytes`, `peak_device_bytes`, `peak_disk_bytes` | `int` |
 | `execute_seconds`, `sample_seconds` | `float` |
+| `plan_seconds`, `replan_seconds` | `float` |
+| `replans` | `list[dict]` |
 | `explain()` | `str` |
 
 ## Differences
@@ -41,7 +43,7 @@ Returned by `menos.run`. See [Python API](/reference/python-api#result) for the 
 |---|---|---|
 | Counts keys | Binary, register-aware | Hexadecimal |
 | Plan report | Not available | `explain()` |
-| Replans | Not available | In `explain()` text only |
+| Replans | Not available | `replans` and `explain()` |
 | Expectation value | Via `MENOSEstimator` | `expectation_value` |
 
 ## Verification

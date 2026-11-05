@@ -16,7 +16,7 @@ strategy   factorized (exact)
 region 0   qubits=[0,1] engine=stabilizer backend=cpu why="stabilizer (pauli rejected: …)"
 region 1   qubits=[2,3] engine=stabilizer backend=cpu why="stabilizer (pauli rejected: …)"
 estimated  state_bytes=40 work_units=32
-actual     state_bytes=40 execute_s=0.000006 sample_s=0.000010
+actual     state_bytes=40 execute_s=0.000006 sample_s=0.000010 plan_s=0.000210 peak_host_bytes=… peak_device_bytes=0
 ```
 
 | Line | Meaning |
@@ -32,7 +32,7 @@ actual     state_bytes=40 execute_s=0.000006 sample_s=0.000010
 | `cut` | Present for `cut_and_recombine`: cuts, fragments, branches, distinct evaluations, peak bytes |
 | `estimated` | The plan's estimated peak bytes, an upper bound, and its work units. When the plan puts anything on the GPU, also `device_available_bytes`, the free device memory it was checked against. When it uses the disk tier, also `disk_available_bytes`, `scratch_directory` and the directory's `disk_write_bandwidth` and `disk_read_bandwidth` followed by `(measured)`, or `disk_bandwidth=unmeasured` |
 | `replan i` | Present only after a replan; see below |
-| `actual` | What happened: the engine's state bytes, seconds executing and sampling, and the measured `peak_host_bytes` and `peak_device_bytes` (since Phase 21), with `peak_disk_bytes` when it is not 0 (since Phase 23) |
+| `actual` | What happened: the engine's state bytes, seconds executing and sampling, `plan_s` (the initial plan's planning time, since Phase 24), `replan_s` (the replans' planning time, only after a replan), and the measured `peak_host_bytes` and `peak_device_bytes` (since Phase 21), with `peak_disk_bytes` when it is not 0 (since Phase 23) |
 | `expectation` | The expectation value, when one was requested |
 
 Extra detail can appear on a `region` line: `accumulated_error_bound` for an approximating MPS run, and `actual_peak_bytes` for a tensor-network region.
@@ -45,7 +45,7 @@ Labels are padded to 11 characters. Labels that are already 11 or more character
 
 The report is byte-identical across runs of the same job, with two exceptions:
 
-- the two wall-clock fields, `execute_s` and `sample_s`;
+- the wall-clock fields: `execute_s`, `sample_s` and `plan_s`, and after a replan `replan_s` and each replan's `replanned_in`;
 - for a plan that uses the GPU, `device_available_bytes`, which depends on what other processes hold;
 - for a plan that uses the disk tier, `disk_available_bytes`, which depends on what else is on the volume, and the two bandwidth figures, which are measured once per process.
 

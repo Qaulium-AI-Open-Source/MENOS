@@ -47,7 +47,7 @@ Every entry here is a real limitation of this release. None is speculative, and 
 
 - **Stabilizer:** Clifford only; no statevector.
 - **Pauli propagation:** expectation only; Clifford gates plus `rz rx ry p u`.
-- **MPS:** no statevector; its *time* model is badly optimistic (42× to 1,167× measured).
+- **MPS:** no statevector; its *time* model is optimistic (actual 0.8× to 58× the prediction, median 21×, measured in Phase 24; 42× to 1,167× in Phase 11 before the bond replay). The stabilizer, Pauli and tensor-network time models are also off by a factor of 5 to 30 on some workloads ([Cost Model](/planning/cost-model#how-accurate-is-it)).
 - **Tensor network:** expectation only; safe monitoring boundary is per observable term.
 - **Cut and recombine:** expectation only, exact only, at most two cuts, CPU only.
 - **Dense, disk tier:** counts and expectation only (a statevector would be the whole file); noiseless circuits only; a job's sole region only (never inside a factorized or cut plan); CPU only.

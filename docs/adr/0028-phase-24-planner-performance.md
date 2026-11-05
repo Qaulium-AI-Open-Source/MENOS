@@ -1993,3 +1993,66 @@ The owner took every recommendation of 16.10.4:
   - The disk tier must be within 2× on the Phase 23 gate circuits on both platforms.
   - Per-engine model fixes (stabilizer, MPS, Pauli, tensor network, density matrix) are a follow-on phase with targets set from the baseline.
 - **Q4.** No search cap. The measurement shows no planning-time problem.
+
+### 16.12 Implementation and final measurement — [MEASURED]
+
+**Commits** on `phase-24-planner-accuracy`, after the step-1 records:
+
+| Commit | Change |
+|---|---|
+| `97990ca` | Item 2: `Result::plan_seconds()` / `replan_seconds()`, `ReplanEvent::plan_seconds`, Python `plan_seconds` / `replan_seconds` |
+| `e173f13` | Item 9: `HardwareProfile::dense_threaded_work_units_per_second`, `TierCost::link_write_bytes`, the disk tier's new price |
+| `f8aa3d3` | Item 3: `ExecutionMonitor::at_region_boundary`, per-region and plan floors, the Factorized replan, `Region::estimated_seconds`, `RegionObservation` in `ReplanEvent`, the replan loop's termination check |
+| `291de4c` | The cut-differential fixture added to the accuracy benchmark, so cut-and-recombine has measured rows |
+
+**What `explain()` reports.**
+- **`plan_s=`** is always on the `actual` line, beside the other wall-clock fields.
+- **`replan_s=`, each replan line's `replanned_in=`, and the per-region lines of a replanned Factorized plan** appear only after a replan. So a run that never replanned carries no replan text at all, which is the Phase 11 invariant and is pinned by `ReplanTest.ARunWithNoReplanEmitsNoReplanTextAtAll`. Printing `replan_s=0` on every report would have broken that test, which is why `replan_s=` is conditional.
+
+**Termination.** The 16.8 argument is now checked in `run_with_replanning` on every replan, not bounded by a fixed attempt count. The key of every plan run so far is kept, and a replan that returns one of them is an `InternalError`. The single-region bound of six attempts is subsumed by this check.
+
+**Final measurement** (`docs/benchmarks/phase-24/final/`, on `291de4c` plus documentation edits, mains power checked before every round, same machine and conditions as 16.10):
+
+**Accuracy, Linux,** three processes. Calibrations: 2.10–2.23 × 10⁹ work units/s.
+
+| Engine | n | median abs(ln r) | P90 abs(ln r) | median r | step-1 median / P90 |
+|---|---|---|---|---|---|
+| dense (CPU) | 27 | 0.280 | 0.525 | 1.16 | 0.297 / 0.539 |
+| dense (CUDA) | 6 | 0.089 | 0.220 | 0.915 | 0.067 / 0.210 |
+| density matrix | 9 | 0.911 | 0.987 | 0.402 | 0.900 / 0.922 |
+| factorized | 6 | 0.376 | 0.718 | 1.50 | 0.414 / 0.721 |
+| MPS | 18 | 2.519 | 4.039 | 21.4 | 2.518 / 4.028 |
+| Pauli | 18 | 2.007 | 4.352 | 0.399 | 2.017 / 4.323 |
+| stabilizer | 12 | 2.068 | 3.363 | 10.4 | 2.156 / 3.361 |
+| tensor network | 6 | 1.585 | 1.623 | 4.88 | 1.595 / 1.618 |
+| trajectory | 6 | 0.419 | 0.464 | 1.52 | 0.412 / 0.417 |
+| cut (new rows) | 6 | 1.301 | 1.634 | 3.77 | not measured |
+
+**Accuracy, Windows,** three processes. Calibrations: 1.57–1.59 × 10⁹. The tables are in the run's `accuracy_run*.csv`, summarised by `bench/tools/accuracy_table.py`. The same pattern as step 1 holds:
+- dense and density matrix overpredict about 3×;
+- MPS underpredicts 18×, stabilizer about 6×, tensor network about 5×;
+- cut underpredicts about 5×;
+- trajectory is within 1.13×.
+
+**The disk tier on the Phase 23 gate circuits** (`gate-run/`, `docs/benchmarks/phase-23-gate/scripts/gate.{ps1,sh}`, run `p24`):
+
+| Platform | n (reach) | Predicted s | Measured s | Measured / predicted | Within 2× | Overlap n = 29: counts / expectation | Scratch files left |
+|---|---|---|---|---|---|---|---|
+| Windows | 31 | 383.7 | 449.1 | **1.17** | yes | bitwise / bitwise | 0 |
+| Linux (WSL) | 30 | 202.3 | 163.9 | **0.81** | yes | bitwise / bitwise | 0 |
+
+The WSL reach run measured 0.35 on Phase 23's pricing (`docs/adr/0027` section 10.3). The 16.10.3 offline re-pricing predicted 0.62; the run gives 0.81.
+
+**The accuracy gate against the baseline** (16.11: no engine's median or P90 worse on Linux). Two kinds of engine need to be told apart:
+- **Engines whose pricing this phase changed** are covered by the disk-tier rows above. Item 9 prices only the disk tier. Item 3's floors apply only after an overrun, and the benchmark sets a budget that never binds.
+- **Every other engine's prediction is computed by unchanged code.** `DiskTierSelectionTest.TheThreadedRatePricesTheDiskTierOnlyOnEveryThread` checks this for in-memory dense, and the golden corpus is unchanged.
+
+Read strictly, the comparison above is not clean:
+- **Improved:** dense, factorized, stabilizer and tensor network medians, and the Pauli median.
+- **Worse:** the dense (CUDA) median (+0.022) and P90 (+0.010), density matrix (+0.011 / +0.065), MPS (+0.001 / +0.011), the Pauli P90 (+0.029), the tensor-network P90 (+0.005), and trajectory (+0.007 / +0.047).
+
+These moves are the size of the run-to-run variation of unchanged code between two sessions: the GPU's clock state varies about 2× between runs (CLAUDE.md, Phase 16), and process-to-process ratios differ by up to about 5%. They are not an effect of this phase's changes, which do not reach these predictions. **[DERIVED]** This is stated for the owner's ruling, not claimed as met.
+
+**Planning cost:** see 16.10.2. Nothing in items 2, 3 or 9 runs during planning without an observation, except one clock read around the planner call.
+
+**Verification** — recorded in 16.13.

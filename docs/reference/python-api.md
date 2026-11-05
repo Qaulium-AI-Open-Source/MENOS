@@ -172,7 +172,9 @@ menos._core.plan_cache_clear() -> None
 | `peak_disk_bytes` | `int` | The same for the disk tier's scratch file; `0` for a plan with no disk-tier region (Phase 23) |
 | `execute_seconds` | `float` | Seconds executing the attempt that succeeded |
 | `sample_seconds` | `float` | Seconds sampling |
-| `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend` and `reason`. Empty if the job never replanned (Phase 17) |
+| `plan_seconds` | `float` | Seconds the initial plan took to produce, measured around the planner call; on a plan-cache hit, the cost of the lookup (Phase 24) |
+| `replan_seconds` | `float` | Seconds spent replanning, the sum of every replan's `plan_seconds`; `0.0` if the job never replanned (Phase 24) |
+| `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend`, `reason`, `plan_seconds` (that replan's planning time) and `regions`. For a factorized plan, `regions` lists each region that started: `qubits`, `engine`, `backend`, `tier`, `estimated_seconds`, `observed_seconds` and `completed`; it is empty for a single-region plan (Phase 17; `plan_seconds` and `regions` since Phase 24). Empty if the job never replanned |
 
 ```text
 Result.explain() -> str
@@ -231,7 +233,7 @@ assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
      "actual_state_bytes", "peak_host_bytes", "peak_device_bytes", "peak_disk_bytes",
-     "execute_seconds", "sample_seconds", "replans", "explain"]
+     "execute_seconds", "sample_seconds", "plan_seconds", "replan_seconds", "replans", "explain"]
 )
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX".split()

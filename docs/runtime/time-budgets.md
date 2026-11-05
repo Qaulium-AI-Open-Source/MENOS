@@ -38,7 +38,7 @@ The total is bounded by roughly `(number of attempts) × (budget + one boundary)
 
 Bounding the sum was considered and rejected: a crossing means the budget is already spent, so every replan would cross immediately and no replan could ever complete.
 
-Planning and replanning themselves are not charged against the budget. They are cheap (see [Plan](/execution/plan)).
+Planning and replanning themselves are not charged against the budget. They are cheap (see [Plan](/execution/plan)), and since Phase 24 their cost is reported: `plan_seconds` and `replan_seconds` on the result, and `plan_s` (and after a replan `replan_s`) on the `actual` line of the plan report.
 
 ## Two places it applies
 

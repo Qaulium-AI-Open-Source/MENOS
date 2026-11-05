@@ -58,11 +58,20 @@ MPS was abandoned, dense was estimated to fit, and the job finished correctly in
 
 ## Why replanning always terminates
 
-An overrun records a floor above the budget for exactly the plan that ran, so that plan is infeasible next time. Each replan therefore removes one `(engine, backend)` pair from a fixed set of six, so the job either finishes or is refused after a bounded number of attempts. There is no tuned retry limit.
+An overrun records a floor above the budget for exactly the plan that ran, so that plan is infeasible next time. A job has finitely many plans, and each replan removes one of them for good, so the job either finishes or is refused after a bounded number of attempts. There is no tuned retry limit; the loop checks on every replan that it never returns a plan that already ran (the proof is in `docs/adr/0028` section 16.8).
+
+### Factorized plans (since Phase 24)
+
+A factorized plan runs its regions one after another, and MENOS times each region's engine on the attempt's own clock. When such a plan overruns, MENOS records:
+
+- for **each region that started**, a floor at the time that region took (the whole region, or up to the crossing for the one that was running), keyed by the region's qubits and the engine, backend and tier that ran it. A region's floor never applies to any other region, even one of the same size;
+- for **the plan as a whole**, a floor at the elapsed time of the attempt.
+
+The plan floor makes that exact plan infeasible for the rest of the job. The region floors price any other plan that reuses one of those regions on the same implementation, and steer a region's CPU/CUDA choice away from a backend that overran.
 
 ## What is reported
 
-Each abandoned attempt appears in the plan report: the threshold, the observed time, how many safe boundaries were crossed, the old strategy and its prediction, the reason, and the new strategy. After the `replan` blocks comes the usual `actual` line, which times **only the attempt that succeeded**. See [Plan Explanation](/planning/explain).
+Each abandoned attempt appears in the plan report: the threshold, the observed time, how long replanning took (`replanned_in`), how many safe boundaries were crossed, the old strategy and its prediction, the reason, and the new strategy. For a factorized plan, one line per region that started follows, with its qubits, engine, backend, its own prediction, the observed time, and whether it completed or was running. After the `replan` blocks comes the usual `actual` line, which times **only the attempt that succeeded**. See [Plan Explanation](/planning/explain).
 
 ## Correctness across a restart
 
@@ -70,10 +79,10 @@ A restarted run is identical to running the new plan from a cold start: the same
 
 ## Limits
 
-- **Only single-region plans yield an observation.** A factorized or cut plan divides its elapsed time among several engines, and MENOS does not attribute it per region. An overrun there is refused, with a message that says so.
+- **A cut plan's overrun is refused.** Its fragments are not timed one by one, so the overrun cannot be attributed soundly, and MENOS refuses rather than guess, with a message that says so. Factorized plans replan (since Phase 24).
 - **No checkpointing.** Restart repeats the work. Measurement showed restart is cheap for executions of about a second or more, so migration was not built; it would need a measurement showing otherwise.
 - **Tensor-network** runs with one observable term have a single boundary, so they cannot be interrupted mid-contraction.
-- **Python** reports replans only through `explain()`; there is no structured accessor.
+- **Planning is not charged against the budget.** Its cost is reported separately: `Result.plan_seconds` for the initial plan and `Result.replan_seconds` for the replans (since Phase 24).
 
 ## Related
 
