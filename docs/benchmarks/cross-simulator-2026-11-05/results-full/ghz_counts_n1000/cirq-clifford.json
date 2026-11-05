@@ -1,0 +1,1 @@
+{"sim": "cirq-clifford", "case": "ghz_counts_n1000", "status": "timeout", "error": "exceeded 600s", "wall": 600.0260729999991}
