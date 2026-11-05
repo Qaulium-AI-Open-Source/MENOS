@@ -158,6 +158,27 @@ std::string Result::explain() const {
                                        plan::strategy_name(event.superseded_plan.strategy),
                                        event.predicted_seconds);
         out += label("") + std::format("reason=\"{}\"\n", event.reason);
+        for (std::size_t i = 0; i < event.regions.size(); ++i) {
+            const RegionObservation& region = event.regions[i];
+            std::string qubits;
+            for (std::size_t q = 0; q < region.qubits.size(); ++q) {
+                qubits += (q == 0 ? "" : ",") + std::to_string(region.qubits[q]);
+            }
+            out +=
+                label("") + std::format(
+                                "region {} qubits=[{}] engine={} backend={}{} predicted={:.6g} s "
+                                "observed={:.6g} s {}\n",
+                                i,
+                                qubits,
+                                plan::engine_name(region.engine),
+                                plan::backend_name(region.backend),
+                                region.tier == Tier::InMemory
+                                    ? std::string()
+                                    : std::format(" tier={}", plan::tier_name(region.tier)),
+                                region.estimated_seconds,
+                                region.observed_seconds,
+                                region.completed ? "completed" : "running");
+        }
     }
     if (!replans_.empty()) {
         out += label("") + std::format("now  strategy={}\n", plan::strategy_name(plan_.strategy));

@@ -253,25 +253,39 @@ NB_MODULE(_core, m) {
         // that replanned, one dict per ReplanEvent, in order. Empty for a job
         // that never replanned. Engines and backends are spelled as explain()
         // spells them. The superseded plan itself is in explain(), not here.
-        .def_prop_ro("replans",
-                     [](const menos::Result& r) {
-                         nb::list events;
-                         for (const menos::ReplanEvent& event : r.replans()) {
-                             nb::dict entry;
-                             entry["sequence"] = event.sequence;
-                             entry["threshold_seconds"] = event.threshold_seconds;
-                             entry["observed_seconds"] = event.observed_seconds;
-                             entry["predicted_seconds"] = event.predicted_seconds;
-                             entry["boundaries_crossed"] = event.boundaries_crossed;
-                             entry["engine"] = std::string(menos::plan::engine_name(event.engine));
-                             entry["backend"] =
-                                 std::string(menos::plan::backend_name(event.backend));
-                             entry["reason"] = event.reason;
-                             entry["plan_seconds"] = event.plan_seconds;
-                             events.append(entry);
-                         }
-                         return events;
-                     })
+        .def_prop_ro(
+            "replans",
+            [](const menos::Result& r) {
+                nb::list events;
+                for (const menos::ReplanEvent& event : r.replans()) {
+                    nb::dict entry;
+                    entry["sequence"] = event.sequence;
+                    entry["threshold_seconds"] = event.threshold_seconds;
+                    entry["observed_seconds"] = event.observed_seconds;
+                    entry["predicted_seconds"] = event.predicted_seconds;
+                    entry["boundaries_crossed"] = event.boundaries_crossed;
+                    entry["engine"] = std::string(menos::plan::engine_name(event.engine));
+                    entry["backend"] = std::string(menos::plan::backend_name(event.backend));
+                    entry["reason"] = event.reason;
+                    entry["plan_seconds"] = event.plan_seconds;
+                    nb::list regions;
+                    for (const menos::RegionObservation& region : event.regions) {
+                        nb::dict observed;
+                        observed["qubits"] = region.qubits;
+                        observed["engine"] = std::string(menos::plan::engine_name(region.engine));
+                        observed["backend"] =
+                            std::string(menos::plan::backend_name(region.backend));
+                        observed["tier"] = std::string(menos::plan::tier_name(region.tier));
+                        observed["estimated_seconds"] = region.estimated_seconds;
+                        observed["observed_seconds"] = region.observed_seconds;
+                        observed["completed"] = region.completed;
+                        regions.append(observed);
+                    }
+                    entry["regions"] = regions;
+                    events.append(entry);
+                }
+                return events;
+            })
         .def("explain", &menos::Result::explain);
 
     m.def("run", &menos::run, "circuit"_a, "options"_a);

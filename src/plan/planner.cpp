@@ -23,6 +23,7 @@
 #include "plan/enum_names.h"
 #include "plan/execution_engines.h"
 #include "plan/region_builder.h"
+#include "plan/runtime_observations.h"
 
 namespace menos::plan {
 namespace {
@@ -402,6 +403,11 @@ Plan plan_job(const JobSpec& job_spec,
     // candidate's runtime with those backends: the sum of each region's own.
     std::vector<Backend> factorized_backends;
     std::optional<double> factorized_mixed_seconds;
+    // The Factorized candidate's own plan key (docs/adr/0028 section 16.8),
+    // set only when this job carries observations from an abandoned attempt:
+    // what its region and plan floors are looked up by. Its backends are the
+    // CPU until the per-region backend choice below sets them.
+    std::optional<PlanKey> factorized_key;
 
     // Applied to every candidate uniformly, after its own estimate returns, in
     // exactly the way the memory budget already is. A candidate is not
@@ -456,9 +462,27 @@ Plan plan_job(const JobSpec& job_spec,
                           static_cast<double>(written) / write_bytes_per_second +
                           static_cast<double>(read) / read_bytes_per_second;
             }
-            // Only a single-engine candidate can carry an observation: it is
-            // attributed to one (engine, backend) pair, and a Factorized or
-            // CutAndRecombine candidate spans several engines.
+            // A Factorized candidate carries the floors of an abandoned
+            // attempt at this same plan (docs/adr/0028 section 16.8): its plan
+            // floor, and the sum of its regions' floors (they run one after
+            // another). Each matches only its own exact key, and either can
+            // only raise the figure.
+            if (candidate.strategy == Strategy::Factorized && factorized_key.has_value()) {
+                double region_floors = 0.0;
+                for (const RegionKey& region : factorized_key->regions) {
+                    region_floors += observations.region_floor_for(region).value_or(0.0);
+                }
+                const double plan_floor =
+                    observations.plan_floor_for(*factorized_key).value_or(0.0);
+                const double floor = std::max(region_floors, plan_floor);
+                if (floor > seconds) {
+                    seconds = floor;
+                    from_observation = true;
+                }
+            }
+            // A single-engine candidate's observation is attributed to one
+            // (engine, backend, tier) triple. A CutAndRecombine candidate
+            // carries none.
             const std::optional<Engine> engine = single_engine_of(candidate.strategy);
             if (engine.has_value()) {
                 const FlooredSeconds floored =
@@ -779,6 +803,21 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_work_units = factorized_estimate->estimated_work_units,
             .is_winner = false,
         });
+        // Only a replan has observations, so a job planned once never builds
+        // these regions twice (docs/adr/0028 section 16.4).
+        if (factorized_estimate->feasible && !observations.empty()) {
+            factorized_key = plan_key(Strategy::Factorized,
+                                      build_factorized_regions(circuit,
+                                                               graph,
+                                                               factorized_engines,
+                                                               job_spec.want_statevector,
+                                                               want_counts,
+                                                               want_expectation,
+                                                               reduced_observable,
+                                                               budget,
+                                                               job_spec.accuracy_policy,
+                                                               job_spec.shots));
+        }
     }
 
     // Candidate: DirectTensorNetwork, only enumerated for an expectation
@@ -1063,9 +1102,14 @@ Plan plan_job(const JobSpec& job_spec,
                 if (region.estimated_state_bytes == 0) {
                     continue;  // idle: allocates nothing, runs on no engine
                 }
-                const double on_cpu =
+                // An observed region floor raises its own implementation's
+                // figure only (docs/adr/0028 section 16.4).
+                RegionKey cpu_key = region_key(region);
+                cpu_key.backend = Backend::Cpu;
+                const double on_cpu = std::max(
                     timed ? cpu_seconds(region.estimated_work_units, region.estimated_state_bytes)
-                          : 0.0;
+                          : 0.0,
+                    observations.region_floor_for(cpu_key).value_or(0.0));
                 if (region.engine != Engine::Dense) {
                     if (forced_cuda) {
                         refusal = "region " + std::to_string(i) + " runs on " +
@@ -1092,8 +1136,12 @@ Plan plan_job(const JobSpec& job_spec,
                 const bool fits =
                     on_device.feasible &&
                     on_device.device.device_bytes <= hardware_profile.cuda_device_available_bytes;
-                const double on_cuda =
-                    timed ? cuda_seconds(on_device.estimated_work_units, on_device.device) : 0.0;
+                RegionKey cuda_key = region_key(region);
+                cuda_key.backend = Backend::Cuda;
+                cuda_key.tier = Tier::InMemory;
+                const double on_cuda = std::max(
+                    timed ? cuda_seconds(on_device.estimated_work_units, on_device.device) : 0.0,
+                    observations.region_floor_for(cuda_key).value_or(0.0));
                 if (forced_cuda) {
                     if (!fits) {
                         refusal = "region " + std::to_string(i) + " does not fit the device";
@@ -1116,6 +1164,11 @@ Plan plan_job(const JobSpec& job_spec,
                 factorized.feasible = false;
                 factorized.infeasible_reason = "backend=cuda requested: " + refusal;
             } else if (any_cuda) {
+                if (factorized_key.has_value()) {
+                    for (std::size_t i = 0; i < backends.size(); ++i) {
+                        factorized_key->regions.at(i).backend = backends[i];
+                    }
+                }
                 factorized_backends = std::move(backends);
                 factorized.device.device_bytes = region_device_bytes;
                 if (timed) {
@@ -1357,6 +1410,40 @@ Plan plan_job(const JobSpec& job_spec,
                            "plan_job: per-region backends do not match the factorized regions");
             for (std::size_t i = 0; i < plan.regions.size(); ++i) {
                 plan.regions[i].backend = factorized_backends[i];
+            }
+        }
+        // Each region's own predicted seconds, reported beside its observation
+        // when a replan happens (docs/adr/0028 section 16.4). A CUDA region is
+        // priced by the device engine's own estimate, as in the backend choice
+        // above. Never printed by explain(), so no report changes.
+        if (calibrated) {
+            const SimulationEngine* cuda_engine =
+                find_execution_engine(Engine::Dense, Backend::Cuda);
+            for (Region& region : plan.regions) {
+                if (region.estimated_state_bytes == 0) {
+                    region.estimated_seconds = 0.0;
+                    continue;
+                }
+                if (region.backend == Backend::Cuda && cuda_engine != nullptr) {
+                    const CostEstimate on_device = cuda_engine->estimate(EngineEstimateRequest{
+                        .num_qubits = static_cast<std::uint32_t>(region.local_to_global.size()),
+                        .operations = &region.operations,
+                        .want_statevector = job_spec.want_statevector,
+                        .want_counts = want_counts,
+                        .want_expectation = want_expectation,
+                        .observable = region.observable.has_value() ? &*region.observable : nullptr,
+                        .accuracy_policy = job_spec.accuracy_policy,
+                        .budget_bytes = budget,
+                        .shots = want_counts ? job_spec.shots : 0,
+                        .bitstring_width = circuit.num_clbits(),
+                        .is_sole_region = false,
+                    });
+                    region.estimated_seconds =
+                        cuda_seconds(on_device.estimated_work_units, on_device.device);
+                } else {
+                    region.estimated_seconds =
+                        cpu_seconds(region.estimated_work_units, region.estimated_state_bytes);
+                }
             }
         }
         // Exact unless the policy allows approximation AND at least one

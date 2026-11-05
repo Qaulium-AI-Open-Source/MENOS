@@ -41,6 +41,21 @@ namespace menos {
 // superseded_plan is the complete abandoned Plan, not a summary, so a caller
 // can call explain() on it. Result::explain() prints only a one-line summary of
 // it, to keep the report readable.
+// One region of an abandoned Factorized plan (Phase 24, docs/adr/0028 section
+// 16.4): its qubits, the implementation that ran it, its own prediction
+// (Region::estimated_seconds, -1 when not calibrated) and the time it was
+// observed to take -- the whole region if it completed, up to the crossing if
+// it was the one running.
+struct RegionObservation {
+    std::vector<QubitId> qubits;
+    Engine engine;
+    Backend backend;
+    Tier tier;
+    double estimated_seconds;
+    double observed_seconds;
+    bool completed;
+};
+
 struct ReplanEvent {
     std::size_t sequence;
     double threshold_seconds;
@@ -55,6 +70,10 @@ struct ReplanEvent {
     // superseded_plan (Phase 24, docs/adr/0028 section 16.7 Q3). Measured,
     // never estimated; not charged against the time budget.
     double plan_seconds = 0.0;
+    // Every region of the superseded plan that started running, in order,
+    // when it was a Factorized plan; empty for a single-region plan, whose
+    // one observation is observed_seconds above.
+    std::vector<RegionObservation> regions = {};
 };
 
 // counts (ordered by key -- std::map -- so output is deterministic),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -101,6 +102,17 @@ public:
 
     // Returns normally to continue; throws to abandon the run.
     virtual void at_safe_boundary(std::uint64_t boundaries_crossed) const = 0;
+
+    // Called by the runtime's Factorized executor immediately before
+    // (starting = true) and after (starting = false) it runs region `region`
+    // of the plan on its engine; never for an idle region, which runs on no
+    // engine (Phase 24, docs/adr/0028 sections 16.4 and 16.8). It reports, it
+    // never decides: the default does nothing, and the api layer's monitor
+    // uses it to attribute elapsed time per region. Engines never call it.
+    virtual void at_region_boundary(std::size_t region, bool starting) const {
+        static_cast<void>(region);
+        static_cast<void>(starting);
+    }
 };
 
 // One region's execution request. operations are this region's own

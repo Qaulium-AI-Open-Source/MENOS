@@ -1037,6 +1037,88 @@ TEST(RuntimeObservationTest, AMultiEngineCandidateTakesNoObservedFloor) {
     FAIL() << "the Factorized candidate was not enumerated, so nothing was asserted";
 }
 
+// Phase 24 (docs/adr/0028 sections 16.4 and 16.8): a Factorized plan's own
+// floors -- its plan floor, and the sum of its regions' floors -- raise that
+// plan's seconds, and a floor keyed on any other region or plan changes nothing.
+TEST(RuntimeObservationTest, AFactorizedPlansFloorsApplyToThatPlanAlone) {
+    // Four disjoint 6-qubit brickwork blocks, depth 20 (the planner corpus's
+    // counts_factorized/medium shape): the Factorized plan is the cheapest.
+    Circuit circuit(24, 24);
+    for (std::uint32_t layer = 0; layer < 20; ++layer) {
+        for (std::uint32_t q = 0; q < 24; ++q) {
+            circuit.append(Opcode::RY,
+                           {static_cast<QubitId>(q)},
+                           {0.3 + 0.1 * static_cast<double>(q + layer)});
+        }
+        for (std::uint32_t base : {0U, 6U, 12U, 18U}) {
+            for (std::uint32_t i = layer % 2; i + 1 < 6; i += 2) {
+                circuit.append(
+                    Opcode::CX,
+                    {static_cast<QubitId>(base + i), static_cast<QubitId>(base + i + 1)});
+            }
+        }
+    }
+    for (std::uint32_t q = 0; q < 24; ++q) {
+        circuit.append_measure(static_cast<QubitId>(q), static_cast<ClbitId>(q));
+    }
+    JobSpec job{
+        .circuit = circuit,
+        .shots = 1000,  // sampling the whole MPS state costs more than the blocks
+        .want_statevector = false,
+        .seed = 0,
+        .memory_budget_bytes = std::uint64_t{1} << 30,
+        .expectation = std::nullopt,
+    };
+    job.time_budget_seconds = 1.0e9;
+    const Plan before = plan_job(job, kUnitRateProfile);
+    ASSERT_EQ(before.strategy, Strategy::Factorized) << before.explain();
+    ASSERT_EQ(before.regions.size(), 4U);
+    const PlanKey key = plan_key(before);
+    const auto factorized_of = [](const Plan& plan) -> const CandidateSummary& {
+        for (const CandidateSummary& c : plan.candidates) {
+            if (c.strategy == Strategy::Factorized) {
+                return c;
+            }
+        }
+        throw std::logic_error("no Factorized candidate");
+    };
+    const double modelled = factorized_of(before).estimated_seconds;
+    ASSERT_GT(modelled, 0.0);
+    // Each region carries its own prediction.
+    for (const Region& region : before.regions) {
+        EXPECT_GT(region.estimated_seconds, 0.0);
+    }
+
+    // The plan floor over the budget excludes this plan, as measured.
+    RuntimeObservations over;
+    over.observe_plan(key, 2.0e9);
+    const Plan after = plan_job(job, kUnitRateProfile, over);
+    EXPECT_NE(plan_key(after), key);
+    EXPECT_FALSE(factorized_of(after).feasible);
+    EXPECT_NE(factorized_of(after).infeasible_reason.find("observed runtime"), std::string::npos)
+        << factorized_of(after).infeasible_reason;
+
+    // The regions' floors add up (the regions run one after another).
+    RuntimeObservations regions;
+    regions.observe_region(key.regions[0], modelled + 3.0);
+    regions.observe_region(key.regions[1], 4.0);
+    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kUnitRateProfile, regions)).estimated_seconds,
+                     modelled + 7.0);
+
+    // Floors keyed on other qubits, or on another plan, change nothing: a
+    // region of the same size is still a different region.
+    RuntimeObservations elsewhere;
+    RegionKey moved = key.regions[0];
+    moved.qubits = {1, 2, 3, 4, 5, 6};
+    elsewhere.observe_region(moved, 9.0e6);
+    elsewhere.observe_plan(
+        PlanKey{Strategy::Factorized, {moved, key.regions[1], key.regions[2], key.regions[3]}},
+        9.0e6);
+    elsewhere.observe(key.regions[0].engine, key.regions[0].backend, 9.0e6);
+    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kUnitRateProfile, elsewhere)).estimated_seconds,
+                     modelled);
+}
+
 // A reader has to be able to tell a modelled refusal from a measured one: they
 // call for completely different responses.
 TEST(RuntimeObservationTest, TheInfeasibilityReasonSaysWhenTheRuntimeWasObserved) {

@@ -310,7 +310,16 @@ Result execute_factorized(Plan&& plan,
                 .max_threads = job_spec.max_threads,
                 .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
             };
+            // Reported to the monitor, never interpreted here: the api layer
+            // attributes elapsed time per region from it (docs/adr/0028
+            // section 16.4).
+            if (monitor != nullptr) {
+                monitor->at_region_boundary(r, /*starting=*/true);
+            }
             engine_result = engine.execute(request);
+            if (monitor != nullptr) {
+                monitor->at_region_boundary(r, /*starting=*/false);
+            }
             if (request.want_statevector) {
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
                 psi_r = std::span<const std::complex<double>>(*engine_result->statevector);

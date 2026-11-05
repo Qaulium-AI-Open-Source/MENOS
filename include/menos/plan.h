@@ -237,6 +237,11 @@ struct Region {
     // requirement, mirroring mps_accumulated_error_bound's own identical
     // wiring pattern above). nullopt for every other engine.
     std::optional<std::uint64_t> tensor_network_actual_peak_bytes = std::nullopt;
+    // This region's own predicted seconds on its backend, set by the planner
+    // for each region of a Factorized plan when the profile is calibrated
+    // (Phase 24, docs/adr/0028 section 16.4), so a replan can report each
+    // region's prediction beside its observation. -1 otherwise.
+    double estimated_seconds = -1.0;
 };
 
 // What a CutAndRecombine plan did, for explain() (docs/adr/0013 Phase 9).

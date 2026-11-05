@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -99,20 +101,41 @@ using ElapsedSourceFactory = std::function<ElapsedSource()>;
 //
 //   Termination does not depend on the clock. It comes from the observed
 //   floors, which accumulate across attempts in RuntimeObservations: an
-//   abandoned attempt records a floor strictly above the budget for the engine
-//   it was running, which permanently excludes that engine from a fixed
-//   enumeration of at most one candidate per Strategy. Resetting the clock
-//   cannot un-record a floor, and a floor stays true regardless -- the engine
-//   really did spend those seconds.
+//   abandoned attempt records a floor strictly above the budget for the plan
+//   it was running (its one engine's floor, or, for a Factorized plan, the
+//   plan floor of docs/adr/0028 section 16.8), which permanently excludes that
+//   plan from the job's finite set of plans. Resetting the clock cannot
+//   un-record a floor, and a floor stays true regardless -- the engine really
+//   did spend those seconds.
 class BudgetMonitor final : public ExecutionMonitor {
 public:
     BudgetMonitor(double budget_seconds, ElapsedSource elapsed);
 
     void at_safe_boundary(std::uint64_t boundaries_crossed) const override;
 
+    // Records the elapsed time at a Factorized plan's region boundaries, from
+    // the same ElapsedSource the budget is checked against, so an injected
+    // clock scripts them too (Phase 24, docs/adr/0028 section 16.4). Never
+    // throws and never decides anything.
+    void at_region_boundary(std::size_t region, bool starting) const override;
+
+    // A region's start and, once it finished, its end, in seconds of this
+    // attempt. A region still running at the crossing has no end.
+    struct RegionTiming {
+        std::size_t region;
+        double start_seconds;
+        std::optional<double> end_seconds;
+    };
+    [[nodiscard]] const std::vector<RegionTiming>& region_timings() const {
+        return region_timings_;
+    }
+
 private:
     double budget_seconds_;
     ElapsedSource elapsed_;
+    // Written through the const ExecutionMonitor interface the runtime holds;
+    // read by the replan loop after the attempt, on the same thread.
+    mutable std::vector<RegionTiming> region_timings_;
 };
 
 // plan, execute, and replan on a threshold crossing until a run completes.
