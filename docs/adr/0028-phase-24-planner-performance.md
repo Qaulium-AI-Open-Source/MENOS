@@ -1353,8 +1353,10 @@ toolkit, driver 566.14, so GPU tests skip there) for `scripts/verify.sh`.
 - **Merge commit `991ec2e`** (branch `integrate-memory-roadmap`, parents
   `f5341e0` = `main` and `373636c` = `phase-23-tiered-memory`); `fee38b9`
   restores one namespace comment that the format stage rejected (dropped
-  by `373636c` on the memory line) and is the commit both scripts were
-  judged on; the documentation closure follows it.
+  by `373636c` on the memory line); `84c5cc7`, `b3d67af`, `dd07c97`,
+  `073c22b`, `bbac1ef` and `295de4f` are the fixes the two scripts found,
+  each named below; `295de4f` is the commit both scripts were judged on,
+  and the documentation closure follows it.
 - **During the merge**, `windows-release` was built and its full ctest run
   repeated until clean. The failures on the way, each fixed in the merge
   commit: the frozen-planner and golden tests' `std::getenv` under `/WX`
@@ -1373,14 +1375,30 @@ toolkit, driver 566.14, so GPU tests skip there) for `scripts/verify.sh`.
   instead of 24 and the memory estimates count it (257 histogram nodes ×
   8 bytes = the 2 056-byte difference in every counts plan), so on MSVC
   the golden plans are checked in optimised builds only (`84c5cc7`,
-  `MERGE_FIX2`); the memory fixtures still hold each build's estimate to
+  `b3d67af`); the memory fixtures still hold each build's estimate to
   its heap tracker.
   Final subset on the merge commit: plan-cache, golden and memory-fixture
   tests, ctest exit 0; the preceding full run on the same code apart from
   the two optional fixes: 861/863, the two plan-cache tests being those
   fixes.
-- **`scripts/verify-windows.ps1` on `991ec2e`:** VERIFY_WINDOWS_RESULT
-- **`scripts/verify.sh` (WSL) on `fee38b9`:** VERIFY_LINUX_RESULT
+- **`scripts/verify-windows.ps1` on `295de4f`: exit 0** (2026-11-05, 15:55–16:22):
+  `windows-dev` (MSVC ASan) 863/863, `windows-release` 863/863, the benchmarks
+  build, pytest 574 passed / 2 deselected on the editable install, the wheel
+  built and its smoke test 2 passed in a clean venv. Earlier runs on the way:
+  `b3d67af` stopped at the benchmarks build (`malloc_usable_size`, fixed in
+  `dd07c97` with `_msize`); `dd07c97` stopped at pytest on the
+  `compatibility.md` snippet (`menos.__version__` 1.2.0 against the package's
+  1.2.1, one from each line; `073c22b` sets 1.2.1, the release); `073c22b`
+  passed every stage.
+- **`scripts/verify.sh` (WSL) on `295de4f`:** exit 0 on 2026-11-05, every
+  stage: `dev` 862/862, `release` 862/862, the benchmarks build and
+  clang-tidy, pytest 574 passed / 2 deselected on the editable install,
+  the wheel built and its smoke test 2 passed in a clean venv, `cuda-dev`
+  942/942, `cuda-release` 942/942, `cuda12-dev` 942/942, `cuda12-release`
+  942/942 (the docs stage skipped: no node in the WSL clone). Earlier:
+  `fee38b9`'s run was cut off with the session at clang-tidy; `073c22b`'s
+  failed only the golden test in the dev stage (the per-platform recording
+  above, `bbac1ef` and `295de4f`), 861/862 otherwise.
 
 Not verified here: the fork's planning-time figures (sections 10–14) were
 not re-measured after the merge; the memory accounting adds to every
