@@ -1978,3 +1978,18 @@ These recommendations decide what the remaining items do.
   - Recommended for this phase's gate: record the table as the baseline, and require that items 2, 3 and 9 make no engine's median or P90 error worse on Linux.
   - The disk tier must meet the Phase 23 2× bound on the Phase 23 circuits on both platforms.
   - Per-engine model fixes (stabilizer, MPS, Pauli, tensor network, density matrix) are a follow-on phase whose targets are set from this table.
+
+### 16.11 Checkpoint A: owner answers (2026-11-06)
+
+The owner took every recommendation of 16.10.4:
+- **Item 9.**
+  - **The threaded rate prices the disk tier only.** It is measured at 20 qubits on every thread.
+  - **Reads and writes** are priced at their own measured bandwidths.
+  - **In-memory dense** keeps today's 13-qubit single-thread rate. A follow-on item records the gap between the calibration circuit and real gate mixes at 20–24 qubits.
+- **MPS.** The formula is unchanged in this phase. A per-gate fixed-cost term, derived from the measured Trotter rows with its own measurement and ADR, is recorded as a follow-on item. The per-gate-bond refinement is withdrawn: it moves the estimate the wrong way.
+- **Accuracy gate.**
+  - The 16.10.1 tables are the baseline.
+  - Items 2, 3 and 9 must make no engine's median or P90 error worse on Linux.
+  - The disk tier must be within 2× on the Phase 23 gate circuits on both platforms.
+  - Per-engine model fixes (stabilizer, MPS, Pauli, tensor network, density matrix) are a follow-on phase with targets set from the baseline.
+- **Q4.** No search cap. The measurement shows no planning-time problem.
