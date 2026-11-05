@@ -295,7 +295,7 @@ def main():
     ap.add_argument("--reps", type=int, default=None)
     ap.add_argument("--no-reference", action="store_true")
     args = ap.parse_args()
-    out_root = args.out or os.path.join(os.path.dirname(HERE), f"results-{args.scale}")
+    out_root = os.path.abspath(args.out or os.path.join(os.path.dirname(HERE), f"results-{args.scale}"))
     os.makedirs(out_root, exist_ok=True)
     cache = os.path.join(out_root, "cases.json")
     if os.path.exists(cache):
