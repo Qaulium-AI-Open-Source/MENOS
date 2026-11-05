@@ -55,6 +55,16 @@ std::filesystem::path golden_path(const std::string& name) {
 }
 
 TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
+#if defined(_MSC_VER) && !defined(NDEBUG)
+    // The MSVC debug STL (iterator debugging) makes std::vector 32 bytes
+    // instead of 24, and the memory estimates count container sizes (Phase
+    // 21, docs/adr/0025 section 3.4): a counts plan's peak_bytes is 8 bytes
+    // larger per histogram node here than in every optimised build and on
+    // libstdc++. The recorded plans are the optimised builds'; windows-dev
+    // still runs the memory fixtures, which hold each build's own estimate
+    // to its heap tracker.
+    GTEST_SKIP() << "golden plans are checked in optimised builds on MSVC (debug STL sizes)";
+#else
     const bool update = std::getenv("MENOS_UPDATE_GOLDEN") != nullptr;
     for (const planner_corpus::CorpusJob& job : planner_corpus::planner_corpus()) {
         SCOPED_TRACE(job.name);
@@ -78,6 +88,7 @@ TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
         std::erase(recorded, '\r');
         EXPECT_EQ(actual, recorded);
     }
+#endif
 }
 
 // The corpus itself is fixed: its size and order are part of the record, so

@@ -1339,6 +1339,45 @@ numbers cited in code comments are this ADR's own, unchanged.
    `std::getenv` takes the `_CRT_SECURE_NO_WARNINGS` guard the benchmarks
    already use, so `windows-dev`/`windows-release` build with `/WX`.
 
-### 15.4 Verification
+### 15.4 Verification — [MEASURED]
 
-(filled in below)
+Development machine: Intel Core Ultra 7 155H, 22 threads, 32 GB, Windows 11;
+MSVC 14.50 for the native build, Ubuntu 26.04 in WSL (GCC 15.2, CUDA 13.3.1
+toolkit, driver 566.14, so GPU tests skip there) for `scripts/verify.sh`.
+
+- **Merge commit `991ec2e`** (branch `integrate-memory-roadmap`, parents
+  `f5341e0` = `main` and `373636c` = `phase-23-tiered-memory`); `fee38b9`
+  restores one namespace comment that the format stage rejected (dropped
+  by `373636c` on the memory line) and is the commit both scripts were
+  judged on; the documentation closure follows it.
+- **During the merge**, `windows-release` was built and its full ctest run
+  repeated until clean. The failures on the way, each fixed in the merge
+  commit: the frozen-planner and golden tests' `std::getenv` under `/WX`
+  (guarded); the golden plans differing from the fork's recordings in
+  every candidate's `peak_bytes` (the Phase 21 accounting; regenerated,
+  45 files, winners and pruning reasons unchanged) and in line endings
+  (read line-ending-neutral); the plan cache missing on an identical job
+  because `std::optional<Backend>` (the fork's key) and
+  `std::optional<Tier>` (this merge's) were serialised as raw bytes; and
+  the `run_mitigated` memory fixture exceeding its estimate by the
+  calibration's 64 MiB, because `hardware_profile_for` had moved the
+  first calibration into the fixture's tracked window through
+  `run_readout_mitigated`'s budget (now the detected profile's figure).
+  The first `scripts/verify-windows.ps1` run then failed only on the golden
+  test in `windows-dev`: the MSVC debug STL makes `std::vector` 32 bytes
+  instead of 24 and the memory estimates count it (257 histogram nodes ×
+  8 bytes = the 2 056-byte difference in every counts plan), so on MSVC
+  the golden plans are checked in optimised builds only (`a` commit after
+  `fee38b9`); the memory fixtures still hold each build's estimate to its
+  heap tracker.
+  Final subset on the merge commit: plan-cache, golden and memory-fixture
+  tests, ctest exit 0; the preceding full run on the same code apart from
+  the two optional fixes: 861/863, the two plan-cache tests being those
+  fixes.
+- **`scripts/verify-windows.ps1` on `991ec2e`:** VERIFY_WINDOWS_RESULT
+- **`scripts/verify.sh` (WSL) on `fee38b9`:** VERIFY_LINUX_RESULT
+
+Not verified here: the fork's planning-time figures (sections 10–14) were
+not re-measured after the merge; the memory accounting adds to every
+estimate but not to the search. The CUDA presets' GPU tests skip on this
+driver, as in Phases 21–23.
