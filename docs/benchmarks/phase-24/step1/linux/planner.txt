@@ -1,0 +1,214 @@
+environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+2026-11-05T20:27:09+00:00
+Running build/cuda12-release/benchmarks/menos_planner_benchmark
+Run on (22 X 2995.2 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x11)
+  L1 Instruction 64 KiB (x11)
+  L2 Unified 2048 KiB (x11)
+  L3 Unified 24576 KiB (x1)
+Load Average: 3.81, 5.35, 3.28
+***WARNING*** ASLR is enabled, the results may have unreproducible noise in them.
+---------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------------------------
+plan_job/statevector_brickwork/small_mean                        21.1 us         21.0 us            5 alloc_bytes=35.093k allocs=703 peak_bytes=33.4192k refused=0
+plan_job/statevector_brickwork/small_median                      21.2 us         21.0 us            5 alloc_bytes=35.093k allocs=703 peak_bytes=33.416k refused=0
+plan_job/statevector_brickwork/small_stddev                     0.391 us        0.402 us            5 alloc_bytes=0 allocs=0 peak_bytes=7.15542 refused=0
+plan_job/statevector_brickwork/small_cv                          1.86 %          1.91 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+plan_job/statevector_brickwork/medium_mean                       98.7 us         98.7 us            5 alloc_bytes=149.597k allocs=3.374k peak_bytes=152.347k refused=0
+plan_job/statevector_brickwork/medium_median                     98.4 us         98.4 us            5 alloc_bytes=149.597k allocs=3.374k peak_bytes=152.344k refused=0
+plan_job/statevector_brickwork/medium_stddev                    0.708 us        0.710 us            5 alloc_bytes=0 allocs=0 peak_bytes=13.3866 refused=0
+plan_job/statevector_brickwork/medium_cv                         0.72 %          0.72 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/statevector_brickwork/large_mean                         298 us          298 us            5 alloc_bytes=509.157k allocs=10.056k peak_bytes=486.974k refused=0
+plan_job/statevector_brickwork/large_median                       300 us          300 us            5 alloc_bytes=509.157k allocs=10.056k peak_bytes=486.968k refused=0
+plan_job/statevector_brickwork/large_stddev                      5.97 us         5.98 us            5 alloc_bytes=0 allocs=0 peak_bytes=8.76356 refused=0
+plan_job/statevector_brickwork/large_cv                          2.00 %          2.01 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_brickwork/small_mean                             53.3 us         53.3 us            5 alloc_bytes=36.604k allocs=780 peak_bytes=33.888k refused=0
+plan_job/counts_brickwork/small_median                           53.5 us         53.5 us            5 alloc_bytes=36.604k allocs=780 peak_bytes=33.888k refused=0
+plan_job/counts_brickwork/small_stddev                           1.40 us         1.40 us            5 alloc_bytes=0 allocs=0 peak_bytes=0 refused=0
+plan_job/counts_brickwork/small_cv                               2.63 %          2.63 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_brickwork/medium_mean                             273 us          273 us            5 alloc_bytes=155.348k allocs=3.712k peak_bytes=153.786k refused=0
+plan_job/counts_brickwork/medium_median                           272 us          272 us            5 alloc_bytes=155.348k allocs=3.712k peak_bytes=153.792k refused=0
+plan_job/counts_brickwork/medium_stddev                          3.45 us         3.45 us            5 alloc_bytes=0 allocs=0 peak_bytes=18.2428 refused=0
+plan_job/counts_brickwork/medium_cv                              1.27 %          1.26 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/counts_brickwork/large_mean                              838 us          836 us            5 alloc_bytes=523.724k allocs=11.031k peak_bytes=489.472k refused=0
+plan_job/counts_brickwork/large_median                            828 us          828 us            5 alloc_bytes=523.724k allocs=11.031k peak_bytes=489.456k refused=0
+plan_job/counts_brickwork/large_stddev                           19.0 us         16.3 us            5 alloc_bytes=0 allocs=0 peak_bytes=37.5233 refused=0
+plan_job/counts_brickwork/large_cv                               2.26 %          1.95 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_z_all/small_mean                             312 us          311 us            5 alloc_bytes=381.482k allocs=2.974k peak_bytes=102.498k refused=0
+plan_job/expectation_z_all/small_median                           312 us          312 us            5 alloc_bytes=381.482k allocs=2.974k peak_bytes=102.472k refused=0
+plan_job/expectation_z_all/small_stddev                          8.54 us         7.19 us            5 alloc_bytes=0 allocs=0 peak_bytes=75.5566 refused=0
+plan_job/expectation_z_all/small_cv                              2.74 %          2.31 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.07% refused=0.00%
+plan_job/expectation_z_all/medium_mean                           2423 us         2423 us            5 alloc_bytes=2.20233M allocs=11.604k peak_bytes=630.614k refused=0
+plan_job/expectation_z_all/medium_median                         2428 us         2428 us            5 alloc_bytes=2.20233M allocs=11.604k peak_bytes=630.624k refused=0
+plan_job/expectation_z_all/medium_stddev                         36.4 us         36.3 us            5 alloc_bytes=0 allocs=0 peak_bytes=46.0956 refused=0
+plan_job/expectation_z_all/medium_cv                             1.50 %          1.50 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_z_all/large_mean                           11587 us        11586 us            5 alloc_bytes=8.56371M allocs=32.298k peak_bytes=3.08029M refused=0
+plan_job/expectation_z_all/large_median                         11516 us        11514 us            5 alloc_bytes=8.56371M allocs=32.298k peak_bytes=3.08032M refused=0
+plan_job/expectation_z_all/large_stddev                           234 us          234 us            5 alloc_bytes=0 allocs=0 peak_bytes=54.7284 refused=0
+plan_job/expectation_z_all/large_cv                              2.02 %          2.02 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/expectation_ising/small_mean                             220 us          220 us            5 alloc_bytes=273.342k allocs=2.421k peak_bytes=95.4864k refused=0
+plan_job/expectation_ising/small_median                           219 us          219 us            5 alloc_bytes=273.342k allocs=2.421k peak_bytes=95.48k refused=0
+plan_job/expectation_ising/small_stddev                          2.94 us         2.93 us            5 alloc_bytes=0 allocs=0 peak_bytes=26.7731 refused=0
+plan_job/expectation_ising/small_cv                              1.33 %          1.33 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/expectation_ising/medium_mean                           2466 us         2466 us            5 alloc_bytes=2.19979M allocs=11.668k peak_bytes=631.299k refused=0
+plan_job/expectation_ising/medium_median                         2465 us         2465 us            5 alloc_bytes=2.19979M allocs=11.668k peak_bytes=631.312k refused=0
+plan_job/expectation_ising/medium_stddev                         58.1 us         58.0 us            5 alloc_bytes=0 allocs=0 peak_bytes=34.6872 refused=0
+plan_job/expectation_ising/medium_cv                             2.36 %          2.35 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_ising/large_mean                           11491 us        11468 us            5 alloc_bytes=8.54542M allocs=32.394k peak_bytes=3.07356M refused=0
+plan_job/expectation_ising/large_median                         11515 us        11443 us            5 alloc_bytes=8.54542M allocs=32.394k peak_bytes=3.07357M refused=0
+plan_job/expectation_ising/large_stddev                           139 us          137 us            5 alloc_bytes=0 allocs=0 peak_bytes=45.817 refused=0
+plan_job/expectation_ising/large_cv                              1.21 %          1.19 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/expectation_heisenberg/small_mean                        223 us          222 us            5 alloc_bytes=274.458k allocs=2.445k peak_bytes=96.2128k refused=0
+plan_job/expectation_heisenberg/small_median                      223 us          223 us            5 alloc_bytes=274.458k allocs=2.445k peak_bytes=96.232k refused=0
+plan_job/expectation_heisenberg/small_stddev                     2.67 us         2.59 us            5 alloc_bytes=0 allocs=0 peak_bytes=49.8317 refused=0
+plan_job/expectation_heisenberg/small_cv                         1.20 %          1.17 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.05% refused=0.00%
+plan_job/expectation_heisenberg/medium_mean                      2519 us         2519 us            5 alloc_bytes=2.20237M allocs=11.724k peak_bytes=632.867k refused=0
+plan_job/expectation_heisenberg/medium_median                    2516 us         2516 us            5 alloc_bytes=2.20237M allocs=11.724k peak_bytes=632.896k refused=0
+plan_job/expectation_heisenberg/medium_stddev                    62.8 us         62.8 us            5 alloc_bytes=0 allocs=0 peak_bytes=90.0844 refused=0
+plan_job/expectation_heisenberg/medium_cv                        2.49 %          2.49 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_heisenberg/large_mean                      11626 us        11625 us            5 alloc_bytes=8.54947M allocs=32.482k peak_bytes=3.07631M refused=0
+plan_job/expectation_heisenberg/large_median                    11655 us        11653 us            5 alloc_bytes=8.54947M allocs=32.482k peak_bytes=3.07626M refused=0
+plan_job/expectation_heisenberg/large_stddev                      208 us          208 us            5 alloc_bytes=0 allocs=0 peak_bytes=88.6521 refused=0
+plan_job/expectation_heisenberg/large_cv                         1.79 %          1.79 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/expectation_random_paulis/small_mean                     227 us          227 us            5 alloc_bytes=274.274k allocs=2.441k peak_bytes=96.1424k refused=0
+plan_job/expectation_random_paulis/small_median                   225 us          225 us            5 alloc_bytes=274.274k allocs=2.441k peak_bytes=96.152k refused=0
+plan_job/expectation_random_paulis/small_stddev                  5.25 us         5.24 us            5 alloc_bytes=0 allocs=0 peak_bytes=60.5045 refused=0
+plan_job/expectation_random_paulis/small_cv                      2.31 %          2.31 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.06% refused=0.00%
+plan_job/expectation_random_paulis/medium_mean                   2490 us         2490 us            5 alloc_bytes=2.21307M allocs=11.948k peak_bytes=639.725k refused=0
+plan_job/expectation_random_paulis/medium_median                 2511 us         2511 us            5 alloc_bytes=2.21307M allocs=11.948k peak_bytes=639.728k refused=0
+plan_job/expectation_random_paulis/medium_stddev                 47.2 us         47.1 us            5 alloc_bytes=0 allocs=0 peak_bytes=57.0193 refused=0
+plan_job/expectation_random_paulis/medium_cv                     1.90 %          1.89 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_random_paulis/large_mean                   11733 us        11732 us            5 alloc_bytes=8.61159M allocs=33.81k peak_bytes=3.11659M refused=0
+plan_job/expectation_random_paulis/large_median                 11746 us        11745 us            5 alloc_bytes=8.61159M allocs=33.81k peak_bytes=3.11661M refused=0
+plan_job/expectation_random_paulis/large_stddev                   192 us          192 us            5 alloc_bytes=0 allocs=0 peak_bytes=60.5045 refused=0
+plan_job/expectation_random_paulis/large_cv                      1.64 %          1.64 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/expectation_ising_budgeted/small_mean                    228 us          228 us            5 alloc_bytes=273.342k allocs=2.421k peak_bytes=95.4896k refused=0
+plan_job/expectation_ising_budgeted/small_median                  228 us          228 us            5 alloc_bytes=273.342k allocs=2.421k peak_bytes=95.496k refused=0
+plan_job/expectation_ising_budgeted/small_stddev                 3.55 us         3.29 us            5 alloc_bytes=0 allocs=0 peak_bytes=33.1783 refused=0
+plan_job/expectation_ising_budgeted/small_cv                     1.55 %          1.45 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/expectation_ising_budgeted/medium_mean                  2508 us         2508 us            5 alloc_bytes=2.19979M allocs=11.668k peak_bytes=631.267k refused=0
+plan_job/expectation_ising_budgeted/medium_median                2515 us         2515 us            5 alloc_bytes=2.19979M allocs=11.668k peak_bytes=631.248k refused=0
+plan_job/expectation_ising_budgeted/medium_stddev                48.0 us         48.0 us            5 alloc_bytes=0 allocs=0 peak_bytes=34.6872 refused=0
+plan_job/expectation_ising_budgeted/medium_cv                    1.91 %          1.91 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_ising_budgeted/large_mean                  11695 us        11695 us            5 alloc_bytes=8.54542M allocs=32.394k peak_bytes=3.07363M refused=0
+plan_job/expectation_ising_budgeted/large_median                11629 us        11629 us            5 alloc_bytes=8.54542M allocs=32.394k peak_bytes=3.07363M refused=0
+plan_job/expectation_ising_budgeted/large_stddev                  157 us          156 us            5 alloc_bytes=0 allocs=0 peak_bytes=34.6871 refused=0
+plan_job/expectation_ising_budgeted/large_cv                     1.34 %          1.34 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_clifford/small_mean                               129 us          129 us            5 alloc_bytes=76.628k allocs=1.422k peak_bytes=67.6768k refused=0
+plan_job/counts_clifford/small_median                             128 us          128 us            5 alloc_bytes=76.628k allocs=1.422k peak_bytes=67.68k refused=0
+plan_job/counts_clifford/small_stddev                            2.11 us         2.11 us            5 alloc_bytes=0 allocs=0 peak_bytes=17.5271 refused=0
+plan_job/counts_clifford/small_cv                                1.64 %          1.64 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/counts_clifford/medium_mean                             1833 us         1833 us            5 alloc_bytes=1.15544M allocs=21.109k peak_bytes=1.03855M refused=0
+plan_job/counts_clifford/medium_median                           1853 us         1853 us            5 alloc_bytes=1.15544M allocs=21.109k peak_bytes=1.03856M refused=0
+plan_job/counts_clifford/medium_stddev                           52.2 us         52.2 us            5 alloc_bytes=0 allocs=0 peak_bytes=18.2428 refused=0
+plan_job/counts_clifford/medium_cv                               2.85 %          2.85 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_clifford/large_mean                             15525 us        15501 us            5 alloc_bytes=14.4686M allocs=199.274k peak_bytes=11.9068M refused=0
+plan_job/counts_clifford/large_median                           15533 us        15533 us            5 alloc_bytes=14.4686M allocs=199.274k peak_bytes=11.9068M refused=0
+plan_job/counts_clifford/large_stddev                            58.5 us         94.7 us            5 alloc_bytes=0 allocs=0 peak_bytes=34.6872 refused=0
+plan_job/counts_clifford/large_cv                                0.38 %          0.61 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_random_pairs/small_mean                           275 us          275 us            5 alloc_bytes=66.82k allocs=1.298k peak_bytes=55.6896k refused=0
+plan_job/counts_random_pairs/small_median                         277 us          277 us            5 alloc_bytes=66.82k allocs=1.298k peak_bytes=55.696k refused=0
+plan_job/counts_random_pairs/small_stddev                        5.88 us         5.88 us            5 alloc_bytes=0 allocs=0 peak_bytes=18.2428 refused=0
+plan_job/counts_random_pairs/small_cv                            2.14 %          2.14 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/counts_random_pairs/medium_mean                         4871 us         4871 us            5 alloc_bytes=246.863k allocs=3.599k peak_bytes=119.904k refused=1
+plan_job/counts_random_pairs/medium_median                       4867 us         4867 us            5 alloc_bytes=246.863k allocs=3.599k peak_bytes=119.904k refused=1
+plan_job/counts_random_pairs/medium_stddev                       62.5 us         62.8 us            5 alloc_bytes=0 allocs=0 peak_bytes=25.2982 refused=0
+plan_job/counts_random_pairs/medium_cv                           1.28 %          1.29 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+plan_job/counts_random_pairs/large_mean                          1284 us         1284 us            5 alloc_bytes=591.341k allocs=6.673k peak_bytes=477.246k refused=1
+plan_job/counts_random_pairs/large_median                        1288 us         1288 us            5 alloc_bytes=591.341k allocs=6.673k peak_bytes=477.24k refused=1
+plan_job/counts_random_pairs/large_stddev                        20.6 us         20.4 us            5 alloc_bytes=0 allocs=0 peak_bytes=33.1783 refused=0
+plan_job/counts_random_pairs/large_cv                            1.60 %          1.59 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_random_pairs_controlled/small_mean           886 us          886 us            5 alloc_bytes=372.446k allocs=3.251k peak_bytes=124.958k refused=0
+plan_job/expectation_random_pairs_controlled/small_median         882 us          881 us            5 alloc_bytes=372.446k allocs=3.251k peak_bytes=124.952k refused=0
+plan_job/expectation_random_pairs_controlled/small_stddev        12.2 us         12.2 us            5 alloc_bytes=0 allocs=0 peak_bytes=26.7731 refused=0
+plan_job/expectation_random_pairs_controlled/small_cv            1.37 %          1.38 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+plan_job/expectation_random_pairs_controlled/medium_mean        14668 us        14666 us            5 alloc_bytes=3.08591M allocs=18.626k peak_bytes=1.50662M refused=0
+plan_job/expectation_random_pairs_controlled/medium_median      14656 us        14652 us            5 alloc_bytes=3.08591M allocs=18.626k peak_bytes=1.50658M refused=0
+plan_job/expectation_random_pairs_controlled/medium_stddev        257 us          257 us            5 alloc_bytes=0 allocs=0 peak_bytes=113.476 refused=0
+plan_job/expectation_random_pairs_controlled/medium_cv           1.75 %          1.76 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_random_pairs_controlled/large_mean        104523 us       104521 us            5 alloc_bytes=22.8698M allocs=73.125k peak_bytes=15.9352M refused=0
+plan_job/expectation_random_pairs_controlled/large_median      105773 us       105774 us            5 alloc_bytes=22.8698M allocs=73.125k peak_bytes=15.9352M refused=0
+plan_job/expectation_random_pairs_controlled/large_stddev        2780 us         2785 us            5 alloc_bytes=0 allocs=0 peak_bytes=33.1774 refused=0
+plan_job/expectation_random_pairs_controlled/large_cv            2.66 %          2.66 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_factorized/small_mean                            90.0 us         90.0 us            5 alloc_bytes=56.658k allocs=1.003k peak_bytes=33.704k refused=0
+plan_job/counts_factorized/small_median                          90.6 us         90.6 us            5 alloc_bytes=56.658k allocs=1.003k peak_bytes=33.688k refused=0
+plan_job/counts_factorized/small_stddev                          1.19 us         1.20 us            5 alloc_bytes=0 allocs=0 peak_bytes=27.7128 refused=0
+plan_job/counts_factorized/small_cv                              1.33 %          1.33 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.08% refused=0.00%
+plan_job/counts_factorized/medium_mean                            956 us          956 us            5 alloc_bytes=515.38k allocs=7.608k peak_bytes=267.051k refused=0
+plan_job/counts_factorized/medium_median                          947 us          947 us            5 alloc_bytes=515.38k allocs=7.608k peak_bytes=267.064k refused=0
+plan_job/counts_factorized/medium_stddev                         13.7 us         13.7 us            5 alloc_bytes=0 allocs=0 peak_bytes=36.4856 refused=0
+plan_job/counts_factorized/medium_cv                             1.44 %          1.43 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/counts_factorized/large_mean                            4063 us         4063 us            5 alloc_bytes=2.01929M allocs=30.125k peak_bytes=1.05561M refused=0
+plan_job/counts_factorized/large_median                          4087 us         4087 us            5 alloc_bytes=2.01929M allocs=30.125k peak_bytes=1.05559M refused=0
+plan_job/counts_factorized/large_stddev                          62.4 us         62.4 us            5 alloc_bytes=0 allocs=0 peak_bytes=50.0879 refused=0
+plan_job/counts_factorized/large_cv                              1.53 %          1.54 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/expectation_factorized/small_mean                        198 us          198 us            5 alloc_bytes=257.245k allocs=2.353k peak_bytes=66.04k refused=0
+plan_job/expectation_factorized/small_median                      199 us          199 us            5 alloc_bytes=257.245k allocs=2.353k peak_bytes=66.04k refused=0
+plan_job/expectation_factorized/small_stddev                     3.06 us         3.05 us            5 alloc_bytes=0 allocs=0 peak_bytes=16 refused=0
+plan_job/expectation_factorized/small_cv                         1.54 %          1.54 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+plan_job/expectation_factorized/medium_mean                      1735 us         1735 us            5 alloc_bytes=1.80949M allocs=12.782k peak_bytes=422.006k refused=0
+plan_job/expectation_factorized/medium_median                    1738 us         1738 us            5 alloc_bytes=1.80949M allocs=12.782k peak_bytes=422k refused=0
+plan_job/expectation_factorized/medium_stddev                    23.0 us         23.0 us            5 alloc_bytes=0 allocs=0 peak_bytes=26.7731 refused=0
+plan_job/expectation_factorized/medium_cv                        1.33 %          1.33 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_factorized/large_mean                       7729 us         7729 us            5 alloc_bytes=6.66064M allocs=47.916k peak_bytes=1.62424M refused=0
+plan_job/expectation_factorized/large_median                     7753 us         7753 us            5 alloc_bytes=6.66064M allocs=47.916k peak_bytes=1.62418M refused=0
+plan_job/expectation_factorized/large_stddev                      143 us          143 us            5 alloc_bytes=0 allocs=0 peak_bytes=121.537 refused=0
+plan_job/expectation_factorized/large_cv                         1.85 %          1.85 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_cut/small_mean                               205 us          205 us            5 alloc_bytes=297.877k allocs=2.406k peak_bytes=77.6352k refused=0
+plan_job/expectation_cut/small_median                             205 us          205 us            5 alloc_bytes=297.877k allocs=2.406k peak_bytes=77.648k refused=0
+plan_job/expectation_cut/small_stddev                            3.47 us         3.47 us            5 alloc_bytes=0 allocs=0 peak_bytes=41.415 refused=0
+plan_job/expectation_cut/small_cv                                1.69 %          1.69 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.05% refused=0.00%
+plan_job/expectation_cut/medium_mean                             1333 us         1333 us            5 alloc_bytes=1.22402M allocs=7.413k peak_bytes=354.07k refused=0
+plan_job/expectation_cut/medium_median                           1335 us         1335 us            5 alloc_bytes=1.22402M allocs=7.413k peak_bytes=354.032k refused=0
+plan_job/expectation_cut/medium_stddev                           27.8 us         27.8 us            5 alloc_bytes=0 allocs=0 peak_bytes=121.115 refused=0
+plan_job/expectation_cut/medium_cv                               2.09 %          2.09 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/expectation_cut/large_mean                              6160 us         6159 us            5 alloc_bytes=4.56538M allocs=19.804k peak_bytes=1.41954M refused=0
+plan_job/expectation_cut/large_median                            6167 us         6167 us            5 alloc_bytes=4.56538M allocs=19.804k peak_bytes=1.41953M refused=0
+plan_job/expectation_cut/large_stddev                            82.4 us         82.5 us            5 alloc_bytes=0 allocs=0 peak_bytes=53.066 refused=0
+plan_job/expectation_cut/large_cv                                1.34 %          1.34 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.00% refused=0.00%
+plan_job/counts_noisy_density_matrix/small_mean                  18.6 us         18.6 us            5 alloc_bytes=28.395k allocs=479 peak_bytes=27.8992k refused=0
+plan_job/counts_noisy_density_matrix/small_median                18.6 us         18.6 us            5 alloc_bytes=28.395k allocs=479 peak_bytes=27.912k refused=0
+plan_job/counts_noisy_density_matrix/small_stddev               0.334 us        0.333 us            5 alloc_bytes=0 allocs=0 peak_bytes=51.0999 refused=0
+plan_job/counts_noisy_density_matrix/small_cv                    1.79 %          1.79 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.18% refused=0.00%
+plan_job/counts_noisy_density_matrix/medium_mean                 78.7 us         78.7 us            5 alloc_bytes=111.479k allocs=1.897k peak_bytes=112.742k refused=0
+plan_job/counts_noisy_density_matrix/medium_median               78.2 us         78.2 us            5 alloc_bytes=111.479k allocs=1.897k peak_bytes=112.72k refused=0
+plan_job/counts_noisy_density_matrix/medium_stddev               1.32 us         1.32 us            5 alloc_bytes=0 allocs=0 peak_bytes=86.6072 refused=0
+plan_job/counts_noisy_density_matrix/medium_cv                   1.68 %          1.68 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.08% refused=0.00%
+plan_job/counts_noisy_density_matrix/large_mean                   204 us          204 us            5 alloc_bytes=263.292k allocs=4.765k peak_bytes=276.374k refused=0
+plan_job/counts_noisy_density_matrix/large_median                 205 us          205 us            5 alloc_bytes=263.292k allocs=4.765k peak_bytes=276.384k refused=0
+plan_job/counts_noisy_density_matrix/large_stddev                2.88 us         2.89 us            5 alloc_bytes=0 allocs=0 peak_bytes=83.599 refused=0
+plan_job/counts_noisy_density_matrix/large_cv                    1.41 %          1.42 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.03% refused=0.00%
+plan_job/counts_noisy_trajectory/small_mean                      40.0 us         40.0 us            5 alloc_bytes=59.315k allocs=988 peak_bytes=58.9328k refused=0
+plan_job/counts_noisy_trajectory/small_median                    40.3 us         40.3 us            5 alloc_bytes=59.315k allocs=988 peak_bytes=58.952k refused=0
+plan_job/counts_noisy_trajectory/small_stddev                   0.497 us        0.497 us            5 alloc_bytes=0 allocs=0 peak_bytes=49.8317 refused=0
+plan_job/counts_noisy_trajectory/small_cv                        1.24 %          1.24 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.08% refused=0.00%
+plan_job/counts_noisy_trajectory/medium_mean                      122 us          122 us            5 alloc_bytes=187.684k allocs=2.898k peak_bytes=181.587k refused=0
+plan_job/counts_noisy_trajectory/medium_median                    122 us          122 us            5 alloc_bytes=187.684k allocs=2.898k peak_bytes=181.584k refused=0
+plan_job/counts_noisy_trajectory/medium_stddev                   1.16 us         1.16 us            5 alloc_bytes=0 allocs=0 peak_bytes=100.813 refused=0
+plan_job/counts_noisy_trajectory/medium_cv                       0.95 %          0.95 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.06% refused=0.00%
+plan_job/counts_noisy_trajectory/large_mean                       276 us          276 us            5 alloc_bytes=400.137k allocs=6.425k peak_bytes=395.586k refused=0
+plan_job/counts_noisy_trajectory/large_median                     277 us          277 us            5 alloc_bytes=400.137k allocs=6.425k peak_bytes=395.592k refused=0
+plan_job/counts_noisy_trajectory/large_stddev                    8.49 us         8.50 us            5 alloc_bytes=0 allocs=0 peak_bytes=46.0956 refused=0
+plan_job/counts_noisy_trajectory/large_cv                        3.07 %          3.07 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.01% refused=0.00%
+plan_job/expectation_50_terms/n20_d10_mean                       1737 us         1737 us            5 alloc_bytes=1.33843M allocs=8.175k peak_bytes=383.392k refused=0
+plan_job/expectation_50_terms/n20_d10_median                     1743 us         1742 us            5 alloc_bytes=1.33843M allocs=8.175k peak_bytes=383.408k refused=0
+plan_job/expectation_50_terms/n20_d10_stddev                     24.3 us         24.3 us            5 alloc_bytes=0 allocs=0 peak_bytes=81.5843 refused=0
+plan_job/expectation_50_terms/n20_d10_cv                         1.40 %          1.40 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+plan_job/expectation_50_terms_budgeted/n20_d10_mean              1684 us         1684 us            5 alloc_bytes=1.33843M allocs=8.175k peak_bytes=383.334k refused=0
+plan_job/expectation_50_terms_budgeted/n20_d10_median            1683 us         1683 us            5 alloc_bytes=1.33843M allocs=8.175k peak_bytes=383.312k refused=0
+plan_job/expectation_50_terms_budgeted/n20_d10_stddev            10.3 us         10.3 us            5 alloc_bytes=0 allocs=0 peak_bytes=77.2321 refused=0
+plan_job/expectation_50_terms_budgeted/n20_d10_cv                0.61 %          0.61 %             5 alloc_bytes=0.00% allocs=0.00% peak_bytes=0.02% refused=0.00%
+cache_hit/statevector_brickwork/medium_mean                       127 us          127 us            5 hits=2.194k misses=1
+cache_hit/statevector_brickwork/medium_median                     128 us          128 us            5 hits=2.194k misses=1
+cache_hit/statevector_brickwork/medium_stddev                    1.50 us         1.50 us            5 hits=0 misses=0
+cache_hit/statevector_brickwork/medium_cv                        1.18 %          1.17 %             5 hits=0.00% misses=0.00%
+cache_hit/counts_brickwork/large_mean                             380 us          380 us            5 hits=756 misses=1
+cache_hit/counts_brickwork/large_median                           381 us          381 us            5 hits=756 misses=1
+cache_hit/counts_brickwork/large_stddev                          8.14 us         8.14 us            5 hits=0 misses=0
+cache_hit/counts_brickwork/large_cv                              2.14 %          2.15 %             5 hits=0.00% misses=0.00%
+cache_hit/expectation_ising/medium_mean                           130 us          130 us            5 hits=2.2k misses=1
+cache_hit/expectation_ising/medium_median                         130 us          130 us            5 hits=2.2k misses=1
+cache_hit/expectation_ising/medium_stddev                        2.73 us         2.73 us            5 hits=0 misses=0
+cache_hit/expectation_ising/medium_cv                            2.10 %          2.10 %             5 hits=0.00% misses=0.00%

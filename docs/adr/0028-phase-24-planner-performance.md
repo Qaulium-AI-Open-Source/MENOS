@@ -1830,3 +1830,151 @@ it either completes or throws `ResourceExceeded`.
 - **Output.** Raw runs go in `docs/benchmarks/phase-24/step1/`. Tables are
   copied into a new section 16.10, and the owner sets the performance
   thresholds from them.
+
+### 16.10 Step 1: the baseline — [MEASURED]
+
+**Code.** Benchmark code only; no library behaviour changed.
+- `ddec28d` and `8537681` add:
+  - `benchmarks/cost_model_accuracy_benchmark.cpp`;
+  - `benchmarks/dense_rate_probe.cpp`;
+  - the 50-term planning case in `benchmarks/planner_benchmark.cpp`;
+  - min-fill counters, under `MENOS_PLANNER_COUNTERS` only;
+  - `bench/tools/accuracy_table.py`.
+- Raw runs are in `docs/benchmarks/phase-24/step1/{windows,linux}/`.
+
+**Conditions.** The same laptop for both: Intel Core Ultra 7 155H, 22 threads, mains power checked before every round (`load.log`).
+
+| | Windows | Linux |
+|---|---|---|
+| OS | Windows 11 | WSL Ubuntu 26.04 |
+| Compiler | MSVC 14.50 | GCC 15.2 |
+| Build | `build/windows-bench` | `build/cuda12-release`, so CUDA rows on the RTX 4060 Laptop GPU |
+| Accuracy runs | three separate processes | three separate processes |
+| Planner benchmark | 5 repetitions | 5 repetitions |
+
+**A run discarded.** A first Windows run, on 2026-11-06 at about 00:57, was on battery. Its calibrations differed 2.7× between processes. It was discarded, not recorded.
+
+#### 16.10.1 Item 1: actual over predicted, per engine
+
+Statistics are over every workload of Q1 and all three processes. Ratio r = actual / predicted. Error is |ln r|: 0.182 is a factor of 1.2, 0.405 a factor of 1.5.
+
+**Linux (WSL):**
+
+| Engine | n | median abs(ln r) (factor) | P90 abs(ln r) (factor) | median r | min..max r | under / over | bias ln r |
+|---|---|---|---|---|---|---|---|
+| dense (CPU) | 27 | 0.297 (1.35x) | 0.539 (1.71x) | 1.33 | 0.577..1.75 | 18 / 9 | +0.287 |
+| dense (CUDA) | 6 | 0.067 (1.07x) | 0.210 (1.23x) | 0.936 | 0.811..0.977 | 0 / 6 | -0.067 |
+| density matrix | 9 | 0.900 (2.46x) | 0.922 (2.51x) | 0.407 | 0.398..1.13 | 3 / 6 | -0.900 |
+| factorized | 6 | 0.414 (1.51x) | 0.721 (2.06x) | 1.58 | 1.03..2.06 | 6 / 0 | +0.414 |
+| MPS | 18 | 2.518 (12.4x) | 4.028 (56.2x) | 21.7 | 0.796..57.3 | 15 / 3 | +2.518 |
+| Pauli | 18 | 2.017 (7.52x) | 4.323 (75.5x) | 0.409 | 0.0126..9.58 | 6 / 12 | -1.077 |
+| stabilizer | 12 | 2.156 (8.63x) | 3.361 (28.8x) | 11.0 | 0.852..29.0 | 9 / 3 | +2.156 |
+| tensor network | 6 | 1.595 (4.93x) | 1.618 (5.04x) | 4.93 | 4.90..5.04 | 6 / 0 | +1.595 |
+| trajectory | 6 | 0.412 (1.51x) | 0.417 (1.52x) | 1.51 | 1.47..1.52 | 6 / 0 | +0.412 |
+
+**Windows:**
+
+| Engine | n | median abs(ln r) (factor) | P90 abs(ln r) (factor) | median r | min..max r | under / over | bias ln r |
+|---|---|---|---|---|---|---|---|
+| dense (CPU) | 27 | 0.818 (2.27x) | 1.519 (4.57x) | 0.441 | 0.194..1.50 | 1 / 26 | -0.818 |
+| density matrix | 9 | 1.099 (3.00x) | 1.372 (3.94x) | 0.333 | 0.254..2.17 | 2 / 7 | -1.099 |
+| factorized | 9 | 0.868 (2.38x) | 2.233 (9.33x) | 0.630 | 0.32..9.33 | 3 / 6 | -0.463 |
+| MPS | 18 | 2.872 (17.7x) | 5.491 (242x) | 20.1 | 1.35..264 | 18 / 0 | +2.872 |
+| Pauli | 18 | 1.961 (7.10x) | 4.829 (125x) | 0.270 | 0.00705..16.5 | 7 / 11 | -1.326 |
+| stabilizer | 12 | 2.519 (12.4x) | 3.533 (34.2x) | 12.9 | 0.383..63.1 | 10 / 2 | +2.519 |
+| tensor network | 6 | 2.503 (12.2x) | 2.693 (14.8x) | 12.2 | 4.13..14.8 | 6 / 0 | +2.503 |
+| trajectory | 6 | 0.616 (1.85x) | 1.190 (3.29x) | 2.05 | 1.12..3.29 | 6 / 0 | +0.616 |
+
+**Not measured:**
+- **CUDA on Windows.** It is refused at configure time (Phase 18).
+- **Cut-and-recombine, on any workload.** The planner never chose it on any workload tried:
+  - two blocks joined by one CX (the golden corpus's `expectation_cut` family);
+  - the same blocks scrambled by long-range pairs;
+  - a highly connected circuit;
+  - each of these under a 2 MiB memory budget.
+
+  MPS, the tensor network or dense was always cheaper. Under the tight budget, the cut fragments needed slightly more memory than MPS did (for example 3.68 MB against 3.52 MB at w = 12). The golden corpus never plans a cut either. A cut plan cannot be built by hand faithfully, so the cut time model has no measurement.
+- **Two tensor-network rows.** `random_pairs_d6_ising/n24` stopped at the memory budget.
+
+**What the numbers say:**
+- **Variation between processes.**
+  - **Linux** is reproducible: the three processes agree within about 5% per workload, and the three calibrations within 1%.
+  - **Windows** is not. The three calibrations of the dense rate gave 1.05, 1.35 and 1.56 × 10⁹ work units/s, and per-workload ratios move with them (for example MPS `ising_trotter_s4/n32`: 93, 37 and 242).
+
+  A Windows figure is therefore a factor of 1.5 or more noisier than a Linux one, before any model error.
+- **Dense CPU.**
+  - **Linux** underpredicts by about 1.3–1.7× at 16–24 qubits on random brickwork and GHZ. QFT is within 0.8–0.97.
+  - **Windows** overpredicts by about 2–5× at 20–24 qubits.
+  - The two platforms differ because the 13-qubit single-thread calibration is about 3× slower under MSVC (0.78–1.6 × 10⁹) than under GCC (2.2 × 10⁹). The jobs themselves are much closer in speed.
+- **Dense CUDA** is the one model within the owner's provisional target: median 1.07×, P90 1.23×.
+- **MPS** underpredicts by 20–57× on Linux, worst on the low-entanglement Trotter circuits (40–56×), where every bond is small.
+  - Its per-gate cost is therefore dominated by something the χ³ term does not see: a fixed per-gate cost of the SVD and its allocations.
+  - Charging each gate at its own bond instead of the peak, as the BUILD_PLAN proposal suggested, would make the estimate smaller still, so it would move the prediction the wrong way. **[DERIVED]**
+- **Stabilizer** underpredicts by 18–29× on depth-100 random Clifford circuits (n = 256, 1000), but by only 0.85–4× on graph states. The error grows with the gate count, not with n.
+- **Pauli propagation.** The prediction grows about 4× per added non-Clifford rotation, as the worst-case branching bound charges it. The measured time stays flat at 20–35 ms. Its error runs from underprediction by 9.5× (2 rotations) to overprediction by 75× (12 rotations).
+- **Tensor network** underpredicts by about 5× (Linux), consistently. Its predictions come from the formula: the candidate was pruned, and the engine's own estimate gives the figure.
+- **Density matrix** overpredicts by about 2.5× at 10–12 qubits. **Trajectory** underpredicts by about 1.5×.
+- **Factorized** is within 1.03–2.06× on Linux.
+
+#### 16.10.2 Item 2: planning cost
+
+**Planning time** (`plan_job` alone, the hand-built profile, median of 5):
+- **The 50-term case** (20 qubits, depth 10, 50 random Pauli terms, a benchmark-only job): 1.7 ms on Linux and 6.1 ms on Windows, with or without a time budget. It took 4.4 s on 2026-11-02, before branch-and-bound.
+- **The slowest corpus job** is `expectation_random_pairs_controlled/large`: 106 ms on Linux and 488 ms on Windows. That is the Schmidt-rank analysis behind the MPS estimate, with one min-fill search.
+- **Every other job** plans in under 16 ms on Linux.
+
+**Min-fill search** (the `MENOS_PLANNER_COUNTERS` build, Linux):
+- At most 7,796 elimination steps in one job, over at most 2 searches.
+- Every search in the corpus either completed or was stopped early by branch-and-bound.
+- No search runs long enough for a cap to matter. **[DERIVED]**
+
+#### 16.10.3 Item 9: the dense rate by size and threads, and the disk link
+
+`menos_dense_rate_probe`, work units/s, is the calibration's own circuit shape at each size. The threading threshold is 2^16 groups, reached at 17 qubits.
+
+| Qubits | Linux, 1 thread | Linux, 22 threads | Windows, 1 thread | Windows, 22 threads |
+|---|---|---|---|---|
+| 13 | 2.24e9 | 2.29e9 | 0.78e9 | 1.08e9 |
+| 16 | 2.26e9 | 1.84e9 | 0.54e9 | 0.84e9 |
+| 17 | 1.95e9 | 1.24e9 | 0.74e9 | 0.75e9 |
+| 18 | 2.11e9 | 2.49e9 | 0.70e9 | 2.79e9 |
+| 20 | 1.83e9 | **5.34e9** | 0.68e9 | **3.48e9** |
+| 22 | 1.28e9 | 4.62e9 | 0.47e9 | 1.43e9 |
+
+- **The threaded rate is not flat.** Q7 asked for the 20-qubit rate to be validated against 18 and 22 qubits. It is not flat there: on Windows it falls 2.4× from 20 to 22 qubits (the state leaves the last-level cache), and on Linux 1.16×.
+- **The cost of a 20-qubit threaded measurement** is 0.13 s (Linux) and 0.19 s (Windows). Today's whole calibration costs about 0.1 s.
+- **A threaded rate would not fix in-memory dense jobs on Linux.**
+  - The dense jobs at 20–24 qubits ran *slower* than the single-thread calibration predicts, even on 22 threads (ratio 1.33–1.7).
+  - Pricing them at the threaded rate would multiply that underprediction by about 2–2.4×, to roughly 3–3.5×.
+  - On Windows the same change would move the 20–22-qubit ratios from 0.2–0.45 to about 0.45–0.6.
+  - The jobs' gate mix (RY/RZ/CX brickwork, QFT's CP) runs more slowly per work unit than the calibration's H/CX at these sizes, so a single dense rate cannot fit both platforms. **[DERIVED]**
+- **Disk link.**
+  - **Measured bandwidths:**
+    - Linux (ext4 under WSL): write 1.42 GB/s, read 5.40 GB/s.
+    - Windows: write 3.62 GB/s, read 4.47 GB/s.
+  - **Traffic.** In the Phase 23 gate runs, 88–89% of the link bytes are reads. The executor writes the file 1 + passes times and reads it passes + outputs times.
+- **The Phase 23 disk-tier runs re-priced offline** from their recorded figures (work time = recorded prediction − link / min(write, read); threaded factor = this probe's 22-qubit threaded rate over its 13-qubit single-thread rate):
+
+  | Run | n | Measured s | Today | Split read/write | Threaded rate | Both |
+  |---|---|---|---|---|---|---|
+  | Windows a0 | 31 | 915.4 | 1.17 | 1.27 | 1.64 | 1.84 |
+  | Windows a | 31 | 479.7 | 0.58 | 0.63 | 0.82 | 0.92 |
+  | Windows b | 31 | 765.2 | 0.89 | 0.97 | 1.25 | 1.40 |
+  | Windows c | 31 | 439.5 | 0.51 | 0.56 | 0.71 | 0.81 |
+  | WSL a | 30 | 155.6 | **0.35** | 0.39 | 0.54 | **0.62** |
+
+  The figures are measured over predicted. Only the two changes together bring every run, the WSL miss included, within the Phase 23 2× bound. **[DERIVED]**
+
+#### 16.10.4 Recommendations for checkpoint A — [OPEN]
+
+These recommendations decide what the remaining items do.
+- **Q4, the search cap: none.** The case that motivated it plans in 2–6 ms, and no search in the corpus needs a cap.
+- **Item 9: build the threaded rate and the split link for the disk tier only.** Leave the in-memory dense price on today's rate.
+  - The measurement supports the change where the state is far beyond the cache (29–31 qubits) and contradicts it at 20–24 qubits on Linux.
+  - The size-dependent gap between the calibration circuit and real gate mixes is a cost-model question, recorded for a later item, not guessed at here.
+- **MPS: do not build per-gate bonds.** That would make an already 20–57× optimistic estimate more optimistic. A per-gate fixed cost measured from the Trotter rows would address the observed error, but it is a new modelling term needing its own measured derivation, and it is proposed as a separate item.
+- **Q2 thresholds.**
+  - Only the CUDA dense model meets the provisional target (median 20%, P90 50%).
+  - Recommended for this phase's gate: record the table as the baseline, and require that items 2, 3 and 9 make no engine's median or P90 error worse on Linux.
+  - The disk tier must meet the Phase 23 2× bound on the Phase 23 circuits on both platforms.
+  - Per-engine model fixes (stabilizer, MPS, Pauli, tensor network, density matrix) are a follow-on phase whose targets are set from this table.
