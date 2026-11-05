@@ -1404,3 +1404,239 @@ Not verified here: the fork's planning-time figures (sections 10–14) were
 not re-measured after the merge; the memory accounting adds to every
 estimate but not to the search. The CUDA presets' GPU tests skip on this
 driver, as in Phases 21–23.
+
+---
+
+## 16. Kickoff: planner accuracy (items 1, 2, 3 and 9) — [MENOS] / [OPEN]
+
+**Started by the owner on 2026-11-05** on branch `phase-24-planner-accuracy`
+from `main` at `65e9c6c`. Items 1, 2, 3 and 9 of the `docs/BUILD_PLAN.md`
+proposal are in scope:
+- item 1, measure the cost model;
+- item 2, report and bound planning cost;
+- item 3, per-region observations;
+- item 9, threaded calibration and the disk link per direction.
+
+Items 4–8 are not started. The process is the usual one. The owner answers
+this section's questions (16.6) first. A plan is then approved. Step 1
+measures before any code changes. Nothing below is built.
+
+### 16.1 What the code does today — [MENOS], read from the source
+
+- **Cost-model benchmark.**
+  `benchmarks/cost_model_correlation_benchmark.cpp` covers the dense engine
+  only, on one family: one H layer plus CX on even pairs, n = 10–20.
+  - It times the whole public `menos::run`, planning included.
+  - It prints a Spearman rank correlation, not actual over predicted.
+  - The Phase 11 table came from a different harness that is not in the
+    repository. The table is in `docs/adr/0015` lines 25–46, and is repeated
+    in `docs/planning/cost-model.md` lines 69–74 and
+    `docs/reference/limitations.md` line 50.
+  - Stabilizer, density-matrix and trajectory have their own correlation
+    programs. MPS, factorized, cut and tensor network have none.
+- **MPS work formula.** `MPSEngine::estimate`
+  (`src/engines/mps/mps_engine.cpp` lines 97–153) charges every gate's local
+  updates at `model.max_bond`³. The bond replay
+  (`src/engines/mps/memory_model.cpp`, `Replay`) knows each gate's bonds
+  while it runs, but only `max_bond` and `final_bonds` leave it.
+- **Planning time** is not measured anywhere.
+  - `api::validate_and_plan` (`menos.cpp` line 117) calls
+    `plan::plan_job_cached`, which calls `plan_job` at `plan_cache.cpp`
+    lines 235 and 250. A cache hit, at line 244, does not plan.
+  - The replan controller calls `plan_job` again
+    (`replan_controller.cpp` line 172).
+  - `run_batch` plans through `run`.
+  - `replan_controller.h` lines 120–123 record that planning time is not
+    charged against the budget (0.05–85 ms measured).
+- **The tensor-network search has only two bounds:** the job's memory
+  budget and the branch-and-bound stop predicate (`analysis/treewidth.h`
+  lines 185–244).
+  - If no feasible cheaper candidate is in hand, the incumbent is "none"
+    (`planner.cpp` lines 562–576). The search then runs until it completes or
+    exceeds the memory budget.
+  - The 4.4 s case in `docs/BUILD_PLAN.md` ("Measured on 2026-11-02") has
+    not been re-measured since pruning was merged.
+- **Multi-region overruns.**
+  - `run_with_replanning` refuses any plan with more than one region
+    (`replan_controller.cpp` lines 155–161).
+  - Observations are one floor per `(Engine, Backend, Tier)`
+    (`runtime_observations.h`), and a floor is only ever raised.
+  - The factorized executor (`runtime.cpp` lines 199–412) knows each
+    region's engine, backend and tier at its `engine.execute` call
+    (line 313).
+  - The cut executor (lines 421–548) runs fragment assignments on
+    `(engine, Cpu, InMemory)`.
+  - Neither executor catches `ReplanRequested`. One timer spans each whole
+    loop.
+  - The termination argument in `replan_controller.cpp` lines 92–138
+    assumes single-region plans.
+- **Calibration.** `work_units_per_second` is measured on a 13-qubit,
+  2-layer circuit (`hardware_profile.cpp` lines 88–92 and 147–215).
+  - At 13 qubits a gate has at most 2^12 groups. The kernels thread only from
+    `kParallelMinGroups` = 2^16 groups (`src/kernels/dense_kernels.h`
+    line 99), so the calibration runs on one thread.
+  - The source comment's "under 1% across 12–16 qubits" is therefore a
+    statement about the single-thread rate only.
+  - Every dense job above about 17 qubits runs on every hardware thread.
+- **Disk-tier pricing.** The disk tier is priced at
+  `work / rate + link_bytes / min(write, read)` (`planner.cpp`
+  lines 422–445). The write and read bandwidths are already measured
+  separately (`hardware_profile.cpp` lines 307–356).
+
+### 16.2 Item 1: measure the cost model — [MENOS], proposed
+
+- **The program.** A new program, `benchmarks/cost_model_accuracy_benchmark.cpp`,
+  measures every engine. It does not use the correlation program above.
+- **Choosing the engine.** It forces each engine where forcing exists.
+  Otherwise it uses a circuit the planner gives to that engine, and checks
+  that the planner did.
+- **Measured time.** It times `execute_seconds + sample_seconds` from
+  `Result`. Planning is excluded.
+- **Predicted time.** The plan's `estimated_seconds`, from the calibrated
+  profile in the same process.
+- **What it prints.** Actual over predicted, as the median of 5 runs after a
+  warm-up.
+- **Engines covered.** Dense (CPU), MPS, stabilizer, factorized, cut and
+  tensor network. The circuit families are set by Q1.
+- **Where the output goes.** A table written to `docs/benchmarks/phase-24/`,
+  copied into this ADR and into `docs/planning/cost-model.md`, where it
+  replaces the Phase 11 table.
+- **The MPS formula.** It changes to per-gate bonds only if the measurement
+  shows the peak-bond charge is the error (Q2). The change is then measured
+  the same way.
+
+### 16.3 Item 2: report and bound planning cost — [MENOS], proposed
+
+- **What `Result::plan_seconds()` reports.** C++ `Result::plan_seconds()`,
+  Python `plan_seconds`. It is the wall time of the initial `plan_job_cached`
+  call plus every replan's `plan_job` call.
+- **How it is measured.** With `steady_clock`, in `validate_and_plan` and in
+  the replan controller. A cache hit reports its own (small) time.
+- **`explain()`.** It appends `plan_s=` to the `actual` line, after
+  `sample_s=`.
+- **Tests.** The timing normalisers in `tests/cli/golden_test.cpp`,
+  `tests/cli/qasm3_test.cpp` and `tests/api/explain_test.cpp` learn the new
+  field. The planner corpus goldens carry no `actual` line and are unchanged.
+- **`preview()`.** It does not execute and reports nothing (Q3).
+- **A cap on the tensor-network elimination search** is proposed only if
+  step 1 shows a case that still plans slowly after pruning.
+  - Step 1 re-runs the 20-qubit, depth-10, 50-term case and the planner
+    corpus, with `plan_seconds` reported.
+  - If a cap is needed, it is a node count derived from the measurement.
+  - It is never a time cap. A time cap would make the plan depend on machine
+    load and break deterministic plan choice.
+  - A capped search refuses the candidate with a named reason. It never
+    guesses the candidate's cost (Q4).
+
+### 16.4 Item 3: per-region observations — [MENOS], proposed
+
+- **Timing in the factorized executor.** It times each region's
+  `engine.execute`. On `ReplanRequested`, before rethrowing, it records:
+  - the elapsed time of every completed region;
+  - the elapsed time of the running region up to the crossing.
+- **What the controller raises.** It raises the floor of the overrunning
+  region's `(Engine, Backend, Tier)` to that region's own elapsed time,
+  never to the job's total. The floor stays a sound lower bound for that
+  engine on that region.
+- **Keying floors by region.**
+  - Today a floor is per engine, not per circuit. A region's floor applied to
+    another region of a different size is not a sound bound.
+  - Proposed: key the floor additionally by the region's qubit set, which
+    identifies the region within this job.
+  - The planner applies the floor to candidates whose region set contains
+    that same region.
+  - This keeps both "an observation only raises a figure" and soundness
+    (Q5).
+- **Termination.** The termination argument (`replan_controller.cpp`
+  lines 92–138) is extended, and written out in this ADR before code:
+  - each replan raises at least one floor to at least the budget;
+  - each floor has one of finitely many keys, (region, engine, backend,
+    tier);
+  - once its floor reaches the budget, that candidate is infeasible;
+  - so the number of replans is bounded by the number of keys.
+- **Cut plans.** Fragments run inside a recombination sum, and their elapsed
+  time can be attributed per fragment assignment in the same way. They are
+  in scope only if Q6 says so. Otherwise a cut overrun stays refused, with
+  the message unchanged.
+- **Tests.** The existing `ScriptedClock` (`tests/api/replan_test.cpp`)
+  drives an injected crossing in a two-region factorized job. The test checks
+  the replan, the recorded per-region observation and `explain()`'s replan
+  lines.
+
+### 16.5 Item 9: threaded calibration and the disk link per direction — [MENOS], proposed
+
+- **The threaded rate.** `work_units_per_second` is measured on a state
+  large enough to be threaded (proposed: 20 qubits, which gives 2^19 groups
+  per single-qubit gate; Q7).
+  - It uses the job's thread count and is deadline-bounded, as today.
+  - The 13-qubit single-thread rate is kept as a second field,
+    `work_units_per_second_single_thread`.
+- **Which rate prices a candidate.** The planner prices a dense candidate at
+  the rate for the thread count the kernel will actually use at that size:
+  - one thread below `kParallelMinGroups` groups;
+  - the threaded rate above it.
+
+  No interpolation constant is introduced. Both rates are used as measured.
+- **Calibration cost.** It rises: a 20-qubit state is 16 MiB, and its
+  circuit is timed to the same deadline. The rise is measured. The profile
+  stays cached once per process.
+- **Disk-tier pricing.**
+  - New formula: `work / rate + bytes_written / write + bytes_read / read`.
+  - This needs `tier_cost` to carry written and read bytes separately, in
+    place of today's `link_bytes`.
+  - The chunked pass executor reads and writes each chunk once per pass, so
+    the two byte counts are equal per pass. The change matters only when the
+    two bandwidths differ.
+  - It is re-measured on the Phase 23 gate circuits
+    (`docs/benchmarks/phase-23-gate/`) in WSL and on Windows. Actual over
+    predicted is reported beside the Phase 23 figures.
+- **Plan changes.**
+  - A faster dense rate changes `estimated_seconds`, so it can change which
+    plans fit a time budget.
+  - Ranking stays by work units (item 4 is not in scope), so unbudgeted
+    jobs keep their plans.
+  - The golden corpus and every `explain()` golden that prints seconds are
+    re-checked, and any change is listed.
+
+### 16.6 Owner questions — [OPEN]
+
+- **Q1, circuit families for item 1.** Proposed, by engine:
+  - random brickwork (H/T/CX), depth 10 and 20;
+  - QFT;
+  - a 1D Ising Trotter circuit (low entanglement, the MPS regime);
+  - random Clifford (stabilizer);
+  - two independent blocks (factorized);
+  - a two-block circuit joined by one CX (cut);
+  - the planner corpus's expectation jobs (tensor network).
+
+  n is chosen per engine so that one run takes 0.1–10 s.
+- **Q2, the factor each time model must meet.** Proposed: set after step 1,
+  from the measurement, per engine, as in Phases 15 and 16. The MPS formula
+  changes only if its ratio is outside that factor.
+- **Q3, `plan_seconds`.** Proposed: include replan planning time in the sum,
+  and also print each replan's planning time on its replan line; `preview()`
+  reports nothing. Alternative: the initial plan only.
+- **Q4, a search cap.** Proposed: only if step 1 shows a remaining slow
+  case. It is a node-count cap derived from the measurement, never a time
+  cap. A capped search refuses the tensor-network candidate with a named
+  reason.
+- **Q5, per-region floors keyed by region.** Proposed as in 16.4. The
+  alternative, one floor per engine applied to every region, is unsound for
+  regions of different size and is not recommended.
+- **Q6, cut plans in item 3.** Proposed: factorized only in this phase, and
+  cut overruns stay refused. Each cut fragment runs many assignments and the
+  recombination is CPU-only, so the gain is smaller.
+- **Q7, the threaded calibration size.** Proposed: 20 qubits, measured
+  against 18 and 22 qubits in step 1 to show the rate is flat there, as the
+  13-qubit choice was justified for one thread.
+- **Q8, gate.** Proposed criteria:
+  1. every engine's actual over predicted is recorded and within the Q2
+     factors;
+  2. `plan_seconds` is reported and tested;
+  3. the 50-term case plans under a bound set from step 1;
+  4. an injected-clock test shows a factorized overrun replanning;
+  5. the Phase 23 disk-tier ratio is re-measured in WSL and is within the
+     Phase 23 2× bound;
+  6. the golden planner corpus is unchanged;
+  7. results are bitwise identical;
+  8. `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
