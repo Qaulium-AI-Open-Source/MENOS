@@ -68,4 +68,4 @@ def from_qasm3(text: str, inputs: dict[str, float] | None = None) -> Circuit:
     return _core.from_qasm3(text, bindings)
 
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
