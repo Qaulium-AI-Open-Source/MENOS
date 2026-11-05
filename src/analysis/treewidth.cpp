@@ -6,6 +6,7 @@
 
 #include "analysis/bit_adjacency.h"
 #include "analysis/min_fill_queue.h"
+#include "analysis/planner_counters.h"
 
 #include <algorithm>
 #include <bit>
@@ -723,9 +724,18 @@ constexpr std::size_t kDenseMinFillMaxNodes = 23000;
 EliminationOrder estimate_treewidth_min_fill(const TensorNetworkGraph& graph,
                                              std::uint64_t max_peak_bytes,
                                              const MinFillStopPredicate& stop_after_step) {
-    return graph.num_nodes <= kDenseMinFillMaxNodes
-               ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes, stop_after_step)
-               : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes, stop_after_step);
+    EliminationOrder result =
+        graph.num_nodes <= kDenseMinFillMaxNodes
+            ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes, stop_after_step)
+            : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes, stop_after_step);
+#ifdef MENOS_PLANNER_COUNTERS
+    detail::planner_counters.minfill_searches += 1;
+    detail::planner_counters.minfill_steps += result.order.size();
+    detail::planner_counters.minfill_nodes += graph.num_nodes;
+    detail::planner_counters.minfill_stopped +=
+        (result.exceeded_budget || result.stopped_by_caller) ? 1U : 0U;
+#endif
+    return result;
 }
 
 std::uint64_t closed_timelines_bytes(const ClosedTimelines& timelines) {

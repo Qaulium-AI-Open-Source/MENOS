@@ -39,6 +39,12 @@ add_executable(menos_calibration_probe calibration_probe.cpp)
 target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
 target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 24 step 1, item 9 (docs/adr/0028 section 16.9): the dense work rate by
+# state size and thread count, and the scratch disk's write/read bandwidths.
+add_executable(menos_dense_rate_probe dense_rate_probe.cpp)
+target_link_libraries(menos_dense_rate_probe PRIVATE menos_plan menos_engines_dense)
+target_compile_options(menos_dense_rate_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
 # Phase 24 owner question 4: does calibration noise change the chosen plan?
 add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
 target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
@@ -70,6 +76,18 @@ target_link_libraries(menos_cost_model_correlation_benchmark PRIVATE
     menos_api menos_cost menos_engines_dense menos_benchmark_environment
 )
 target_compile_options(menos_cost_model_correlation_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 24 step 1, item 1 (docs/adr/0028 sections 16.7 and 16.9): actual over
+# predicted seconds for every engine, on easy, representative and stress
+# workloads, CSV on stdout for bench/tools/accuracy_table.py.
+add_executable(menos_cost_model_accuracy_benchmark
+    cost_model_accuracy_benchmark.cpp
+)
+target_include_directories(menos_cost_model_accuracy_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_cost_model_accuracy_benchmark PRIVATE
+    menos_api menos_runtime menos_plan menos_benchmark_environment
+)
+target_compile_options(menos_cost_model_accuracy_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
 add_executable(menos_stabilizer_cost_correlation_benchmark
     stabilizer_cost_correlation_benchmark.cpp

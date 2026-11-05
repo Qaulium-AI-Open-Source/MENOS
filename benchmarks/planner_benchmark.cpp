@@ -19,6 +19,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "analysis/planner_counters.h"
@@ -65,6 +66,10 @@ void report_allocations(benchmark::State& state, const CorpusJob& job) {
     state.counters["rank_evictions"] = static_cast<double>(c.rank_evictions);
     state.counters["rank_uncached"] = static_cast<double>(c.rank_uncached);
     state.counters["rank_peak_bytes"] = static_cast<double>(c.rank_peak_bytes);
+    state.counters["minfill_searches"] = static_cast<double>(c.minfill_searches);
+    state.counters["minfill_steps"] = static_cast<double>(c.minfill_steps);
+    state.counters["minfill_nodes"] = static_cast<double>(c.minfill_nodes);
+    state.counters["minfill_stopped"] = static_cast<double>(c.minfill_stopped);
 #endif
 }
 
@@ -97,8 +102,39 @@ const std::vector<CorpusJob>& corpus() {
     return kJobs;
 }
 
+// Benchmark-only jobs, outside the golden corpus (Phase 24 step 1,
+// docs/adr/0028 section 16.9). "expectation_50_terms": the case measured on
+// 2026-11-02 (docs/BUILD_PLAN.md, Phase 24, "Planning cost"), a 20-qubit,
+// depth-10 circuit with a 50-term Pauli expectation, which took 4.4 s to plan
+// before branch-and-bound was merged. Planned under the same hand-built
+// profile as the corpus, and again with a non-binding time budget (the
+// calibrated-profile path, where every candidate is converted to seconds).
+const std::vector<CorpusJob>& extra_jobs() {
+    static const std::vector<CorpusJob> kJobs = [] {
+        namespace pc = menos::planner_corpus;
+        std::vector<CorpusJob> jobs;
+        jobs.push_back(CorpusJob{
+            "expectation_50_terms/n20_d10",
+            pc::expectation_job(pc::brickwork(20, 10, 301, false), pc::random_paulis(20, 50, 302)),
+            pc::uncalibrated_profile()});
+        menos::plan::JobSpec budgeted =
+            pc::expectation_job(pc::brickwork(20, 10, 301, false), pc::random_paulis(20, 50, 302));
+        budgeted.time_budget_seconds = 1.0e6;
+        jobs.push_back(CorpusJob{"expectation_50_terms_budgeted/n20_d10",
+                                 std::move(budgeted),
+                                 pc::fixed_calibrated_profile()});
+        return jobs;
+    }();
+    return kJobs;
+}
+
 const bool kRegistered = [] {
     for (const CorpusJob& job : corpus()) {
+        benchmark::RegisterBenchmark(("plan_job/" + job.name).c_str(), [&job](benchmark::State& s) {
+            plan_job_benchmark(s, job);
+        })->Unit(benchmark::kMicrosecond);
+    }
+    for (const CorpusJob& job : extra_jobs()) {
         benchmark::RegisterBenchmark(("plan_job/" + job.name).c_str(), [&job](benchmark::State& s) {
             plan_job_benchmark(s, job);
         })->Unit(benchmark::kMicrosecond);
