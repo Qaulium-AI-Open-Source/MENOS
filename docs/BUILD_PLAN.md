@@ -593,7 +593,37 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 - *Planning cost.* A 20-qubit, depth-10 expectation of 50 Pauli terms took 4.7 s against Aer's 0.27 s, of which execution was 0.33 s and planning 4.4 s: the tensor-network candidate's elimination search ran until it hit the job's memory budget and was then refused. The same circuit as a counts job planned in 2 ms. This is item 2.
 - *Dense throughput.* On dense random circuits of 20–24 qubits and depth 20, MENOS was 1.5–2× slower than Aer with every thread, and 6× slower single-threaded at 22 qubits (21.4 s against 3.5 s). Planning was 2 ms there. Aer's binary applies cost-based gate fusion (active in every dense run) and an AVX2 kernel; MENOS applies every gate as its own pass over the state, compiled for baseline x86-64 with no SIMD path. These are items 7 and 8; fusion is a recorded Phase 15 deferral (`docs/adr/0019` section 6).
 
-**Candidate items (proposed), in the recommended order.**
+**Order of the remaining items (owner, 2026-11-06).** After items 1, 2, 3 and 9 (above), the remaining items go in this order. Each item stays a proposal until the owner's kickoff, with its own ADR (or an extension of `docs/adr/0028`), answers to its questions, and plan approval.
+
+1. **Item 7, gate fusion in the dense CPU engine.**
+   - **Why first:** it is the largest measured user-visible gap: dense 20–24-qubit circuits ran 1.5–2× slower than Aer on every thread and 6× slower single-threaded.
+   - **Why before 8 and the model fixes:** it changes which kernels matter.
+   - **Kickoff decisions:**
+     - the fusion window k;
+     - whether fusion is on by default or opt-in;
+     - whether the Phase 21 bitwise baseline is regenerated.
+   - **Step 1** must first show that the number of passes over the state is what limits speed.
+2. **Item 8, SIMD kernels.**
+   - **Why after 7:** fusion creates the k ≥ 3 blocks where SIMD helps most.
+   - **Constraint:** results must stay bitwise identical to the generic kernel on every thread count.
+   - **Kickoff decision:** whether an AVX-512 path is built at all.
+3. **A new item, the time-model fixes found in step 1** (`docs/adr/0028` sections 16.10 and 16.11):
+   - **MPS:** a measured per-gate fixed cost (actual 20–57× the prediction);
+   - **stabilizer:** a cost per gate (up to 30×);
+   - **Pauli:** replace the worst-case branching charge (predictions up to 75× too slow);
+   - **tensor network:** about 5×;
+   - **density matrix:** about 2.5×;
+   - **dense:** the gap between the calibration circuit and real gate mixes at 20–24 qubits.
+
+   **Why after 7 and 8:** they change the dense rate and kernels, so the dense model would otherwise be fixed twice. Targets are set from the step-1 baseline.
+4. **Item 4, the ranking rule.**
+   - **Why after the model fixes:** ranking by predicted seconds is only sound once predictions are. With today's errors of 5–30× on several engines, ranking by seconds would choose worse plans than ranking by work units.
+
+**Parked: items 5 and 6,** until a workload needs them:
+- **Item 5, planning budget and reuse.** Planning measured 2–106 ms on Linux, and the plan cache exists.
+- **Item 6, structural plans.** The planner chose a cut plan on no step-1 workload except the dedicated cut fixture.
+
+**Candidate items (proposed), in the originally recommended order.**
 1. **Measure before modelling.** Add MPS to `cost_model_correlation_benchmark` over several circuit families (not only the H/T/CX layers of Phase 11), on the current bond replay; record actual over predicted per engine in the ADR; refine the MPS work formula to per-gate bonds from the replay only if the measurement calls for it; replace the Phase 11 table in `docs/planning/cost-model.md` with the new one.
 2. **Report and bound planning cost.** `plan_seconds` on `Result` and on the `explain()` `actual` line, measured around `plan_job`; a separately named planning-memory peak (`docs/adr/0026` section 11.2) if the owner places it here rather than in Phase 23. *Done on the fork (`docs/adr/0028` section 13):* the tensor-network elimination search, the cut costing and the per-region engine choice stop as soon as their running total exceeds the cheapest feasible candidate already in hand, and `explain()` reports the candidate as pruned with the figure it reached. Still open: a node-count or time cap derived from measurement, and the `plan_seconds` report.
 3. **Per-region observations.** Time each region in the factorized and cut executors, attribute the observation per (engine, backend), and let a multi-region overrun replan through the existing Phase 11 path instead of being refused. Observations can only raise a figure, as today.
