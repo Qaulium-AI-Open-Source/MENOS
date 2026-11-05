@@ -422,8 +422,8 @@ std::vector<Workload> workloads() {
 
 struct Prediction {
     double seconds = -1.0;
-    std::string source;  // "planner" or "formula"
-    std::string note;
+    std::string source = {};  // "planner" or "formula"
+    std::string note = {};
 };
 
 double formula_seconds(const CostEstimate& estimate, const plan::HardwareProfile& profile) {
