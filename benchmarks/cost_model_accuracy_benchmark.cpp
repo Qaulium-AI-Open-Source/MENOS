@@ -247,6 +247,29 @@ Circuit cut_scrambled(std::uint32_t width, std::uint32_t depth, std::uint64_t se
     return circuit;
 }
 
+// Two all-to-all CZ clusters of `per_cluster` qubits, after an RY layer, with a
+// T on the second cluster's first qubit and qubit 0 then interacting with the
+// whole second cluster: tests/api/cut_differential_test.cpp's fixture.
+Circuit migrating_clusters(std::uint32_t per_cluster) {
+    const std::uint32_t n = 2 * per_cluster;
+    Circuit circuit(n, 0);
+    for (std::uint32_t q = 0; q < n; ++q) {
+        circuit.append(Opcode::RY, {q}, {0.21 + 0.07 * static_cast<double>(q)});
+    }
+    for (const std::uint32_t base : {0U, per_cluster}) {
+        for (std::uint32_t a = base; a < base + per_cluster; ++a) {
+            for (std::uint32_t b = a + 1; b < base + per_cluster; ++b) {
+                circuit.append(Opcode::CZ, {a, b});
+            }
+        }
+    }
+    circuit.append(Opcode::T, {per_cluster});
+    for (std::uint32_t b = per_cluster; b < n; ++b) {
+        circuit.append(Opcode::CZ, {0, b});
+    }
+    return circuit;
+}
+
 // A Clifford block of `clifford_n` qubits beside a brickwork block of
 // `dense_n` qubits, never interacting: a Factorized plan with two engines.
 Circuit mixed_blocks(std::uint32_t clifford_n,
@@ -380,6 +403,19 @@ std::vector<Workload> workloads() {
             std::move(spec),
             Backend::Cpu,
             std::uint64_t{2} << 20);
+    }
+    // The cut_differential_test fixture: two all-to-all CZ clusters, one
+    // qubit migrating between them, under a 1 MB memory budget. Here the cut
+    // is the cheapest feasible plan (added after step 1, docs/adr/0028
+    // section 16.12).
+    for (const std::uint32_t per_cluster : {4U, 5U, 6U}) {
+        add("cut",
+            "clusters_migrating1_budget1MB/c" + std::to_string(per_cluster),
+            Strategy::CutAndRecombine,
+            expectation_job(migrating_clusters(per_cluster),
+                            corpus::z_on_every_qubit(2 * per_cluster)),
+            Backend::Cpu,
+            std::uint64_t{1'000'000});
     }
     add("cut",
         "random_pairs_d10_zall/n20",
