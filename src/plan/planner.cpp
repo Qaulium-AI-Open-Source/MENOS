@@ -13,6 +13,7 @@
 #include "common/error.h"
 #include "common/observable_restrict.h"
 #include "common/pauli_row.h"
+#include "common/thread_count.h"
 #include "cost/cost_model.h"
 #include "cost/trajectory_count.h"
 #include "ir/depth.h"
@@ -420,16 +421,20 @@ Plan plan_job(const JobSpec& job_spec,
                 seconds = *factorized_mixed_seconds;
             }
             if (candidate.tier == Tier::Disk) {
-                // The disk tier (Phase 23, docs/adr/0027 section 3.5): the
-                // work term as on the CPU, plus the state crossing the
-                // scratch file's link once per pass at the slower of its
-                // measured directions. An unmeasured link leaves the runtime
-                // unknown: under a time budget that is a refusal, never a
-                // guess, and without one the figure is simply absent.
-                const double link_bytes_per_second =
-                    std::min(hardware_profile.scratch_write_bytes_per_second,
-                             hardware_profile.scratch_read_bytes_per_second);
-                if (link_bytes_per_second <= 0.0) {
+                // The disk tier (Phase 23, docs/adr/0027 section 3.5; priced
+                // as decided in Phase 24, docs/adr/0028 section 16.11): the
+                // work at the threaded dense rate when it is measured and the
+                // job may use every hardware thread (the single-thread rate
+                // otherwise, which overpredicts and so is the safe side), plus
+                // the bytes written to the scratch file at its measured write
+                // bandwidth and the bytes read at its read bandwidth. An
+                // unmeasured link leaves the runtime unknown: under a time
+                // budget that is a refusal, never a guess, and without one
+                // the figure is simply absent.
+                const double write_bytes_per_second =
+                    hardware_profile.scratch_write_bytes_per_second;
+                const double read_bytes_per_second = hardware_profile.scratch_read_bytes_per_second;
+                if (write_bytes_per_second <= 0.0 || read_bytes_per_second <= 0.0) {
                     if (job_spec.time_budget_seconds.has_value()) {
                         candidate.feasible = false;
                         candidate.infeasible_reason =
@@ -439,9 +444,17 @@ Plan plan_job(const JobSpec& job_spec,
                     candidate.estimated_seconds = -1.0;
                     return;
                 }
-                seconds =
-                    static_cast<double>(candidate.estimated_work_units) / work_units_per_second +
-                    static_cast<double>(candidate.tier_cost.link_bytes) / link_bytes_per_second;
+                const bool every_thread = job_spec.max_threads >= common::default_thread_count();
+                const double disk_work_units_per_second =
+                    every_thread && hardware_profile.dense_threaded_work_units_per_second > 0.0
+                        ? hardware_profile.dense_threaded_work_units_per_second
+                        : work_units_per_second;
+                const std::uint64_t written = candidate.tier_cost.link_write_bytes;
+                const std::uint64_t read = candidate.tier_cost.link_bytes - written;
+                seconds = static_cast<double>(candidate.estimated_work_units) /
+                              disk_work_units_per_second +
+                          static_cast<double>(written) / write_bytes_per_second +
+                          static_cast<double>(read) / read_bytes_per_second;
             }
             // Only a single-engine candidate can carry an observation: it is
             // attributed to one (engine, backend) pair, and a Factorized or

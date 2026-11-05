@@ -86,6 +86,19 @@ struct HardwareProfile {
     std::uint64_t scratch_available_bytes = 0;
     double scratch_write_bytes_per_second = 0.0;
     double scratch_read_bytes_per_second = 0.0;
+
+    // The dense work-unit rate on every hardware thread, measured on a state
+    // large enough for the kernels to thread (Phase 24, docs/adr/0028 sections
+    // 16.10.3 and 16.11): kThreadedThroughputQubits qubits, beyond the
+    // kernels' kParallelMinGroups threshold, where work_units_per_second above
+    // is measured at 13 qubits and so on one thread whatever the thread count.
+    // The planner prices the disk tier's work with it -- only the disk tier,
+    // whose states (29 qubits and more) are where step 1 measured it to be the
+    // right rate; in-memory dense candidates keep work_units_per_second. Like
+    // the scratch bandwidth, it is measured lazily, once per process, and only
+    // when a job could reach the disk tier. Zero means unmeasured, and the
+    // planner then uses work_units_per_second.
+    double dense_threaded_work_units_per_second = 0.0;
 };
 
 // The space the disk tier leaves untouched on its volume (docs/adr/0027
@@ -190,6 +203,16 @@ inline constexpr double kDefaultMemoryBudgetFraction = 0.5;
     const HardwareProfile& base,
     const std::filesystem::path& scratch_directory,
     bool measure_scratch);
+
+// HardwareProfile::dense_threaded_work_units_per_second, measured once per
+// process on first call and cached: the calibration circuit's shape at
+// kThreadedThroughputQubits qubits, on every hardware thread, deadline-bounded
+// like the 13-qubit measurement. current_hardware_profile() fills the field
+// from it when asked to measure the scratch directory, so only a job that
+// could reach the disk tier pays for it (about 0.13-0.19 s, docs/adr/0028
+// section 16.10.3).
+inline constexpr std::uint32_t kThreadedThroughputQubits = 20;
+[[nodiscard]] double dense_threaded_work_units_per_second();
 
 // The measurement itself, exposed so tests can check it directly rather than
 // only through the cache. Runs the microbenchmarks every call. Both are

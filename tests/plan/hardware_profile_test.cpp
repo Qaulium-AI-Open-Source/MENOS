@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -199,6 +200,23 @@ TEST(ScratchProfileTest, ASecondCallForTheSameDirectoryDoesNotMeasureAgain) {
     const HardwareProfile measured = current_hardware_profile(directory, /*measure_scratch=*/true);
     EXPECT_EQ(measured.scratch_write_bytes_per_second, first.write_bytes_per_second);
     EXPECT_EQ(measured.scratch_read_bytes_per_second, first.read_bytes_per_second);
+}
+
+// Phase 24 (docs/adr/0028 section 16.11): the threaded dense rate is filled in
+// only when the scratch directory is measured (a job that could reach the disk
+// tier), and it is measured once per process.
+TEST(ScratchProfileTest, TheThreadedDenseRateIsMeasuredOnlyWithTheScratchAndOnce) {
+    const std::filesystem::path directory = std::filesystem::current_path();
+    const HardwareProfile unmeasured =
+        current_hardware_profile(directory, /*measure_scratch=*/false);
+    EXPECT_EQ(unmeasured.dense_threaded_work_units_per_second, 0.0);
+    const double first = dense_threaded_work_units_per_second();
+    EXPECT_GT(first, 0.0);
+    EXPECT_TRUE(std::isfinite(first));
+    // Bit for bit the same figure: a second measurement would not be.
+    EXPECT_EQ(dense_threaded_work_units_per_second(), first);
+    const HardwareProfile measured = current_hardware_profile(directory, /*measure_scratch=*/true);
+    EXPECT_EQ(measured.dense_threaded_work_units_per_second, first);
 }
 
 TEST(ScratchProfileTest, TheReserveIsFivePercentOfTheVolumeOrEightGiB) {

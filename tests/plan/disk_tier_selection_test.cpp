@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -283,8 +284,14 @@ TEST(DiskTierSelectionTest, TheTimeBudgetUsesTheTiersSeconds) {
     const Plan plan = plan_job(job, hw);
     const CandidateSummary& dense = dense_candidate(plan);
     ASSERT_EQ(dense.tier, Tier::Disk);
+    // Phase 24 (docs/adr/0028 section 16.11): the written bytes at the write
+    // bandwidth, the read bytes at the read bandwidth; with no threaded rate
+    // measured, the work at the single-thread rate.
+    const std::uint64_t written = dense.tier_cost.link_write_bytes;
+    EXPECT_EQ(written, dense.tier_cost.file_bytes * (1 + dense.tier_cost.passes));
     const double expected = static_cast<double>(dense.estimated_work_units) / 1.0e8 +
-                            static_cast<double>(dense.tier_cost.link_bytes) / 4.5e9;
+                            static_cast<double>(written) / 4.5e9 +
+                            static_cast<double>(dense.tier_cost.link_bytes - written) / 6.0e9;
     EXPECT_NEAR(dense.estimated_seconds, expected, 1e-9 * expected);
     EXPECT_GT(dense.tier_cost.link_bytes,
               dense.tier_cost.file_bytes * (1 + 2 * dense.tier_cost.passes));
@@ -310,6 +317,41 @@ TEST(DiskTierSelectionTest, TheTimeBudgetUsesTheTiersSeconds) {
     EXPECT_LT(dense_candidate(absent).estimated_seconds, 0.0);
     EXPECT_NE(absent.explain().find(" disk_bandwidth=unmeasured"), std::string::npos)
         << absent.explain();
+}
+
+// Phase 24 (docs/adr/0028 section 16.11): a measured threaded dense rate prices
+// the disk tier's work when the job may use every hardware thread; a job held
+// to fewer threads keeps the single-thread rate (the safe side). In-memory
+// dense candidates never use it.
+TEST(DiskTierSelectionTest, TheThreadedRatePricesTheDiskTierOnlyOnEveryThread) {
+    HardwareProfile hw = calibrated(profile_with_scratch());
+    hw.dense_threaded_work_units_per_second = 4.0e8;
+    JobSpec job = counts_job(kN, kSmallBudget);
+    job.time_budget_seconds = 1.0e9;
+    const CandidateSummary threaded = dense_candidate(plan_job(job, hw));
+    ASSERT_EQ(threaded.tier, Tier::Disk);
+    const std::uint64_t written = threaded.tier_cost.link_write_bytes;
+    const double link = static_cast<double>(written) / 4.5e9 +
+                        static_cast<double>(threaded.tier_cost.link_bytes - written) / 6.0e9;
+    const double on_every_thread =
+        static_cast<double>(threaded.estimated_work_units) / 4.0e8 + link;
+    EXPECT_NEAR(threaded.estimated_seconds, on_every_thread, 1e-9 * on_every_thread);
+
+    if (job.max_threads > 1) {
+        job.max_threads = job.max_threads - 1;
+        const CandidateSummary fewer = dense_candidate(plan_job(job, hw));
+        const double on_one_thread = static_cast<double>(fewer.estimated_work_units) / 1.0e8 + link;
+        EXPECT_NEAR(fewer.estimated_seconds, on_one_thread, 1e-9 * on_one_thread);
+    }
+
+    // An in-memory dense candidate is priced exactly as before.
+    JobSpec fits = counts_job(kN, std::nullopt);
+    fits.time_budget_seconds = 1.0e9;
+    const CandidateSummary in_memory = dense_candidate(plan_job(fits, hw));
+    ASSERT_EQ(in_memory.tier, Tier::InMemory);
+    const double before = std::max(static_cast<double>(in_memory.estimated_work_units) / 1.0e8,
+                                   static_cast<double>(in_memory.estimated_peak_bytes) / 1.0e10);
+    EXPECT_NEAR(in_memory.estimated_seconds, before, 1e-9 * before);
 }
 
 TEST(DiskTierSelectionTest, TheReachTestSaysYesExactlyWhenTheTierIsNotRuledOut) {

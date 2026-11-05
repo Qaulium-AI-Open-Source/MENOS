@@ -81,6 +81,9 @@ struct Layout {
     PassPlan plan;
     std::uint64_t peak_bytes = 0;
     std::uint64_t link_bytes = 0;
+    // The written part of link_bytes: the initial write and one write-back
+    // per pass (docs/adr/0028 section 16.11).
+    std::uint64_t link_write_bytes = 0;
     std::uint64_t file_bytes = 0;
     std::string reason;
 };
@@ -245,6 +248,7 @@ Layout lay_out(const Shape& shape) {
             }
         }
         layout.link_bytes = checked_mul(layout.file_bytes, file_passes);
+        layout.link_write_bytes = checked_mul(layout.file_bytes, 1 + plan->pass_count());
         layout.plan = std::move(*plan);
     } catch (const common::ResourceExceeded& e) {
         layout.reason = e.what();
@@ -290,7 +294,8 @@ CostEstimate DiskDenseEngine::estimate(const EngineEstimateRequest& request) con
                                      layout.plan.chunk_qubits,
                                      layout.plan.window_qubits,
                                      layout.link_bytes,
-                                     layout.file_bytes}};
+                                     layout.file_bytes,
+                                     layout.link_write_bytes}};
     } catch (const common::ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}, {}};
     }

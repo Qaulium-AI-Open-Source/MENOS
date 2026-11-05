@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "common/thread_count.h"
 #include "cost/cost_model.h"
 #include "engines/dense/dense_engine.h"
 #include "engines/dense_tiered/chunked_executor.h"
@@ -144,21 +145,25 @@ double measure_memory_bandwidth() {
     return result;
 }
 
-Circuit make_calibration_circuit() {
-    Circuit circuit(kThroughputQubits, 0);
+Circuit make_calibration_circuit(std::uint32_t num_qubits) {
+    Circuit circuit(num_qubits, 0);
     for (std::uint32_t layer = 0; layer < kThroughputGateLayers; ++layer) {
-        for (std::uint32_t q = 0; q < kThroughputQubits; ++q) {
+        for (std::uint32_t q = 0; q < num_qubits; ++q) {
             circuit.append(Opcode::H, {static_cast<QubitId>(q)});
         }
-        for (std::uint32_t q = layer % 2; q + 1 < kThroughputQubits; q += 2) {
+        for (std::uint32_t q = layer % 2; q + 1 < num_qubits; q += 2) {
             circuit.append(Opcode::CX, {static_cast<QubitId>(q), static_cast<QubitId>(q + 1)});
         }
     }
     return circuit;
 }
 
-double measure_work_units_per_second() {
-    const Circuit circuit = make_calibration_circuit();
+// The dense rate on `num_qubits` qubits with up to `max_threads` threads.
+// At kThroughputQubits the kernels run on one thread whatever max_threads is
+// (2^12 groups, below kParallelMinGroups); at kThreadedThroughputQubits they
+// use every thread given (docs/adr/0028 section 16.10.3).
+double measure_work_units_per_second(std::uint32_t num_qubits, std::uint32_t max_threads) {
+    const Circuit circuit = make_calibration_circuit(num_qubits);
     const engines::dense::DenseEngine engine;
 
     // The work units the cost model itself assigns to this circuit. Dividing
@@ -192,6 +197,7 @@ double measure_work_units_per_second() {
         .budget_bytes = estimate.estimated_peak_bytes,
         .is_sole_region = true,
         .observable = nullptr,
+        .max_threads = max_threads,
     };
 
     // Same discarded-pass and minimum-repetition policy as the bandwidth
@@ -243,7 +249,8 @@ HardwareProfile detect_hardware_profile() {
 HardwareProfile calibrate_hardware() {
     HardwareProfile profile = detect_hardware_profile();
     profile.memory_bandwidth_bytes_per_second = measure_memory_bandwidth();
-    profile.work_units_per_second = measure_work_units_per_second();
+    profile.work_units_per_second =
+        measure_work_units_per_second(kThroughputQubits, common::default_thread_count());
 #ifdef MENOS_ENABLE_CUDA
     // Only measured when the build has CUDA support AND a device answers. A
     // CUDA-enabled binary on a machine without a GPU leaves every field zero
@@ -392,8 +399,17 @@ HardwareProfile current_hardware_profile(const HardwareProfile& base,
         const ScratchBandwidth bandwidth = scratch_bandwidth_for(scratch_directory);
         profile.scratch_write_bytes_per_second = bandwidth.write_bytes_per_second;
         profile.scratch_read_bytes_per_second = bandwidth.read_bytes_per_second;
+        profile.dense_threaded_work_units_per_second = dense_threaded_work_units_per_second();
     }
     return profile;
+}
+
+double dense_threaded_work_units_per_second() {
+    // Function-local static, like the calibration below: measured once, on
+    // first use, then reused for the process lifetime.
+    static const double kRate =
+        measure_work_units_per_second(kThreadedThroughputQubits, common::default_thread_count());
+    return kRate;
 }
 
 const HardwareProfile& calibrated_hardware_profile() {

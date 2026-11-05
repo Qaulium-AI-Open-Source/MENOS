@@ -159,6 +159,11 @@ struct TierCost {
     // The scratch file's size, 16 * 2^n, for the disk tier; 0 for a tier with
     // no file.
     std::uint64_t file_bytes = 0;
+    // The part of link_bytes that is written: the initial write and each
+    // pass's write-back. The rest of link_bytes is read. Kept apart because a
+    // link's two directions are measured separately and can differ several
+    // times over (Phase 24, docs/adr/0028 section 16.10.3).
+    std::uint64_t link_write_bytes = 0;
 };
 
 struct CostEstimate {
