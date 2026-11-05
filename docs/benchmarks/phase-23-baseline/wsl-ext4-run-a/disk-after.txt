@@ -1,0 +1,5 @@
+Filesystem     Type     1B-blocks        Avail
+/dev/sdd       ext4 1081101176832 972161282048
+total 8
+drwxr-xr-x  2 janakiram janakiram 4096 Nov  3 21:23 .
+drwxr-xr-x 26 janakiram janakiram 4096 Nov  3 21:22 ..

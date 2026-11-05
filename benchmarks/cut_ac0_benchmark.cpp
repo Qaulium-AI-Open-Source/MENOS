@@ -200,7 +200,9 @@ std::vector<CandidateResult> evaluate_existing(const Circuit& circuit,
                                                      /*want_expectation=*/true,
                                                      &obs,
                                                      budget,
-                                                     {});
+                                                     {},
+                                                     /*trajectories=*/0,
+                                                     /*shots=*/0);
         out.push_back(CandidateResult{std::string(engine->name()),
                                       e.feasible,
                                       e.estimated_peak_bytes,
@@ -228,14 +230,30 @@ CutCost evaluate_cut(const Fragments& frags, std::uint64_t budget) {
     CostEstimate best_a{false, 0, 0, "no engine"};
     CostEstimate best_b{false, 0, 0, "no engine"};
     for (const SimulationEngine* engine : plan::available_engines()) {
-        const CostEstimate ea =
-            cost::estimate_direct(frags.a, *engine, false, false, true, &obs_a, budget, {});
+        const CostEstimate ea = cost::estimate_direct(frags.a,
+                                                      *engine,
+                                                      false,
+                                                      false,
+                                                      true,
+                                                      &obs_a,
+                                                      budget,
+                                                      {},
+                                                      /*trajectories=*/0,
+                                                      /*shots=*/0);
         if (ea.feasible &&
             (!best_a.feasible || ea.estimated_work_units < best_a.estimated_work_units)) {
             best_a = ea;
         }
-        const CostEstimate eb =
-            cost::estimate_direct(frags.b, *engine, false, false, true, &obs_b, budget, {});
+        const CostEstimate eb = cost::estimate_direct(frags.b,
+                                                      *engine,
+                                                      false,
+                                                      false,
+                                                      true,
+                                                      &obs_b,
+                                                      budget,
+                                                      {},
+                                                      /*trajectories=*/0,
+                                                      /*shots=*/0);
         if (eb.feasible &&
             (!best_b.feasible || eb.estimated_work_units < best_b.estimated_work_units)) {
             best_b = eb;

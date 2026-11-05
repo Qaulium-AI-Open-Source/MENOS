@@ -1,0 +1,5 @@
+09:06:23 start power: {"ac_online": true, "battery_percent": 69, "power_scheme": "Balanced"}
+09:09:35 after-build power: {"ac_online": true, "battery_percent": 70, "power_scheme": "Balanced"}
+09:20:29 after-crossover-before power: {"ac_online": true, "battery_percent": 68, "power_scheme": "Balanced"}
+09:31:23 after-crossover-after power: {"ac_online": true, "battery_percent": 67, "power_scheme": "Balanced"}
+09:35:35 end power: {"ac_online": true, "battery_percent": 66, "power_scheme": "Balanced"}

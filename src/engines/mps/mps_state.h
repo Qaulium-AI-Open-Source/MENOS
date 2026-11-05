@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "common/memory_ledger.h"
+
 namespace menos::engines::mps {
 
 // One site's tensor, dims (chi_left, 2, chi_right), row-major:
@@ -84,10 +86,17 @@ public:
         orthogonality_center_ = site;
     }
 
+    // Charges the site tensors' current bytes to the memory ledger
+    // (docs/adr/0025 section 3.2), replacing the previous figure. Called by
+    // the constructor and move_orthogonality_center_to, and by the engine
+    // after each gate, since apply_gate replaces sites through site(i).
+    void charge_sites();
+
 private:
     std::uint32_t num_qubits_;
     std::size_t orthogonality_center_;
     std::vector<SiteTensor> sites_;
+    common::MemoryLedger::Charge charge_;
 };
 
 }  // namespace menos::engines::mps

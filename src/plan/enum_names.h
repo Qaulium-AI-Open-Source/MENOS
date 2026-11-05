@@ -17,5 +17,6 @@ namespace menos::plan {
 [[nodiscard]] std::string_view strategy_name(Strategy strategy);
 [[nodiscard]] std::string_view engine_name(Engine engine);
 [[nodiscard]] std::string_view backend_name(Backend backend);
+[[nodiscard]] std::string_view tier_name(Tier tier);
 
 }  // namespace menos::plan

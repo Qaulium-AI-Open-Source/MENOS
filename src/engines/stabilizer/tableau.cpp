@@ -2,7 +2,10 @@
 
 #include <utility>
 
+#include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 
 namespace menos::engines::stabilizer {
 namespace {
@@ -31,7 +34,91 @@ void rowsum(PauliRow& h, const PauliRow& i, std::uint32_t n) {
     }
 }
 
+// One established pivot of expectation_sign()'s elimination.
+struct Pivot {
+    bool is_z;
+    std::uint32_t col;
+};
+
+std::uint64_t words_of(std::uint32_t num_qubits) {
+    return (std::uint64_t{num_qubits} + 63) / 64;
+}
+
+// One allocation of `count` words.
+std::uint64_t words_block(std::uint64_t count) {
+    return common::heap_block_bytes(common::checked_mul(count, sizeof(std::uint64_t)));
+}
+
+// `count` PauliRows of n qubits in one std::vector: the array, and each row's
+// x and z words, two allocations per row.
+std::uint64_t rows_array_bytes(std::uint64_t count, std::uint32_t num_qubits) {
+    return common::checked_add(
+        common::heap_block_bytes(common::checked_mul(count, sizeof(PauliRow))),
+        common::checked_mul(2 * count, words_block(words_of(num_qubits))));
+}
+
+// An n-bit std::vector<bool>'s allocation: at most one 64-bit word per 64 bits
+// (libstdc++ packs into 64-bit words, the MSVC STL into 32-bit ones).
+std::uint64_t bool_vector_bytes(std::uint32_t num_qubits) {
+    return words_block(words_of(num_qubits));
+}
+
 }  // namespace
+
+std::uint64_t Tableau::rows_bytes(std::uint32_t num_qubits) {
+    return rows_array_bytes(num_qubits, num_qubits);
+}
+
+std::uint64_t Tableau::subspace_bytes(std::uint32_t num_qubits) {
+    // base, and up to n generators of n bits each in one reserved list.
+    return common::checked_add(
+        bool_vector_bytes(num_qubits),
+        common::checked_add(
+            common::heap_block_bytes(common::checked_mul(num_qubits, sizeof(std::vector<bool>))),
+            common::checked_mul(num_qubits, bool_vector_bytes(num_qubits))));
+}
+
+std::uint64_t Tableau::reduce_peak_bytes(std::uint32_t num_qubits) {
+    const std::uint64_t n = num_qubits;
+    // work (n rows) and fixed (at most n rows), the pivot-column list and
+    // flags, free_cols (grown one push_back at a time), and the subspace.
+    std::uint64_t bytes = common::checked_mul(2, rows_array_bytes(n, num_qubits));
+    bytes = common::checked_add(bytes, common::heap_block_bytes(n * sizeof(std::uint32_t)));
+    bytes = common::checked_add(bytes, bool_vector_bytes(num_qubits));
+    bytes = common::checked_add(bytes, common::grown_vector_bytes(n, sizeof(std::uint32_t)));
+    return common::checked_add(bytes, subspace_bytes(num_qubits));
+}
+
+std::uint64_t Tableau::expectation_peak_bytes(std::uint32_t num_qubits) {
+    const std::uint64_t n = num_qubits;
+    const std::uint64_t word_bytes = words_block(words_of(num_qubits));
+    // work, masks (n vectors of n bits in one list), pivots (reserved to n),
+    // the residual (a copy of the query's two word lists), combo and product.
+    std::uint64_t bytes = rows_array_bytes(n, num_qubits);
+    bytes = common::checked_add(bytes,
+                                common::checked_add(common::heap_block_bytes(common::checked_mul(
+                                                        n, sizeof(std::vector<std::uint64_t>))),
+                                                    common::checked_mul(n, word_bytes)));
+    bytes = common::checked_add(bytes, common::heap_block_bytes(n * sizeof(Pivot)));
+    return common::checked_add(bytes, 5 * word_bytes);
+}
+
+namespace {
+
+// The bytes a list of rows asked for: the list and each row's words.
+std::uint64_t rows_held_bytes(const std::vector<PauliRow>& rows) {
+    std::uint64_t bytes = common::buffer_bytes(rows);
+    for (const PauliRow& row : rows) {
+        bytes += common::buffer_bytes(row.x) + common::buffer_bytes(row.z);
+    }
+    return bytes;
+}
+
+}  // namespace
+
+std::uint64_t Tableau::held_bytes() const {
+    return rows_held_bytes(rows_);
+}
 
 Tableau::Tableau(std::uint32_t num_qubits) : num_qubits_(num_qubits) {
     common::ensure(num_qubits >= 1, "Tableau: num_qubits must be at least 1");
@@ -122,6 +209,7 @@ void Tableau::apply_swap(std::uint32_t a, std::uint32_t b) {
 Tableau::AffineSubspace Tableau::reduce() const {
     const std::uint32_t n = num_qubits_;
     std::vector<PauliRow> work = rows_;
+    const common::MemoryLedger::Charge work_charge(rows_held_bytes(work));
 
     // Pass 1: Gauss-Jordan eliminate the x-part. Rows [0, r_dim) end up
     // as the pivot rows (nonzero x); rows [r_dim, n) are forced to
@@ -151,6 +239,7 @@ Tableau::AffineSubspace Tableau::reduce() const {
     const std::size_t r_dim = pivot_row;
 
     std::vector<PauliRow> fixed(work.begin() + static_cast<std::ptrdiff_t>(r_dim), work.end());
+    const common::MemoryLedger::Charge fixed_charge(rows_held_bytes(fixed));
     const std::size_t num_fixed = fixed.size();
     common::ensure(num_fixed == static_cast<std::size_t>(n) - r_dim,
                    "Tableau::reduce: fixed-row count does not match n - r_dim");
@@ -236,14 +325,13 @@ std::optional<bool> Tableau::expectation_sign(const PauliString& query) const {
     std::vector<PauliRow> work = rows_;
     const std::size_t words = words_per_row();
     std::vector<std::vector<std::uint64_t>> masks(n, std::vector<std::uint64_t>(words, 0));
+    const common::MemoryLedger::Charge work_charge(
+        rows_held_bytes(work) + common::buffer_bytes(masks) +
+        std::uint64_t{n} * words * sizeof(std::uint64_t));
     for (std::uint32_t i = 0; i < n; ++i) {
         set_bit(masks[i], i, true);
     }
 
-    struct Pivot {
-        bool is_z;
-        std::uint32_t col;
-    };
     std::vector<Pivot> pivots;
     pivots.reserve(n);
 

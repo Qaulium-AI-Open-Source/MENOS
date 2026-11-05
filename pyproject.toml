@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "menos"
-version = "1.2.0"
+version = "1.2.1"
 description = "A quantum circuit simulation runtime with Qiskit and PennyLane adapters"
 readme = "README.md"
 license = "Apache-2.0"

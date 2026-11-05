@@ -1,4 +1,4 @@
-// Planner latency benchmark (Phase 21 step 1, docs/adr/0025 section 5).
+// Planner latency benchmark (Phase 24 step 1, docs/adr/0028 section 5).
 //
 // One Google Benchmark per job of the fixed corpus (tests/plan/planner_corpus.h),
 // each timing plan::plan_job alone against the job's hand-built HardwareProfile,

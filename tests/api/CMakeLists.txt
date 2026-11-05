@@ -22,6 +22,8 @@ add_executable(menos_api_tests
     max_threads_test.cpp
     backend_request_test.cpp
     fuse_diagonal_run_test.cpp
+    peak_memory_test.cpp
+    tier_request_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)
@@ -29,7 +31,9 @@ if(MENOS_ENABLE_CUDA)
     # is present; it never silently passes without one.
     target_sources(menos_api_tests PRIVATE cpu_cuda_differential_test.cpp
                                            cuda_execution_monitor_test.cpp
-                                           cuda_backend_request_test.cpp)
+                                           cuda_backend_request_test.cpp
+                                           cuda_peak_memory_test.cpp
+                                           cuda_memory_pool_test.cpp)
     target_link_libraries(menos_api_tests PRIVATE menos_engines_dense_cuda)
 endif()
 

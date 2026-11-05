@@ -61,6 +61,20 @@ public:
     // Precondition: query.num_qubits() == num_qubits().
     [[nodiscard]] std::optional<bool> expectation_sign(const PauliString& query) const;
 
+    // Upper bounds on the heap bytes these allocate for an n-qubit tableau
+    // (Phase 21, docs/adr/0025 section 3.4), from the types they use:
+    // the tableau's own rows; reduce()'s working copies and its returned
+    // subspace, at the end of reduce() when all are live; the returned
+    // subspace alone; and expectation_sign()'s working state for one term.
+    [[nodiscard]] static std::uint64_t rows_bytes(std::uint32_t num_qubits);
+    [[nodiscard]] static std::uint64_t reduce_peak_bytes(std::uint32_t num_qubits);
+    [[nodiscard]] static std::uint64_t subspace_bytes(std::uint32_t num_qubits);
+    [[nodiscard]] static std::uint64_t expectation_peak_bytes(std::uint32_t num_qubits);
+
+    // The bytes this tableau's rows asked for, as the memory ledger charges
+    // them (docs/adr/0025 section 3.2).
+    [[nodiscard]] std::uint64_t held_bytes() const;
+
 private:
     [[nodiscard]] std::size_t words_per_row() const;
 

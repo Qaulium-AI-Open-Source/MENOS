@@ -6,14 +6,16 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
-#include "analysis/schmidt_rank_bound.h"
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "engines/mps/apply_gate.h"
 #include "engines/mps/expectation.h"
+#include "engines/mps/memory_model.h"
 #include "engines/mps/mps_state.h"
 #include "engines/mps/sampling.h"
 #include "ir/gate_table.h"
@@ -75,18 +77,18 @@ EngineCapabilities MPSEngine::capabilities() const {
     return EngineCapabilities{/*counts=*/true, /*statevector=*/false, /*expectation=*/true};
 }
 
-// estimated_bond is the rigorous Schmidt-rank bound (analysis::
-// compute_schmidt_rank_bound), additionally capped at
-// accuracy_policy.max_bond_dimension when Controlled -- tolerance alone
-// gives no a-priori numeric reduction (it is data-dependent, only known
-// after actually running the circuit), so it is never used to lower
-// this estimate (CLAUDE.md: never invent a threshold without a
-// derivation). peak_bytes sums each site's own (left_bond * 2 *
-// right_bond) using the PER-CUT bound array directly (a tighter,
-// still-rigorous bound than num_qubits * estimated_bond^2 would give,
-// since real bonds shrink near the chain's ends). work_units follows
-// the standard TEBD/MPS complexity: each local multi-qubit update
-// (a real gate, or one gather/scatter SWAP) costs O(bond^3) (thin SVD
+// estimated_bond is the largest bond execute() will build, found by replaying
+// the operations on bond dimensions (memory_model.h, Phase 21, docs/adr/0025
+// Q7): exact under Exact, an upper bound under Controlled (capped at
+// accuracy_policy.max_bond_dimension when set; tolerance alone gives no
+// a-priori reduction, CLAUDE.md: never invent a threshold without a
+// derivation). Until Phase 21 it was the Schmidt-rank bound, which measurement
+// showed the Exact bonds exceed, because every split keeps min(m, n) singular
+// values, zero ones included. peak_bytes is the replay's peak: every site at
+// its allocated size, every transient buffer of every gate, split and center
+// shift, the sampler's sweep and per-shot buffers and the histogram.
+// work_units follows the standard TEBD/MPS complexity: each local multi-qubit
+// update (a real gate, or one gather/scatter SWAP) costs O(bond^3) (thin SVD
 // of a matrix with a dimension of that order); a k-qubit gate spanning
 // s sites costs 2*(s - k) SWAPs (gather + scatter) plus (k - 1) splits
 // for the gate itself. Counts adds one center-repositioning sweep
@@ -101,35 +103,15 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
                             "full state defeats the reason to use it",
                             {}};
     }
-    // Before the Schmidt-rank bound, which is a pure-state quantity.
+    // Before the replay, which models a pure state.
     if (const std::optional<std::string> reason = ir::first_noise_reason(*request.operations);
         reason.has_value()) {
         return CostEstimate{/*feasible=*/false, 0, 0, *reason, {}};
     }
     try {
-        const analysis::SchmidtRankBound bound =
-            analysis::compute_schmidt_rank_bound(request.num_qubits, *request.operations);
-        std::uint64_t estimated_bond = bound.max_bound();
-        if (request.accuracy_policy.kind == AccuracyPolicyKind::Controlled &&
-            request.accuracy_policy.max_bond_dimension.has_value()) {
-            estimated_bond =
-                std::min(estimated_bond,
-                         static_cast<std::uint64_t>(*request.accuracy_policy.max_bond_dimension));
-        }
-
-        std::uint64_t peak_bytes = 0;
-        for (std::uint32_t i = 0; i < request.num_qubits; ++i) {
-            std::uint64_t left = 1;
-            std::uint64_t right = 1;
-            if (i > 0) {
-                left = std::min(bound.bound_per_cut[i - 1], estimated_bond);
-            }
-            if (i + 1 < request.num_qubits) {
-                right = std::min(bound.bound_per_cut[i], estimated_bond);
-            }
-            const std::uint64_t elems = checked_mul(checked_mul(left, 2), right);
-            peak_bytes = checked_add(peak_bytes, checked_mul(elems, sizeof(std::complex<double>)));
-        }
+        const MemoryModel model = model_execution(request);
+        const std::uint64_t estimated_bond = model.max_bond;
+        const std::uint64_t peak_bytes = model.peak_bytes;
 
         const std::uint64_t chi3 =
             checked_mul(checked_mul(estimated_bond, estimated_bond), estimated_bond);
@@ -195,8 +177,10 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
                     const std::vector<std::complex<double>> matrix =
                         ir::generate_matrix(o.opcode, o.params);
                     apply_gate(state, matrix, o.qubits, request.accuracy_policy, stats);
+                    state.charge_sites();
                 } else if constexpr (std::is_same_v<T, UnitaryOp>) {
                     apply_gate(state, o.matrix, o.qubits, request.accuracy_policy, stats);
+                    state.charge_sites();
                 } else if constexpr (std::is_same_v<T, ChannelOp>) {
                     // Unreachable: estimate() refuses a noisy region.
                     throw common::InternalError("mps: a noise channel reached a pure-state engine");
@@ -215,9 +199,24 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
     EngineExecutionResult result;
     result.actual_bytes = actual_bytes_of(state);
 
+    // Before sampling, which takes the state itself rather than a copy
+    // (docs/adr/0025 section 3.3) and moves its orthogonality center. The
+    // expectation therefore reads the same state, in the same gauge, as
+    // before Phase 21.
+    if (request.want_expectation) {
+        std::vector<std::complex<double>> terms;
+        terms.reserve(request.observable->terms.size());
+        for (const auto& [pauli, coefficient] : request.observable->terms) {
+            static_cast<void>(coefficient);  // Applied by the caller (docs/adr/0007).
+            terms.push_back(compute_expectation(state, pauli));
+        }
+        result.expectation_terms = std::move(terms);
+    }
+
     if (request.want_counts) {
         if (request.is_sole_region) {
-            const MPSCountsSampler sampler(state, request.measure_targets, request.bitstring_width);
+            const MPSCountsSampler sampler(
+                std::move(state), request.measure_targets, request.bitstring_width);
             common::Rng rng(request.seed);
             std::map<BitString, std::uint64_t> counts;
             // Per shot, continuing the same counter the gate sweep used. This
@@ -232,21 +231,13 @@ EngineExecutionResult MPSEngine::execute(const EngineExecutionRequest& request) 
                     request.monitor->at_safe_boundary(completed);
                 }
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
             result.counts_sampler = std::make_unique<MPSCountsSampler>(
-                state, request.measure_targets, request.bitstring_width);
+                std::move(state), request.measure_targets, request.bitstring_width);
         }
-    }
-
-    if (request.want_expectation) {
-        std::vector<std::complex<double>> terms;
-        terms.reserve(request.observable->terms.size());
-        for (const auto& [pauli, coefficient] : request.observable->terms) {
-            static_cast<void>(coefficient);  // Applied by the caller (docs/adr/0007).
-            terms.push_back(compute_expectation(state, pauli));
-        }
-        result.expectation_terms = std::move(terms);
     }
 
     if (stats.any_truncation()) {

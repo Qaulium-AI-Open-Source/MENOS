@@ -2,6 +2,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/complex.h>
+#include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
@@ -173,6 +174,14 @@ NB_MODULE(_core, m) {
         .value("Cpu", menos::Backend::Cpu)
         .value("Cuda", menos::Backend::Cuda);
 
+    // Phase 23 (docs/adr/0027): where a job's state lives while it runs, for
+    // RunOptions.tier. Tier.HostOffloaded was measured and not built, and a
+    // request for it raises UnsupportedFeatureError.
+    nb::enum_<menos::Tier>(m, "Tier")
+        .value("InMemory", menos::Tier::InMemory)
+        .value("Disk", menos::Tier::Disk)
+        .value("HostOffloaded", menos::Tier::HostOffloaded);
+
     nb::class_<menos::RunOptions>(m, "RunOptions")
         .def(nb::init<>())
         .def_rw("shots", &menos::RunOptions::shots)
@@ -209,7 +218,13 @@ NB_MODULE(_core, m) {
         // Phase 17 (docs/adr/0021 section 2): None = the planner chooses (the
         // default); Backend.Cpu or Backend.Cuda forces one, and a request that
         // cannot be honoured raises rather than falling back.
-        .def_rw("backend", &menos::RunOptions::backend);
+        .def_rw("backend", &menos::RunOptions::backend)
+        // Phase 23 (docs/adr/0027): None = the planner chooses (the disk tier
+        // only when the in-memory state does not fit); Tier.Disk forces it and
+        // never falls back. scratch_directory is where the disk tier's file
+        // goes; None = the system's temporary directory.
+        .def_rw("tier", &menos::RunOptions::tier)
+        .def_rw("scratch_directory", &menos::RunOptions::scratch_directory);
 
     nb::class_<menos::Result>(m, "Result")
         .def_prop_ro("counts",
@@ -221,6 +236,13 @@ NB_MODULE(_core, m) {
         .def_prop_ro("expectation_standard_error", &menos::Result::expectation_standard_error)
         .def_prop_ro("exact", &menos::Result::exact)
         .def_prop_ro("actual_state_bytes", &menos::Result::actual_state_bytes)
+        // Phase 21 (docs/adr/0025 section 3.2): the most host and CUDA device
+        // memory the execution held, measured by the runtime's memory ledger.
+        .def_prop_ro("peak_host_bytes", &menos::Result::peak_host_bytes)
+        .def_prop_ro("peak_device_bytes", &menos::Result::peak_device_bytes)
+        // Phase 23 (docs/adr/0027): the disk tier's scratch file; 0 for a
+        // plan with no disk-tier region.
+        .def_prop_ro("peak_disk_bytes", &menos::Result::peak_disk_bytes)
         .def_prop_ro("execute_seconds", &menos::Result::execute_seconds)
         .def_prop_ro("sample_seconds", &menos::Result::sample_seconds)
         // Phase 17 (docs/adr/0021 section 3): the abandoned attempts of a job
@@ -257,6 +279,10 @@ NB_MODULE(_core, m) {
         return d;
     });
     m.def("plan_cache_clear", &menos::plan_cache_clear);
+
+    // Phase 22 (docs/adr/0026): give the device memory MENOS retains between
+    // jobs back to the driver. A no-op without CUDA.
+    m.def("release_device_memory", &menos::release_device_memory);
 
     // Phase 19 (docs/adr/0023): OpenQASM 3 import. menos.from_qasm3 wraps it so
     // that inputs may be None.

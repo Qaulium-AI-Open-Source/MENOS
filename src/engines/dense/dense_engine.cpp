@@ -1,5 +1,6 @@
 #include "engines/dense/dense_engine.h"
 
+#include <algorithm>
 #include <bit>
 #include <complex>
 #include <optional>
@@ -9,6 +10,8 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
@@ -89,6 +92,58 @@ void apply_operations(StateVector& state,
     }
 }
 
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4): the state, plus the larger of
+//   * one gate's transient: its generated matrix (a GateOp; a UnitaryOp's is
+//     borrowed) and the generic kernel's per-chunk scratch, and
+//   * the outputs, built after the sweep and returned: the sampling buffers and
+//     histogram (a sole region) or the region's cumulative distribution, and
+//     one complex per observable term.
+// The statevector output costs nothing extra: the state is moved into it.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    const std::uint32_t n = request.num_qubits;
+    const std::uint64_t state =
+        common::heap_block_bytes(checked_mul(checked_pow2(n), sizeof(std::complex<double>)));
+    const std::uint32_t threads = common::default_thread_count();
+
+    std::uint64_t gate = 0;
+    for (const Operation& op : *request.operations) {
+        std::visit(
+            [&](const auto& o) {
+                using T = std::decay_t<decltype(o)>;
+                if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
+                    const std::size_t k = o.qubits.size();
+                    std::uint64_t bytes = apply_matrix_scratch_bytes(k, threads);
+                    if constexpr (std::is_same_v<T, GateOp>) {
+                        bytes = checked_add(bytes,
+                                            common::heap_block_bytes(checked_mul(
+                                                checked_pow2(static_cast<unsigned>(2 * k)),
+                                                sizeof(std::complex<double>))));
+                    }
+                    gate = std::max(gate, bytes);
+                }
+            },
+            op);
+    }
+
+    std::uint64_t outputs = 0;
+    if (request.want_counts) {
+        if (request.is_sole_region) {
+            outputs = sample_bytes(
+                request.shots, std::min(n, request.bitstring_width), request.bitstring_width);
+        } else {
+            outputs = CumulativeDistribution::heap_bytes(checked_pow2(n), request.bitstring_width);
+        }
+    }
+    if (request.want_expectation) {
+        outputs = checked_add(outputs,
+                              common::heap_block_bytes(checked_mul(
+                                  static_cast<std::uint64_t>(request.observable->terms.size()),
+                                  sizeof(std::complex<double>))));
+    }
+    return checked_add(state, std::max(gate, outputs));
+}
+
 }  // namespace
 
 std::string_view DenseEngine::name() const {
@@ -114,40 +169,42 @@ EngineCapabilities DenseEngine::capabilities() const {
 // count) + [2^m if want_statevector] + [2^m if want_counts] +
 // [num_terms * 2^m if want_expectation, one pass per term]
 // (docs/BUILD_PLAN.md Phase 3, 3.5 / Phase 5's expectation extension).
-// Peak bytes is 16 * 2^m (complex128 state, no speculative multiplier,
-// unaffected by want_expectation -- no extra allocation).
+// Peak bytes: peak_bytes_of above.
 CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
     if (const std::optional<std::string> reason = ir::first_noise_reason(*request.operations);
         reason.has_value()) {
         return CostEstimate{/*feasible=*/false, 0, 0, *reason, {}};
     }
     try {
-        std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
-            if (k == 0) {
-                continue;  // MeasureOp
-            }
-            work =
-                checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
-        }
-        if (request.want_statevector) {
-            work = checked_add(work, checked_pow2(request.num_qubits));
-        }
-        if (request.want_counts) {
-            work = checked_add(work, checked_pow2(request.num_qubits));
-        }
-        if (request.want_expectation) {
-            const std::uint64_t num_terms =
-                static_cast<std::uint64_t>(request.observable->terms.size());
-            work = checked_add(work, checked_mul(num_terms, checked_pow2(request.num_qubits)));
-        }
-        const std::uint64_t peak_bytes =
-            checked_mul(checked_pow2(request.num_qubits), sizeof(std::complex<double>));
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        const std::uint64_t work = dense_work_units(request);
+        return CostEstimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
+}
+
+std::uint64_t dense_work_units(const EngineEstimateRequest& request) {
+    std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
+    for (const Operation& op : *request.operations) {
+        const std::size_t k = operand_count(op);
+        if (k == 0) {
+            continue;  // MeasureOp
+        }
+        work = checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
+    }
+    if (request.want_statevector) {
+        work = checked_add(work, checked_pow2(request.num_qubits));
+    }
+    if (request.want_counts) {
+        work = checked_add(work, checked_pow2(request.num_qubits));
+    }
+    if (request.want_expectation) {
+        const std::uint64_t num_terms =
+            static_cast<std::uint64_t>(request.observable->terms.size());
+        work = checked_add(work, checked_mul(num_terms, checked_pow2(request.num_qubits)));
+    }
+    return work;
 }
 
 EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request) const {
@@ -164,11 +221,6 @@ EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request
     EngineExecutionResult result;
     result.actual_bytes = state.size_bytes();
 
-    if (request.want_statevector) {
-        const auto amps = state.amplitudes();
-        result.statevector = std::vector<std::complex<double>>(amps.begin(), amps.end());
-    }
-
     if (request.want_counts) {
         const std::span<const std::pair<QubitId, ClbitId>> targets = request.measure_targets;
         if (request.is_sole_region) {
@@ -181,41 +233,29 @@ EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request
     }
 
     if (request.want_expectation) {
-        // x_words/z_words have exactly one word here -- estimate() already
-        // made this region infeasible for any num_qubits where that would
-        // not hold (dense's own checked_pow2 ceiling is 62).
-        const auto& all = request.observable->terms;
-        std::vector<std::complex<double>> terms(all.size());
-        // Z-only terms (a diagonal observable, e.g. every QUBO/Ising cost
-        // Hamiltonian) are batched through one Walsh-Hadamard transform when
-        // there are enough of them for its n passes to beat one pass per term.
-        // That batch consumes the state, so it runs after every other output
-        // and after the non-diagonal terms.
-        std::vector<std::size_t> diagonal;
-        std::vector<std::uint64_t> z_masks;
-        for (std::size_t i = 0; i < all.size(); ++i) {
-            if (all[i].first.x_words[0] == 0) {
-                diagonal.push_back(i);
-                z_masks.push_back(all[i].first.z_words[0]);
-            }
-        }
-        const bool batch_diagonal =
-            diagonal.size() >= 2 && diagonal.size() * 4 > request.num_qubits;
-        for (std::size_t i = 0; i < all.size(); ++i) {
-            if (batch_diagonal && all[i].first.x_words[0] == 0) {
-                continue;
-            }
-            terms[i] = kernels::cpu::expectation_of_term(
-                state.amplitudes(), all[i].first.x_words[0], all[i].first.z_words[0]);
-        }
-        if (batch_diagonal) {
-            const std::vector<std::complex<double>> values =
-                kernels::cpu::expectation_of_diagonal_terms(state.amplitudes(), z_masks);
-            for (std::size_t j = 0; j < diagonal.size(); ++j) {
-                terms[diagonal[j]] = values[j];
-            }
+        // One pass per term, each summed in index order: bit for bit what the
+        // disk tier's chunked accumulation gives (docs/adr/0027 section 3.4)
+        // and what the Phase 21 baseline pins (tests/memory/data). Batching
+        // the Z-only terms through one Walsh-Hadamard transform was measured
+        // on the planner-performance line and not kept at the merge: it sums
+        // in butterfly order, so it is not bitwise either of those, and it
+        // overwrote a state that was still to be returned (docs/adr/0028).
+        std::vector<std::complex<double>> terms;
+        terms.reserve(request.observable->terms.size());
+        for (const auto& term : request.observable->terms) {
+            // x_words/z_words have exactly one word here -- estimate()
+            // already made this region infeasible for any num_qubits where
+            // that would not hold (dense's own checked_pow2 ceiling is 62).
+            terms.push_back(kernels::cpu::expectation_of_term(
+                state.amplitudes(), term.first.x_words[0], term.first.z_words[0]));
         }
         result.expectation_terms = std::move(terms);
+    }
+
+    // Last, after sampling and the expectation have read the state: the
+    // amplitudes are moved into the result, not copied (docs/adr/0025).
+    if (request.want_statevector) {
+        result.statevector = std::move(state).release();
     }
 
     return result;

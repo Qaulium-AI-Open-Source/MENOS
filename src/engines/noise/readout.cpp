@@ -3,6 +3,8 @@
 #include <optional>
 #include <variant>
 
+#include "common/memory_bounds.h"
+
 namespace menos::engines::noise {
 
 std::vector<ReadoutTarget> readout_targets(
@@ -22,6 +24,10 @@ std::vector<ReadoutTarget> readout_targets(
         }
     }
     return out;
+}
+
+std::uint64_t readout_targets_bytes(std::uint64_t num_targets) {
+    return common::grown_vector_bytes(num_targets, sizeof(ReadoutTarget));
 }
 
 void apply_readout(BitString& outcome, std::span<const ReadoutTarget> targets, common::Rng& rng) {

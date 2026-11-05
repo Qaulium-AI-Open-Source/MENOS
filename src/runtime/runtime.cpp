@@ -13,11 +13,10 @@
 
 #include "analysis/cut.h"
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
 #include "common/splitmix64.h"
-#include "cost/cost_model.h"
 #include "ir/final_writes.h"
-#include "plan/available_engines.h"
 #include "plan/execution_engines.h"
 #include "runtime/check_plan_invariants.h"
 #include "runtime/combine_counts.h"
@@ -28,23 +27,26 @@
 namespace menos::runtime {
 namespace {
 
-// Resolves a region's (engine, backend) pair. Both halves matter from Phase 10
-// on: Engine::Dense alone no longer identifies an implementation, since the CPU
-// and CUDA dense engines share it and differ only in backend.
-const SimulationEngine& engine_for(Engine engine, Backend backend) {
-    const SimulationEngine* found = plan::find_execution_engine(engine, backend);
+// Resolves a region's (engine, backend, tier) triple. Every coordinate matters:
+// from Phase 10 on Engine::Dense alone no longer identifies an implementation,
+// since the CPU and CUDA dense engines share it and differ only in backend, and
+// from Phase 23 the in-memory and disk dense engines share both and differ
+// only in tier (docs/adr/0027).
+const SimulationEngine& engine_for(Engine engine, Backend backend, Tier tier) {
+    const SimulationEngine* found = plan::find_execution_engine(engine, backend, tier);
     if (found == nullptr) {
         throw common::InternalError(
-            "engine_for: this build has no engine for the plan's (engine, backend) pair -- a "
-            "plan selecting a backend the runtime cannot execute is an internal invariant "
-            "violation");
+            "engine_for: this build has no engine for the plan's (engine, backend, tier) "
+            "triple -- a plan selecting an implementation the runtime cannot execute is an "
+            "internal invariant violation");
     }
     return *found;
 }
 
-Result execute_direct(const Plan& plan,
+Result execute_direct(Plan&& plan,
                       const menos::plan::JobSpec& job_spec,
-                      const ExecutionMonitor* monitor) {
+                      const ExecutionMonitor* monitor,
+                      const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_direct: plan.reduced_circuit must be set by plan_job -- internal "
                    "invariant violated");
@@ -53,7 +55,7 @@ Result execute_direct(const Plan& plan,
     const Circuit& reduced_circuit =
         *plan.reduced_circuit;  // NOLINT(bugprone-unchecked-optional-access)
     const Region& region = plan.regions[0];
-    const SimulationEngine& engine = engine_for(region.engine, region.backend);
+    const SimulationEngine& engine = engine_for(region.engine, region.backend, region.tier);
     const bool want_expectation = job_spec.expectation.has_value();
 
     // final_writes must be computed from the light-cone-REDUCED circuit,
@@ -104,6 +106,13 @@ Result execute_direct(const Plan& plan,
             plan.trajectory_summary.has_value() ? plan.trajectory_summary->trajectories : 0,
         .max_threads = job_spec.max_threads,
         .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
+        // The disk tier's scratch directory and the chunk and window the
+        // planner priced (Phase 23, docs/adr/0027): the engine runs exactly
+        // the pass plan its estimate reported. Both are zero for an
+        // in-memory region, which ignores them.
+        .scratch_directory = job_spec.scratch_directory,
+        .tier_chunk_qubits = region.tier_cost.chunk_qubits,
+        .tier_window_qubits = region.tier_cost.window_qubits,
     };
 
     const auto start_execute = std::chrono::steady_clock::now();
@@ -118,7 +127,7 @@ Result execute_direct(const Plan& plan,
         // per-term coefficient-weighted sum here.
         const std::array<std::vector<std::complex<double>>, 1> per_region{
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            *result.expectation_terms};
+            std::move(*result.expectation_terms)};
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         expectation_value = combine_expectation(*region.observable, per_region);
     }
@@ -134,25 +143,30 @@ Result execute_direct(const Plan& plan,
     // A statistical engine (trajectories, Phase 13) is never exact, whatever it
     // sampled.
     const bool actually_exact = !result.accumulated_error_bound.has_value() && !result.statistical;
-    Plan executed_plan = plan;
-    executed_plan.regions[0].mps_accumulated_error_bound = result.accumulated_error_bound;
-    if (region.engine == Engine::TensorNetwork) {
-        executed_plan.regions[0].tensor_network_actual_peak_bytes = result.actual_bytes;
+    // This run's own figures, recorded on the plan only now that nothing can
+    // throw, and the plan then moved into the Result: the job never holds a
+    // second copy of it (docs/adr/0025).
+    plan.regions[0].mps_accumulated_error_bound = result.accumulated_error_bound;
+    if (plan.regions[0].engine == Engine::TensorNetwork) {
+        plan.regions[0].tensor_network_actual_peak_bytes = result.actual_bytes;
     }
-    if (executed_plan.trajectory_summary.has_value()) {
-        executed_plan.trajectory_summary->standard_error = result.expectation_standard_error;
+    if (plan.trajectory_summary.has_value()) {
+        plan.trajectory_summary->standard_error = result.expectation_standard_error;
     }
 
-    return Result(result.counts.value_or(std::map<BitString, std::uint64_t>{}),
+    return Result(std::move(result.counts).value_or(std::map<BitString, std::uint64_t>{}),
                   std::move(result.statevector),
                   expectation_value,
                   actually_exact,
-                  std::move(executed_plan),
+                  std::move(plan),
                   result.actual_bytes,
                   execute_seconds,
                   /*sample_seconds=*/0.0,
                   /*replans=*/{},
-                  result.expectation_standard_error);
+                  result.expectation_standard_error,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
 }
 
 // {1, 0}: a static, never-allocated |0> amplitude pair for an idle
@@ -182,9 +196,10 @@ std::vector<std::complex<double>> idle_region_expectation_terms(
     return terms;
 }
 
-Result execute_factorized(const Plan& plan,
+Result execute_factorized(Plan&& plan,
                           const menos::plan::JobSpec& job_spec,
-                          const ExecutionMonitor* monitor) {
+                          const ExecutionMonitor* monitor,
+                          const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_factorized: plan.reduced_circuit must be set by plan_job -- internal "
                    "invariant violated");
@@ -221,9 +236,11 @@ Result execute_factorized(const Plan& plan,
     }
 
     std::optional<std::vector<std::complex<double>>> global;
+    common::MemoryLedger::Charge global_charge;
     if (job_spec.want_statevector) {
         global =
             allocate_global_statevector(reduced_circuit.num_qubits(), plan.estimated_state_bytes);
+        global_charge.set(common::buffer_bytes(*global));
     }
 
     std::vector<std::unique_ptr<RegionCountsSampler>> samplers;
@@ -236,13 +253,12 @@ Result execute_factorized(const Plan& plan,
             : 0;
     std::uint64_t actual_peak_bytes = global_bytes;
 
-    // A mutable copy so each region's own post-execution
-    // mps_accumulated_error_bound can be recorded (CLAUDE.md's
-    // Controlled(tolerance) domain invariant: this is only known after
-    // execution), mirroring execute_direct's identical pattern. Also
-    // where the plan-time exactness estimate gets upgraded to the
-    // actual, post-execution truth below.
-    Plan executed_plan = plan;
+    // Each region's own post-execution figures (CLAUDE.md's
+    // Controlled(tolerance) domain invariant: an error bound is only known
+    // after execution), recorded on the plan once every region has run, so a
+    // run abandoned part-way leaves the plan as it was (docs/adr/0025).
+    std::vector<std::optional<double>> error_bounds(plan.regions.size());
+    std::vector<std::optional<std::uint64_t>> tensor_network_peaks(plan.regions.size());
     bool all_regions_exact = true;
 
     const auto start_execute = std::chrono::steady_clock::now();
@@ -253,6 +269,8 @@ Result execute_factorized(const Plan& plan,
 
         std::span<const std::complex<double>> psi_r;
         std::optional<EngineExecutionResult> engine_result;
+        // The region's statevector, held until it is multiplied in.
+        common::MemoryLedger::Charge region_state_charge;
         if (region.estimated_state_bytes == 0) {
             // Idle: statically |0>, no allocation, no engine invoked
             // (docs/BUILD_PLAN.md Phase 3, 3.2). No counts draw needed
@@ -267,7 +285,7 @@ Result execute_factorized(const Plan& plan,
                     idle_region_expectation_terms(region_observable));
             }
         } else {
-            const SimulationEngine& engine = engine_for(region.engine, region.backend);
+            const SimulationEngine& engine = engine_for(region.engine, region.backend, region.tier);
             // global_phase is 0.0 here and applied once, as a
             // post-multiply over the whole global buffer below -- never
             // per region (docs/adr/0005's global-phase bug fix; unchanged
@@ -296,6 +314,8 @@ Result execute_factorized(const Plan& plan,
             if (request.want_statevector) {
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
                 psi_r = std::span<const std::complex<double>>(*engine_result->statevector);
+                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+                region_state_charge.set(common::buffer_bytes(*engine_result->statevector));
             }
             if (want_expectation) {
                 std::vector<std::complex<double>> region_terms =
@@ -303,11 +323,9 @@ Result execute_factorized(const Plan& plan,
                     std::move(*engine_result->expectation_terms);
                 per_region_expectation_terms.push_back(std::move(region_terms));
             }
-            executed_plan.regions[r].mps_accumulated_error_bound =
-                engine_result->accumulated_error_bound;
+            error_bounds[r] = engine_result->accumulated_error_bound;
             if (region.engine == Engine::TensorNetwork) {
-                executed_plan.regions[r].tensor_network_actual_peak_bytes =
-                    engine_result->actual_bytes;
+                tensor_network_peaks[r] = engine_result->actual_bytes;
             }
             if (engine_result->accumulated_error_bound.has_value()) {
                 all_regions_exact = false;
@@ -351,6 +369,8 @@ Result execute_factorized(const Plan& plan,
         }
         const auto start_sample = std::chrono::steady_clock::now();
         counts = combine_counts(sampler_ptrs, rngs, bitstring_width, job_spec.shots, monitor);
+        const common::MemoryLedger::Charge histogram_charge(
+            common::histogram_bytes(counts.size(), bitstring_width));
         sample_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start_sample).count();
     }
@@ -370,14 +390,25 @@ Result execute_factorized(const Plan& plan,
         expectation_value = combine_expectation(coefficient_source, per_region_expectation_terms);
     }
 
+    for (std::size_t r = 0; r < plan.regions.size(); ++r) {
+        plan.regions[r].mps_accumulated_error_bound = error_bounds[r];
+        if (tensor_network_peaks[r].has_value()) {
+            plan.regions[r].tensor_network_actual_peak_bytes = tensor_network_peaks[r];
+        }
+    }
     return Result(std::move(counts),
                   std::move(statevector_out),
                   expectation_value,
                   all_regions_exact,
-                  std::move(executed_plan),
+                  std::move(plan),
                   actual_peak_bytes,
                   execute_seconds,
-                  sample_seconds);
+                  sample_seconds,
+                  /*replans=*/{},
+                  /*expectation_standard_error=*/std::nullopt,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
 }
 
 }  // namespace
@@ -387,9 +418,10 @@ Result execute_factorized(const Plan& plan,
 // weighted sum over the 8^K branches. There is no second simulator here: every
 // fragment goes through the same SimulationEngine interface every other
 // strategy uses.
-Result execute_cut(const Plan& plan,
+Result execute_cut(Plan&& plan,
                    const menos::plan::JobSpec& job_spec,
-                   const ExecutionMonitor* monitor) {
+                   const ExecutionMonitor* monitor,
+                   const common::MemoryLedger& ledger) {
     common::ensure(plan.reduced_circuit.has_value(),
                    "execute_cut: plan.reduced_circuit must be set by plan_job");
     common::ensure(!plan.regions.empty() && plan.regions[0].observable.has_value(),
@@ -431,7 +463,8 @@ Result execute_cut(const Plan& plan,
         values[f].reserve(assignments.size());
         distinct_evaluations += assignments.size();
 
-        for (const analysis::FragmentAssignment& assignment : assignments) {
+        for (std::size_t a = 0; a < assignments.size(); ++a) {
+            const analysis::FragmentAssignment& assignment = assignments[a];
             const Circuit fragment_circuit = analysis::build_fragment_circuit(fragment, assignment);
             Observable fragment_observable;
             fragment_observable.terms.reserve(term_count);
@@ -442,20 +475,12 @@ Result execute_cut(const Plan& plan,
                     std::complex<double>{1.0, 0.0});
             }
 
-            const EngineEstimateRequest estimate_request{fragment_circuit.num_qubits(),
-                                                         &fragment_circuit.operations(),
-                                                         /*want_statevector=*/false,
-                                                         /*want_counts=*/false,
-                                                         /*want_expectation=*/true,
-                                                         &fragment_observable,
-                                                         job_spec.accuracy_policy,
-                                                         plan.estimated_state_bytes};
-            const cost::EngineChoice choice =
-                cost::pick_cheapest_engine(plan::available_engines(), estimate_request);
-            common::ensure(choice.estimate.feasible,
-                           "execute_cut: no engine is feasible for a fragment the planner "
-                           "already costed as feasible -- internal invariant violated");
-            const SimulationEngine& engine = *plan::available_engines()[choice.engine_index];
+            // The engine plan_job chose for this evaluation (docs/adr/0025): the
+            // runtime does no planning of its own.
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            const CutEvaluation& evaluation = plan.cut_summary->evaluations.at(f).at(a);
+            const SimulationEngine& engine =
+                engine_for(evaluation.engine, Backend::Cpu, Tier::InMemory);
 
             const EngineExecutionRequest request{
                 .num_qubits = fragment_circuit.num_qubits(),
@@ -468,7 +493,7 @@ Result execute_cut(const Plan& plan,
                 .bitstring_width = 0,
                 .seed = job_spec.seed,
                 .global_phase = 0.0,
-                .budget_bytes = choice.estimate.estimated_peak_bytes,
+                .budget_bytes = evaluation.estimated_peak_bytes,
                 .is_sole_region = false,
                 .observable = &fragment_observable,
                 .accuracy_policy = job_spec.accuracy_policy,
@@ -501,36 +526,52 @@ Result execute_cut(const Plan& plan,
     const double execute_seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start_execute).count();
 
-    Plan executed_plan = plan;
     // Set by plan_job for every CutAndRecombine plan; not provable locally.
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    CutSummary summary = plan.cut_summary.value();
+    CutSummary& summary = plan.cut_summary.value();
     summary.actual_peak_bytes = actual_peak_bytes;
     summary.distinct_evaluations = distinct_evaluations;
-    executed_plan.cut_summary = summary;
 
     return Result(std::map<BitString, std::uint64_t>{},
                   std::nullopt,
                   expectation_value,
                   /*exact=*/true,
-                  std::move(executed_plan),
+                  std::move(plan),
                   actual_peak_bytes,
                   execute_seconds,
-                  /*sample_seconds=*/0.0);
+                  /*sample_seconds=*/0.0,
+                  /*replans=*/{},
+                  /*expectation_standard_error=*/std::nullopt,
+                  ledger.peak_host_bytes(),
+                  ledger.peak_device_bytes(),
+                  ledger.peak_disk_bytes());
+}
+
+Result Runtime::execute(Plan&& plan,
+                        const menos::plan::JobSpec& job_spec,
+                        const ExecutionMonitor* monitor) const {
+    // One ledger per execution attempt, installed on this thread for the
+    // engines' charges (docs/adr/0025 section 3.2). Its peaks are what
+    // Result::peak_host_bytes(), peak_device_bytes() and peak_disk_bytes()
+    // report.
+    common::MemoryLedger ledger;
+    const common::MemoryLedger::Scope scope(ledger);
+    if (plan.strategy == Strategy::CutAndRecombine) {
+        return execute_cut(std::move(plan), job_spec, monitor, ledger);
+    }
+    if (plan.strategy == Strategy::DirectDense || plan.strategy == Strategy::DirectStabilizer ||
+        plan.strategy == Strategy::DirectPauli || plan.strategy == Strategy::DirectDensityMatrix ||
+        plan.strategy == Strategy::DirectTrajectory) {
+        return execute_direct(std::move(plan), job_spec, monitor, ledger);
+    }
+    return execute_factorized(std::move(plan), job_spec, monitor, ledger);
 }
 
 Result Runtime::execute(const Plan& plan,
                         const menos::plan::JobSpec& job_spec,
                         const ExecutionMonitor* monitor) const {
-    if (plan.strategy == Strategy::CutAndRecombine) {
-        return execute_cut(plan, job_spec, monitor);
-    }
-    if (plan.strategy == Strategy::DirectDense || plan.strategy == Strategy::DirectStabilizer ||
-        plan.strategy == Strategy::DirectPauli || plan.strategy == Strategy::DirectDensityMatrix ||
-        plan.strategy == Strategy::DirectTrajectory) {
-        return execute_direct(plan, job_spec, monitor);
-    }
-    return execute_factorized(plan, job_spec, monitor);
+    Plan copy = plan;
+    return execute(std::move(copy), job_spec, monitor);
 }
 
 }  // namespace menos::runtime

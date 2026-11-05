@@ -14,8 +14,8 @@
 namespace menos::engines::mps {
 
 // Sequential conditional sampling down the chain (docs/BUILD_PLAN.md
-// Phase 6): copies state once and moves the copy's orthogonality
-// center to site 0, so every site is right-isometric before sampling
+// Phase 6): takes the state (the engine moves its own in, docs/adr/0025)
+// and moves its orthogonality center to site 0, so every site is right-isometric before sampling
 // begins -- the property that makes each site's own local squared-norm
 // give the correct marginal probability, conditioned on everything
 // sampled so far, without ever materializing the full state. Each

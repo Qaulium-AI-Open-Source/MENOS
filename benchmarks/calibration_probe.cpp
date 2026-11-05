@@ -1,4 +1,4 @@
-// Cold hardware calibration probe (Phase 21 step 1, docs/adr/0025 section 5).
+// Cold hardware calibration probe (Phase 24 step 1, docs/adr/0028 section 5).
 //
 // Times plan::calibrate_hardware() twice in one process: the first call is the
 // cold figure a user's first time-budgeted (or, in a CUDA build, any) job pays;

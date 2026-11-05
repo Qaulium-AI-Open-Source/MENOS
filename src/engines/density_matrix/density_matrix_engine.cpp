@@ -18,7 +18,10 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/rng.h"
+#include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/cumulative_distribution.h"
 #include "engines/dense/sample.h"
@@ -156,11 +159,12 @@ using noise::ReadoutTarget;
 // Each draw takes one word for the true outcome, then one per readout target.
 class DensityMatrixCountsSampler : public RegionCountsSampler {
 public:
-    DensityMatrixCountsSampler(std::span<const double> probabilities,
+    // Takes the probabilities over: the distribution accumulates them in place.
+    DensityMatrixCountsSampler(std::vector<double>&& probabilities,
                                std::span<const std::pair<QubitId, ClbitId>> measure_targets,
                                std::uint32_t bitstring_width,
                                std::vector<ReadoutTarget> readouts)
-        : distribution_(probabilities, measure_targets, bitstring_width),
+        : distribution_(std::move(probabilities), measure_targets, bitstring_width),
           readouts_(std::move(readouts)) {}
 
     [[nodiscard]] BitString sample_one(common::Rng& rng) const override {
@@ -192,6 +196,82 @@ Complex trace_with_pauli(std::span<const Complex> rho,
     return kPowersOfI[static_cast<std::size_t>(std::popcount(x & z) % 4)] * sum;
 }
 
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4): rho, plus the larger of one operation's
+// transient and the outputs.
+//   * A k-qubit gate or unitary: its generated matrix (a GateOp), the
+//     conjugated copy, the column-qubit list and the kernel's scratch.
+//   * A k-qubit channel: the 2k-operand list (grown by one insert), the
+//     column-qubit list, the 4^k x 4^k superoperator and the kernel's scratch
+//     for 2k operands.
+//   * Counts: the diagonal (8 bytes per basis state), which the sampler takes
+//     over, the readout targets, the sampler object, and a sole region's
+//     sampling buffers and histogram. One complex per observable term.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    using common::heap_block_bytes;
+    const std::uint64_t n = request.num_qubits;
+    const std::uint64_t rho = heap_block_bytes(checked_mul(pow2(2 * n), sizeof(Complex)));
+    const std::uint32_t threads = common::default_thread_count();
+
+    std::uint64_t operation = 0;
+    for (const Operation& op : *request.operations) {
+        std::visit(
+            [&](const auto& o) {
+                using T = std::decay_t<decltype(o)>;
+                if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
+                    // The conjugated copy and column list, beside a GateOp's
+                    // generated matrix.
+                    const std::uint64_t k = o.qubits.size();
+                    const std::uint64_t matrix =
+                        heap_block_bytes(checked_mul(pow2(2 * k), sizeof(Complex)));
+                    std::uint64_t bytes = checked_add(
+                        checked_add(matrix,
+                                    heap_block_bytes(checked_mul(k, sizeof(std::uint32_t)))),
+                        dense::apply_matrix_scratch_bytes(k, threads));
+                    if constexpr (std::is_same_v<T, GateOp>) {
+                        bytes = checked_add(bytes, matrix);
+                    }
+                    operation = std::max(operation, bytes);
+                } else if constexpr (std::is_same_v<T, ChannelOp>) {
+                    const std::uint64_t k = o.qubits.size();
+                    const std::uint64_t bytes = checked_add(
+                        checked_add(common::grown_vector_bytes(2 * k, sizeof(std::uint32_t)),
+                                    heap_block_bytes(checked_mul(k, sizeof(std::uint32_t)))),
+                        checked_add(heap_block_bytes(checked_mul(pow2(4 * k), sizeof(Complex))),
+                                    dense::apply_matrix_scratch_bytes(2 * k, threads)));
+                    operation = std::max(operation, bytes);
+                } else {
+                    static_assert(std::is_same_v<T, MeasureOp>);
+                }
+            },
+            op);
+    }
+
+    std::uint64_t outputs = 0;
+    if (request.want_counts) {
+        const std::uint64_t width = request.bitstring_width;
+        // The diagonal is the sampler's cumulative array: the sampler takes it over.
+        const std::uint64_t sampler =
+            checked_add(heap_block_bytes(sizeof(DensityMatrixCountsSampler)),
+                        dense::CumulativeDistribution::heap_bytes(pow2(n), width));
+        outputs = checked_add(sampler, noise::readout_targets_bytes(width));
+        if (request.is_sole_region) {
+            outputs =
+                checked_add(outputs,
+                            dense::sample_bytes(request.shots,
+                                                static_cast<std::uint32_t>(std::min(n, width)),
+                                                request.bitstring_width));
+        }
+    }
+    if (request.want_expectation) {
+        outputs = checked_add(
+            outputs,
+            heap_block_bytes(checked_mul(
+                static_cast<std::uint64_t>(request.observable->terms.size()), sizeof(Complex))));
+    }
+    return checked_add(rho, std::max(operation, outputs));
+}
+
 }  // namespace
 
 std::string_view DensityMatrixEngine::name() const {
@@ -214,9 +294,8 @@ EngineCapabilities DensityMatrixEngine::capabilities() const {
 // n-qubit region: 4^n to initialize; per gate or unitary on k qubits,
 // 2 * 2^(2n + k) for its two kernel passes; per channel on k qubits,
 // 2^(2n + 2k) for one pass with 2k operands; 2^n for the diagonal pass when
-// counts are requested; 2^n per observable term. Peak bytes: 16 * 4^n for rho,
-// plus the largest superoperator (16 * 16^k), plus the 8 * 2^n diagonal when
-// counts are requested.
+// counts are requested; 2^n per observable term. Peak bytes: peak_bytes_of
+// above.
 CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request) const {
     if (request.want_statevector) {
         return CostEstimate{/*feasible=*/false,
@@ -230,7 +309,6 @@ CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request)
         const std::uint64_t n = request.num_qubits;
         const std::uint64_t entries = pow2(2 * n);
         std::uint64_t work = entries;
-        std::uint64_t largest_superoperator_bytes = 0;
         for (const Operation& op : *request.operations) {
             std::visit(
                 [&](const auto& o) {
@@ -241,25 +319,21 @@ CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request)
                     } else if constexpr (std::is_same_v<T, ChannelOp>) {
                         const std::uint64_t k = o.qubits.size();
                         work = checked_add(work, pow2(2 * n + 2 * k));
-                        largest_superoperator_bytes = std::max(
-                            largest_superoperator_bytes, checked_mul(pow2(4 * k), sizeof(Complex)));
                     } else {
                         static_assert(std::is_same_v<T, MeasureOp>);
                     }
                 },
                 op);
         }
-        std::uint64_t peak_bytes =
-            checked_add(checked_mul(entries, sizeof(Complex)), largest_superoperator_bytes);
         if (request.want_counts) {
             work = checked_add(work, pow2(n));
-            peak_bytes = checked_add(peak_bytes, checked_mul(pow2(n), sizeof(double)));
         }
         if (request.want_expectation) {
             const auto num_terms = static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, pow2(n)));
         }
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        return CostEstimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
@@ -280,6 +354,9 @@ EngineExecutionResult DensityMatrixEngine::execute(const EngineExecutionRequest&
     if (request.want_counts) {
         const std::uint64_t dim = std::uint64_t{1} << n;
         std::vector<double> probabilities(dim);
+        // Charged here until a sampler takes the buffer over and charges it
+        // itself.
+        common::MemoryLedger::Charge probabilities_charge(common::buffer_bytes(probabilities));
         for (std::uint64_t x = 0; x < dim; ++x) {
             probabilities[x] = rho.amplitudes()[x | (x << n)].real();
         }
@@ -292,17 +369,21 @@ EngineExecutionResult DensityMatrixEngine::execute(const EngineExecutionRequest&
                 probabilities, request.shots, request.seed, targets, request.bitstring_width);
         } else if (request.is_sole_region) {
             // Per shot: one word for the true outcome, then one per readout target.
+            probabilities_charge.release();
             const DensityMatrixCountsSampler sampler(
-                probabilities, targets, request.bitstring_width, std::move(readouts));
+                std::move(probabilities), targets, request.bitstring_width, std::move(readouts));
             common::Rng rng(request.seed);
             std::map<BitString, std::uint64_t> counts;
             for (std::uint64_t shot = 0; shot < request.shots; ++shot) {
                 counts[sampler.sample_one(rng)] += 1;
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
+            probabilities_charge.release();
             result.counts_sampler = std::make_unique<DensityMatrixCountsSampler>(
-                probabilities, targets, request.bitstring_width, std::move(readouts));
+                std::move(probabilities), targets, request.bitstring_width, std::move(readouts));
         }
     }
 

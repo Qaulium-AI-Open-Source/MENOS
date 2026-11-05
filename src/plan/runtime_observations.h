@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <optional>
-#include <utility>
+#include <tuple>
 
 #include "menos/plan.h"
 
@@ -30,30 +30,40 @@ namespace menos::plan {
 // terminate.
 //
 // Scope, stated rather than left to be discovered: a floor is attributed to one
-// (engine, backend) pair, so it applies to the single-engine Direct* candidates
-// only. A Factorized or CutAndRecombine candidate spans several engines and
-// this phase does not attribute elapsed time per region, so no floor is applied
-// to it. Both of those models were measured accurate to within 0.70x-1.33x, so
-// they are not where the problem is.
+// (engine, backend, tier) triple, so it applies to the single-engine Direct*
+// candidates only. A Factorized or CutAndRecombine candidate spans several
+// engines and this phase does not attribute elapsed time per region, so no
+// floor is applied to it. Both of those models were measured accurate to
+// within 0.70x-1.33x, so they are not where the problem is. The tier (Phase 23,
+// docs/adr/0027) is part of the key because an overrun of the disk tier says
+// nothing about the in-memory engine of the same (engine, backend): they are
+// different implementations with different costs.
 struct RuntimeObservations {
-    std::map<std::pair<Engine, Backend>, double> observed_floor_seconds;
+    std::map<std::tuple<Engine, Backend, Tier>, double> observed_floor_seconds;
 
-    // The floor for this pair, or nullopt if this pair was never observed.
-    [[nodiscard]] std::optional<double> floor_for(Engine engine, Backend backend) const {
-        const auto it = observed_floor_seconds.find({engine, backend});
+    // The floor for this triple, or nullopt if it was never observed.
+    [[nodiscard]] std::optional<double> floor_for(Engine engine,
+                                                  Backend backend,
+                                                  Tier tier = Tier::InMemory) const {
+        const auto it = observed_floor_seconds.find({engine, backend, tier});
         if (it == observed_floor_seconds.end()) {
             return std::nullopt;
         }
         return it->second;
     }
 
-    // Records that (engine, backend) has already spent `seconds` on this job.
-    // Keeps the LARGER of any existing floor and this one, so accumulating
+    // Records that (engine, backend, tier) has already spent `seconds` on this
+    // job. Keeps the LARGER of any existing floor and this one, so accumulating
     // observations across successive abandoned attempts can never walk a floor
     // backwards.
-    void observe(Engine engine, Backend backend, double seconds) {
-        double& floor = observed_floor_seconds[{engine, backend}];
+    void observe(Engine engine, Backend backend, Tier tier, double seconds) {
+        double& floor = observed_floor_seconds[{engine, backend, tier}];
         floor = std::max(floor, seconds);
+    }
+    // The in-memory implementation's floor: what every caller before Phase 23
+    // observed.
+    void observe(Engine engine, Backend backend, double seconds) {
+        observe(engine, backend, Tier::InMemory, seconds);
     }
 
     [[nodiscard]] bool empty() const {

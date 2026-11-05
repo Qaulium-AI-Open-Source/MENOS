@@ -67,8 +67,11 @@ Memory is the requirement that most often decides what you can run.
 | 25 | 512 MiB |
 | 28 | 4 GiB |
 | 30 | 16 GiB |
+| 32 | 64 GiB |
 
 By default MENOS allows a job to use **50% of the machine's physical memory**. You can change that per job with the memory budget ([Memory Constraints](/planning/memory-constraints)). A job whose plan would need more is refused before any allocation, with an error that states the required and available bytes.
+
+**Scratch disk.** For counts or an expectation value, a dense state larger than the budget can run from a scratch file of `16 · 2ⁿ` bytes in the system's temporary directory (or `RunOptions.scratch_directory`), leaving 5% of the volume or 8 GiB free; every pass over the circuit reads and writes the whole file, so the disk's bandwidth sets the time ([the disk tier](/planning/memory-constraints#the-disk-tier)).
 
 Other engines use far less: a stabilizer simulation of 200 qubits needs about 13 KB, and a matrix-product-state simulation of 100 weakly entangled qubits needed about 50 KB in the [example](/examples/mps).
 

@@ -38,7 +38,10 @@ Result::Result(std::map<BitString, std::uint64_t> counts,
                double execute_seconds,
                double sample_seconds,
                std::vector<ReplanEvent> replans,
-               std::optional<double> expectation_standard_error)
+               std::optional<double> expectation_standard_error,
+               std::uint64_t peak_host_bytes,
+               std::uint64_t peak_device_bytes,
+               std::uint64_t peak_disk_bytes)
     // NOLINTEND(bugprone-easily-swappable-parameters)
     : counts_(std::move(counts)),
       statevector_(std::move(statevector)),
@@ -49,7 +52,10 @@ Result::Result(std::map<BitString, std::uint64_t> counts,
       execute_seconds_(execute_seconds),
       sample_seconds_(sample_seconds),
       replans_(std::move(replans)),
-      expectation_standard_error_(expectation_standard_error) {}
+      expectation_standard_error_(expectation_standard_error),
+      peak_host_bytes_(peak_host_bytes),
+      peak_device_bytes_(peak_device_bytes),
+      peak_disk_bytes_(peak_disk_bytes) {}
 
 const std::map<BitString, std::uint64_t>& Result::counts() const {
     return counts_;
@@ -77,6 +83,18 @@ const Plan& Result::plan() const {
 
 std::uint64_t Result::actual_state_bytes() const {
     return actual_state_bytes_;
+}
+
+std::uint64_t Result::peak_host_bytes() const {
+    return peak_host_bytes_;
+}
+
+std::uint64_t Result::peak_device_bytes() const {
+    return peak_device_bytes_;
+}
+
+std::uint64_t Result::peak_disk_bytes() const {
+    return peak_disk_bytes_;
 }
 
 double Result::execute_seconds() const {
@@ -125,10 +143,23 @@ std::string Result::explain() const {
     if (!replans_.empty()) {
         out += label("") + std::format("now  strategy={}\n", plan::strategy_name(plan_.strategy));
     }
-    out += label("actual") + std::format("state_bytes={} execute_s={:.6f} sample_s={:.6f}",
-                                         actual_state_bytes_,
-                                         execute_seconds_,
-                                         sample_seconds_);
+    // The measured peaks (docs/adr/0025) follow the pre-Phase-21 fields, so
+    // a reader of the older fields finds them where they were.
+    out +=
+        label("actual") + std::format(
+                              "state_bytes={} execute_s={:.6f} sample_s={:.6f} peak_host_bytes={} "
+                              "peak_device_bytes={}",
+                              actual_state_bytes_,
+                              execute_seconds_,
+                              sample_seconds_,
+                              peak_host_bytes_,
+                              peak_device_bytes_);
+    // The disk tier's scratch file (Phase 23, docs/adr/0027), printed only
+    // when there was one, so every other report is byte-identical to a
+    // pre-Phase-23 one.
+    if (peak_disk_bytes_ > 0) {
+        out += std::format(" peak_disk_bytes={}", peak_disk_bytes_);
+    }
     if (expectation_value_.has_value()) {
         out +=
             "\n" + label("expectation") +

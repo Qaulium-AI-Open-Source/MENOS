@@ -1,7 +1,7 @@
 // Internal to compute_schmidt_rank_bound (schmidt_rank_bound.cpp): the
 // operator-Schmidt-rank computation and the per-call rank cache. Exposed in
 // this header only so tests/analysis/schmidt_rank_cache_test.cpp and the
-// planner structure microbenchmarks can exercise them alone (docs/adr/0025
+// planner structure microbenchmarks can exercise them alone (docs/adr/0028
 // section 12). Not public API.
 
 #pragma once
@@ -35,7 +35,7 @@ struct SchmidtRankCacheStats {
     std::uint64_t peak_bytes = 0;  // the most key bytes stored at once
 };
 
-// Operator Schmidt ranks already computed (docs/adr/0025 sections 10.4, 12.3).
+// Operator Schmidt ranks already computed (docs/adr/0028 sections 10.4, 12.3).
 //
 // Key: four-byte fields -- the operand count k, the number of operands left of
 // the cut, and each of those operand positions, ascending -- followed by the

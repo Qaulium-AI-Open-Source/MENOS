@@ -1,0 +1,11 @@
+30266fd Phase 23 step 5: the gate driver and scripts; the device race is a refusal
+ M benchmarks/tiered_gate_benchmark.cpp
+ M src/common/observable_restrict.cpp
+wsl vhd before: 63802703872 bytes; C: free 253192933376 bytes
+11:27:17 start power: status=2 charge=98
+11:27:19 after-build power: status=2 charge=98
+== gate 11:27:19
+gate driver exit 0
+11:38:54 end power: status=2 charge=100
+wsl vhd after: 63802703872 bytes; C: free 253082722304 bytes
+== done 11:38:54

@@ -100,6 +100,38 @@ bool is_direct(Strategy strategy) {
     throw common::InternalError("plan_cache: unknown Strategy");
 }
 
+// The hardware profile is a planner input too, and since Phase 21
+// (docs/adr/0025, Q3) it is read afresh for every job: the device's free
+// memory moves as other processes and MENOS's own pool take and release it,
+// and the detected and the calibrated profile (hardware_profile_for) carry
+// different rates. Every figure plan_job reads goes into the key, so a plan
+// is reused only under the memory and rates it was planned for. The scratch
+// directory's figures are left out: an in-memory plan never reads them, and
+// a plan on the disk tier is not stored (plan_job_cached).
+void put_profile(std::string& key, const HardwareProfile& profile) {
+    put(key, profile.total_memory_bytes);
+    put(key, profile.memory_bandwidth_bytes_per_second);
+    put(key, profile.work_units_per_second);
+    put(key, profile.cuda_present);
+    put(key, profile.cuda_device_total_bytes);
+    put(key, profile.cuda_device_available_bytes);
+    put(key, profile.cuda_device_pool_bytes);
+    put(key, profile.cuda_device_pooled);
+    put(key, profile.cuda_host_to_device_bytes_per_second);
+    put(key, profile.cuda_device_to_host_bytes_per_second);
+    put(key, profile.cuda_kernel_launch_seconds);
+    put(key, profile.cuda_device_work_units_per_second);
+}
+
+bool on_disk_tier(const Plan& plan) {
+    for (const Region& region : plan.regions) {
+        if (region.tier != Tier::InMemory) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 std::optional<std::string> plan_cache_key(const JobSpec& job_spec) {
@@ -115,7 +147,7 @@ std::optional<std::string> plan_cache_key(const JobSpec& job_spec) {
 
     std::string key;
     key.reserve(64 + 16 * job_spec.circuit.operations().size());
-    put(key, std::uint32_t{1});  // key format version
+    put(key, std::uint32_t{2});  // key format version
     put(key, job_spec.circuit.num_qubits());
     put(key, job_spec.circuit.num_clbits());
     put(key, static_cast<std::uint64_t>(job_spec.circuit.operations().size()));
@@ -175,21 +207,34 @@ std::optional<std::string> plan_cache_key(const JobSpec& job_spec) {
     put(key, job_spec.expectation_precision.has_value());
     put(key, job_spec.expectation_precision.value_or(0.0));
     put(key, job_spec.max_threads);
-    put(key, job_spec.backend);
-    // Not in the key: seed (sampling only, never read by plan_job) and the
+    // Optionals go in as (engaged, value): an optional's own bytes include an
+    // indeterminate payload when it is disengaged.
+    put(key, job_spec.backend.has_value());
+    put(key, job_spec.backend.value_or(Backend::Cpu));
+    // The memory tier the caller forced or forbade (Phase 23): a forced tier
+    // changes every candidate, and even a forbidden one is printed by
+    // explain().
+    put(key, job_spec.tier.has_value());
+    put(key, job_spec.tier.value_or(Tier::InMemory));
+    const std::string scratch_directory = job_spec.scratch_directory.string();
+    put(key, static_cast<std::uint64_t>(scratch_directory.size()));
+    key.append(scratch_directory);
+    // Not in the key: seed (sampling only, never read by plan_job), the
     // circuit's global_phase (dropped by the light-cone pass, applied by the
-    // runtime from the job's own circuit).
+    // runtime from the job's own circuit) and fuse_diagonal_gates (read by the
+    // runtime from the job, never by plan_job).
     return key;
 }
 
 Plan plan_job_cached(const JobSpec& job_spec, const HardwareProfile& hardware_profile) {
-    const std::optional<std::string> key = plan_cache_key(job_spec);
+    std::optional<std::string> key = plan_cache_key(job_spec);
     Cache& c = cache();
     if (!key.has_value()) {
         std::lock_guard<std::mutex> lock(c.mutex);
         ++c.stats.bypasses;
         return plan_job(job_spec, hardware_profile);
     }
+    put_profile(*key, hardware_profile);
     {
         std::lock_guard<std::mutex> lock(c.mutex);
         const auto found = c.index.find(*key);
@@ -203,7 +248,10 @@ Plan plan_job_cached(const JobSpec& job_spec, const HardwareProfile& hardware_pr
     // Planned outside the lock: plan_job can take seconds, and another thread
     // planning the same job concurrently only costs a duplicate insert.
     Plan plan = plan_job(job_spec, hardware_profile);
-    if (!is_direct(plan.strategy)) {
+    // A plan on the disk tier (Phase 23) is priced from the scratch
+    // directory's space and bandwidth of this moment, which the key leaves
+    // out, so it is never stored.
+    if (!is_direct(plan.strategy) || on_disk_tier(plan)) {
         std::lock_guard<std::mutex> lock(c.mutex);
         ++c.stats.bypasses;
         --c.stats.misses;

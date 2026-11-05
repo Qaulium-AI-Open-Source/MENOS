@@ -1,6 +1,7 @@
 #pragma once
 
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -30,5 +31,11 @@ void apply_matrix(std::span<std::complex<double>> state,
                   std::span<const std::complex<double>> matrix,
                   std::span<const std::uint32_t> operands,
                   std::uint32_t num_threads);
+
+// The heap bytes one apply_matrix call on k operands allocates while it runs:
+// the generic kernel (k >= 3) gives each of its at most num_threads chunks a
+// gather buffer of 2^k amplitudes and 2^k indices; the k = 1 and k = 2 kernels
+// allocate nothing (docs/adr/0025 section 3.4).
+[[nodiscard]] std::uint64_t apply_matrix_scratch_bytes(std::size_t k, std::uint32_t num_threads);
 
 }  // namespace menos::engines::dense

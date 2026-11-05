@@ -89,7 +89,7 @@ TEST(ExplainTest, InfeasibleCandidateShowsItsRejectionReason) {
     Circuit circuit(10, 0);
     circuit.append(Opcode::CX, {0, 1});
     const RunOptions options{
-        .shots = 0, .want_statevector = true, .seed = 0, .memory_budget_bytes = 16400};
+        .shots = 0, .want_statevector = true, .seed = 0, .memory_budget_bytes = 17000};
     const std::string text = run(circuit, options).explain();
 
     EXPECT_NE(text.find("candidate 0"), std::string::npos);

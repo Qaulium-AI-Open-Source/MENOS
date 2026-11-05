@@ -1,4 +1,4 @@
-// Optional planner counters for benchmark reports (docs/adr/0025 section
+// Optional planner counters for benchmark reports (docs/adr/0028 section
 // 12.3, C.3). Compiled in only when CMake's MENOS_PLANNER_COUNTERS option is
 // ON, which no shipped or timed build sets: menos_planner_benchmark built
 // with it reports, per corpus job, how the Schmidt-rank cache was used. Not

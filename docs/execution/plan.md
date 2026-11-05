@@ -43,4 +43,4 @@ Planning is deterministic. The same circuit, options and (for time budgets) cali
 
 ## Planning cost
 
-Planning is cheap next to running the job. With the Phase 21 planner (development branch, not yet released), on one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.
+Planning is cheap next to running the job. With the Phase 24 planner (development branch, not yet released), on one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.

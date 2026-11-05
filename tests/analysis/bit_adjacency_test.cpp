@@ -1,5 +1,5 @@
 // Targeted tests for the min-fill search's bitset adjacency
-// (src/analysis/bit_adjacency.h; docs/adr/0025 sections 10.1 and 12).
+// (src/analysis/bit_adjacency.h; docs/adr/0028 sections 10.1 and 12).
 //
 // common(a, b, range) sums popcounts over b's non-zero word span only; the
 // oracle here is the plain popcount over every word of both rows, computed
@@ -172,7 +172,7 @@ TEST(BitAdjacencyTest, AnEmptiedRowHasAnEmptyRangeAndNoFill) {
 }
 
 TEST(BitAdjacencyTest, TheSpanStaysExactUnderInterleavedSetsResetsAndClears) {
-    // The span is maintained incrementally (docs/adr/0025 section 12.3); it
+    // The span is maintained incrementally (docs/adr/0028 section 12.3); it
     // must match the row's real first and last non-zero words after every
     // operation, including resets that empty an end word and rows emptied
     // one bit at a time.
@@ -222,7 +222,7 @@ TEST(BitAdjacencyTest, TheSpanStaysExactUnderInterleavedSetsResetsAndClears) {
 TEST(BitAdjacencyTest, BothFillCountingPathsAgreeWithTheOracle) {
     // compute_fill counts |N(a) & N(v)| by bit tests when v has fewer
     // neighbours than words in its span and by popcounts otherwise
-    // (docs/adr/0025 section 12.3, C.1b): rows of a few far-apart bits take
+    // (docs/adr/0028 section 12.3, C.1b): rows of a few far-apart bits take
     // the first path, dense rows the second.
     std::mt19937_64 rng(13);
     for (const std::size_t n : {640U, 1000U}) {

@@ -1,0 +1,4 @@
+18:39:21 start power: {"ac_online": true, "battery_percent": 35, "power_scheme": "Balanced"}
+18:42:00 after-build power: {"ac_online": true, "battery_percent": 37, "power_scheme": "Balanced"}
+18:54:28 after-cuda power: {"ac_online": true, "battery_percent": 37, "power_scheme": "Balanced"}
+19:10:22 end power: {"ac_online": true, "battery_percent": 24, "power_scheme": "Balanced"}

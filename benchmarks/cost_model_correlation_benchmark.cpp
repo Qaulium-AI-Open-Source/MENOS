@@ -111,7 +111,9 @@ int main() {
                                          /*want_expectation=*/false,
                                          /*observable=*/nullptr,
                                          menos_benchmark::safe_allocation_budget_bytes(),
-                                         /*accuracy_policy=*/{});
+                                         /*accuracy_policy=*/{},
+                                         /*trajectories=*/0,
+                                         /*shots=*/0);
         if (!estimate.feasible) {
             std::cout << "  n=" << n << ": skipped (" << estimate.infeasible_reason << ")\n";
             continue;

@@ -303,7 +303,7 @@ TEST(TreewidthTest, DenseAndSparseMinFillAgreeOnRandomGraphs) {
 
 // The same agreement on graphs of several 64-bit words per row, and on the
 // line graphs of real circuits' closed networks -- the graphs the planner
-// actually searches (docs/adr/0025 section 12.3: the dense search updates
+// actually searches (docs/adr/0028 section 12.3: the dense search updates
 // fills incrementally, and the sparse search, which recomputes every
 // affected fill from scratch and scans every vertex, is its oracle).
 TEST(TreewidthTest, DenseAndSparseMinFillAgreeOnLargerAndCircuitGraphs) {

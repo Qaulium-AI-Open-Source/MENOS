@@ -32,7 +32,7 @@ Before executing a factorized plan the runtime verifies that its regions are con
 
 ## Timing and memory
 
-The result records `execute_seconds` and `sample_seconds` of the attempt that succeeded, and `actual_state_bytes`, which is a genuine measurement (for a factorized run, the peak over regions plus the global buffer) rather than a copy of the estimate.
+The result records `execute_seconds` and `sample_seconds` of the attempt that succeeded. It also records the most host and device memory that attempt's execution held, `peak_host_bytes` and `peak_device_bytes`, measured by the runtime's memory ledger (since Phase 21). Both count execution buffers, not process memory; see [Memory Constraints](/planning/memory-constraints#what-the-budget-governs-and-what-the-peak-measures). `actual_state_bytes` is the figure each engine reports for its state, kept for compatibility.
 
 ## With a time budget
 

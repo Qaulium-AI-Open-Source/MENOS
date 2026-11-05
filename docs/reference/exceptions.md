@@ -57,7 +57,7 @@ No plan fits. See [ResourceExceeded](/runtime/resource-exceeded).
 
 ## `InternalError`
 
-MENOS detected that one of its own invariants was violated. Seeing one means a bug, a corrupted plan, or a degenerate case MENOS does not yet handle, not a mistake in your code. One known case: an observable whose every term is the identity ([details](/observables/pauli-observables#an-all-identity-observable-is-not-supported)). CUDA failures that occur despite the budget check also surface as `InternalError`, for example a device error message such as `cuda: cudaMemcpyToSymbol (matrix) failed: …`.
+MENOS detected that one of its own invariants was violated. Seeing one means a bug, a corrupted plan, or a degenerate case MENOS does not yet handle, not a mistake in your code. One known case: an observable whose every term is the identity ([details](/observables/pauli-observables#an-all-identity-observable-is-not-supported)). CUDA failures other than running out of device memory also surface as `InternalError`, for example a device error message such as `cuda: cudaMemcpyToSymbol (matrix) failed: …`; a device allocation that fails for memory after the plan's check is a `ResourceExceeded` naming the bytes (since Phase 23).
 
 ## Other exceptions you may see
 

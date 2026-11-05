@@ -1,0 +1,813 @@
+{
+  "disk": [
+    {
+      "chunk_bytes": 268435456,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 4.47e-06,
+        "median": 3.887e-06,
+        "min": 3.59e-06,
+        "q1": 3.86e-06,
+        "q3": 3.892e-06
+      },
+      "measured": true,
+      "path": "explicit buffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.3354792483706195,
+      "read_seconds": {
+        "max": 0.407555282,
+        "median": 0.402491238,
+        "min": 0.382930629,
+        "q1": 0.390447176,
+        "q3": 0.404257452
+      },
+      "write_and_flush_gb_per_second": 3.944433599643987,
+      "write_gb_per_second": 3.944461761227728,
+      "write_seconds": {
+        "max": 0.622807666,
+        "median": 0.544430084,
+        "min": 0.53306976,
+        "q1": 0.53463663,
+        "q3": 0.546881221
+      }
+    },
+    {
+      "chunk_bytes": 268435456,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 4.13e-06,
+        "median": 3.848e-06,
+        "min": 3.696e-06,
+        "q1": 3.772e-06,
+        "q3": 4.019e-06
+      },
+      "measured": true,
+      "path": "explicit unbuffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.266132701512267,
+      "read_seconds": {
+        "max": 0.412671237,
+        "median": 0.407791404,
+        "min": 0.40434068,
+        "q1": 0.407383986,
+        "q3": 0.409667169
+      },
+      "write_and_flush_gb_per_second": 4.020889694910373,
+      "write_gb_per_second": 4.020918665187215,
+      "write_seconds": {
+        "max": 0.576169077,
+        "median": 0.534077863,
+        "min": 0.52594445,
+        "q1": 0.530348603,
+        "q3": 0.534421831
+      }
+    },
+    {
+      "chunk_bytes": 268435456,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 5.077e-06,
+        "median": 5.03e-06,
+        "min": 4.69e-06,
+        "q1": 4.78e-06,
+        "q3": 5.032e-06
+      },
+      "measured": true,
+      "path": "mapped",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 18.54979098523739,
+      "read_seconds": {
+        "max": 0.119948649,
+        "median": 0.115768617,
+        "min": 0.113815626,
+        "q1": 0.114200747,
+        "q3": 0.118624662
+      },
+      "write_and_flush_gb_per_second": 2.605675162706209,
+      "write_gb_per_second": 2.605691065788882,
+      "write_seconds": {
+        "max": 0.82838321,
+        "median": 0.824151288,
+        "min": 0.789917299,
+        "q1": 0.813449482,
+        "q3": 0.826042876
+      }
+    },
+    {
+      "chunk_bytes": 1073741824,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 4.114e-06,
+        "median": 3.863e-06,
+        "min": 3.411e-06,
+        "q1": 3.676e-06,
+        "q3": 3.918e-06
+      },
+      "measured": true,
+      "path": "explicit buffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.2702463977609995,
+      "read_seconds": {
+        "max": 0.414748021,
+        "median": 0.407473102,
+        "min": 0.405493905,
+        "q1": 0.407424316,
+        "q3": 0.407949322
+      },
+      "write_and_flush_gb_per_second": 4.047666948001296,
+      "write_gb_per_second": 4.0476964198613095,
+      "write_seconds": {
+        "max": 0.535535626,
+        "median": 0.530544642,
+        "min": 0.52762602,
+        "q1": 0.529715617,
+        "q3": 0.532348052
+      }
+    },
+    {
+      "chunk_bytes": 1073741824,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 4.285e-06,
+        "median": 3.845e-06,
+        "min": 3.713e-06,
+        "q1": 3.758e-06,
+        "q3": 4.002e-06
+      },
+      "measured": true,
+      "path": "explicit unbuffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.3287833969061005,
+      "read_seconds": {
+        "max": 0.41406689,
+        "median": 0.402996986,
+        "min": 0.399127536,
+        "q1": 0.402897341,
+        "q3": 0.403294416
+      },
+      "write_and_flush_gb_per_second": 4.059186424386441,
+      "write_gb_per_second": 4.059215926126343,
+      "write_seconds": {
+        "max": 0.788696428,
+        "median": 0.529039028,
+        "min": 0.522882161,
+        "q1": 0.528686741,
+        "q3": 0.529188792
+      }
+    },
+    {
+      "chunk_bytes": 2147483648,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 1.668e-06,
+        "median": 1.636e-06,
+        "min": 1.258e-06,
+        "q1": 1.426e-06,
+        "q3": 1.655e-06
+      },
+      "measured": true,
+      "path": "explicit buffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.322538902658707,
+      "read_seconds": {
+        "max": 0.424665761,
+        "median": 0.403469789,
+        "min": 0.399403125,
+        "q1": 0.403012113,
+        "q3": 0.403816474
+      },
+      "write_and_flush_gb_per_second": 4.055231016581191,
+      "write_gb_per_second": 4.055243544703232,
+      "write_seconds": {
+        "max": 0.832079924,
+        "median": 0.529557257,
+        "min": 0.522731396,
+        "q1": 0.527972468,
+        "q3": 0.532356499
+      }
+    },
+    {
+      "chunk_bytes": 2147483648,
+      "file_bytes": 2147483648,
+      "flush_seconds": {
+        "max": 3.101e-06,
+        "median": 1.592e-06,
+        "min": 1.469e-06,
+        "q1": 1.52e-06,
+        "q3": 1.929e-06
+      },
+      "measured": true,
+      "path": "explicit unbuffered",
+      "read_after_cache_drop": true,
+      "read_gb_per_second": 5.079378970033511,
+      "read_seconds": {
+        "max": 0.431143274,
+        "median": 0.422784687,
+        "min": 0.419341089,
+        "q1": 0.422350131,
+        "q3": 0.424279206
+      },
+      "write_and_flush_gb_per_second": 3.8374376210160133,
+      "write_gb_per_second": 3.837448537859682,
+      "write_seconds": {
+        "max": 0.563872187,
+        "median": 0.559612364,
+        "min": 0.538441838,
+        "q1": 0.555977362,
+        "q3": 0.563006151
+      }
+    }
+  ],
+  "disk_repetitions": 5,
+  "environment": "environment: os=Linux arch=x86_64 compiler=GCC 15.2.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H",
+  "facts": {
+    "hardware_threads": 22,
+    "host_budget_bytes": 12598722560,
+    "scratch_directory": "/tmp",
+    "volume_available_bytes": 12598722560,
+    "volume_capacity_bytes": 12598722560
+  },
+  "in_memory": [
+    {
+      "circuit_seconds": {
+        "max": 8.526195108,
+        "median": 8.423477254,
+        "min": 8.340979445,
+        "q1": 8.39815718275,
+        "q3": 8.45591198175
+      },
+      "empty_circuit_seconds": {
+        "max": 0.467796201,
+        "median": 0.3712852035,
+        "min": 0.368721681,
+        "q1": 0.36942254325,
+        "q3": 0.37921463974999997
+      },
+      "gates": 237,
+      "measured": true,
+      "n": 26,
+      "per_gate_seconds": 0.03397549388396625,
+      "per_gate_traffic_gb_per_second": 63.20684124075214,
+      "repetitions": 10
+    },
+    {
+      "circuit_seconds": {
+        "max": 17.699238864,
+        "median": 17.474756111,
+        "min": 17.3626537,
+        "q1": 17.399508878,
+        "q3": 17.5219536975
+      },
+      "empty_circuit_seconds": {
+        "max": 0.963970557,
+        "median": 0.755566136,
+        "min": 0.740664394,
+        "q1": 0.75336566,
+        "q3": 0.9010075037499999
+      },
+      "gates": 246,
+      "measured": true,
+      "n": 27,
+      "per_gate_seconds": 0.06796418689024392,
+      "per_gate_traffic_gb_per_second": 63.19456602837003,
+      "repetitions": 10
+    },
+    {
+      "circuit_seconds": {
+        "max": 37.638085071,
+        "median": 37.552131672,
+        "min": 36.931827412,
+        "q1": 37.241979541999996,
+        "q3": 37.595108371500004
+      },
+      "empty_circuit_seconds": {
+        "max": 1.957796228,
+        "median": 1.936526791,
+        "min": 1.821624085,
+        "q1": 1.879075438,
+        "q3": 1.9471615094999999
+      },
+      "gates": 255,
+      "measured": true,
+      "n": 28,
+      "per_gate_seconds": 0.13966903874901962,
+      "per_gate_traffic_gb_per_second": 61.50206709330772,
+      "repetitions": 3
+    },
+    {
+      "circuit_seconds": {
+        "max": 98.471354436,
+        "median": 74.216064743,
+        "min": 73.720307995,
+        "q1": 73.968186369,
+        "q3": 86.34370958950001
+      },
+      "empty_circuit_seconds": {
+        "max": 3.408793224,
+        "median": 3.379162383,
+        "min": 3.245959565,
+        "q1": 3.312560974,
+        "q3": 3.3939778035000003
+      },
+      "gates": 264,
+      "measured": true,
+      "n": 29,
+      "per_gate_seconds": 0.2683215998484849,
+      "per_gate_traffic_gb_per_second": 64.02715694040688,
+      "repetitions": 3
+    },
+    {
+      "measured": false,
+      "n": 30
+    }
+  ],
+  "large_repetitions": 3,
+  "passes": [
+    {
+      "family": "crossover",
+      "gates": 255,
+      "global_gates": 36,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 24,
+      "passes_window_gmax_plus_1": 13,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "crossover",
+      "gates": 255,
+      "global_gates": 18,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "crossover",
+      "gates": 273,
+      "global_gates": 54,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 36,
+      "passes_window_gmax_plus_1": 27,
+      "passes_window_gmax_plus_2": 18
+    },
+    {
+      "family": "crossover",
+      "gates": 273,
+      "global_gates": 36,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 24,
+      "passes_window_gmax_plus_1": 13,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "crossover",
+      "gates": 273,
+      "global_gates": 18,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "crossover",
+      "gates": 291,
+      "global_gates": 72,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 48,
+      "passes_window_gmax_plus_1": 37,
+      "passes_window_gmax_plus_2": 24
+    },
+    {
+      "family": "crossover",
+      "gates": 291,
+      "global_gates": 54,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 36,
+      "passes_window_gmax_plus_1": 27,
+      "passes_window_gmax_plus_2": 18
+    },
+    {
+      "family": "crossover",
+      "gates": 291,
+      "global_gates": 36,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 24,
+      "passes_window_gmax_plus_1": 13,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "crossover",
+      "gates": 309,
+      "global_gates": 90,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 60,
+      "passes_window_gmax_plus_1": 45,
+      "passes_window_gmax_plus_2": 30
+    },
+    {
+      "family": "crossover",
+      "gates": 309,
+      "global_gates": 72,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 48,
+      "passes_window_gmax_plus_1": 37,
+      "passes_window_gmax_plus_2": 24
+    },
+    {
+      "family": "crossover",
+      "gates": 309,
+      "global_gates": 54,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 36,
+      "passes_window_gmax_plus_1": 27,
+      "passes_window_gmax_plus_2": 18
+    },
+    {
+      "family": "ladder",
+      "gates": 330,
+      "global_gates": 48,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 30,
+      "passes_window_gmax_plus_1": 18,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "ladder",
+      "gates": 330,
+      "global_gates": 24,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "ladder",
+      "gates": 354,
+      "global_gates": 72,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 48,
+      "passes_window_gmax_plus_1": 30,
+      "passes_window_gmax_plus_2": 20
+    },
+    {
+      "family": "ladder",
+      "gates": 354,
+      "global_gates": 48,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 30,
+      "passes_window_gmax_plus_1": 18,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "ladder",
+      "gates": 354,
+      "global_gates": 24,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "ladder",
+      "gates": 378,
+      "global_gates": 96,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 66,
+      "passes_window_gmax_plus_1": 39,
+      "passes_window_gmax_plus_2": 27
+    },
+    {
+      "family": "ladder",
+      "gates": 378,
+      "global_gates": 72,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 48,
+      "passes_window_gmax_plus_1": 30,
+      "passes_window_gmax_plus_2": 20
+    },
+    {
+      "family": "ladder",
+      "gates": 378,
+      "global_gates": 48,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 30,
+      "passes_window_gmax_plus_1": 18,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "ladder",
+      "gates": 402,
+      "global_gates": 120,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 84,
+      "passes_window_gmax_plus_1": 48,
+      "passes_window_gmax_plus_2": 34
+    },
+    {
+      "family": "ladder",
+      "gates": 402,
+      "global_gates": 96,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 66,
+      "passes_window_gmax_plus_1": 39,
+      "passes_window_gmax_plus_2": 27
+    },
+    {
+      "family": "ladder",
+      "gates": 402,
+      "global_gates": 72,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 48,
+      "passes_window_gmax_plus_1": 30,
+      "passes_window_gmax_plus_2": 20
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 37,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 13,
+      "passes_window_gmax_plus_1": 5,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 16,
+      "local_qubits": 26,
+      "max_global_operands": 1,
+      "n": 28,
+      "passes_window_gmax": 7,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 53,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 22,
+      "passes_window_gmax_plus_1": 12,
+      "passes_window_gmax_plus_2": 8
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 44,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 16,
+      "passes_window_gmax_plus_1": 6,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 20,
+      "local_qubits": 28,
+      "max_global_operands": 1,
+      "n": 30,
+      "passes_window_gmax": 10,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 64,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 30,
+      "passes_window_gmax_plus_1": 17,
+      "passes_window_gmax_plus_2": 13
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 48,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 18,
+      "passes_window_gmax_plus_1": 12,
+      "passes_window_gmax_plus_2": 6
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 38,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 12,
+      "passes_window_gmax_plus_1": 4,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 78,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 39,
+      "passes_window_gmax_plus_1": 24,
+      "passes_window_gmax_plus_2": 18
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 60,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 29,
+      "passes_window_gmax_plus_1": 17,
+      "passes_window_gmax_plus_2": 12
+    },
+    {
+      "family": "random_pairs",
+      "gates": 200,
+      "global_gates": 46,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 20,
+      "passes_window_gmax_plus_1": 12,
+      "passes_window_gmax_plus_2": 6
+    },
+    {
+      "family": "qft_like",
+      "gates": 406,
+      "global_gates": 106,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 54,
+      "passes_window_gmax_plus_1": 35,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "qft_like",
+      "gates": 406,
+      "global_gates": 55,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 28,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "qft_like",
+      "gates": 465,
+      "global_gates": 165,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 87,
+      "passes_window_gmax_plus_1": 56,
+      "passes_window_gmax_plus_2": 41
+    },
+    {
+      "family": "qft_like",
+      "gates": 465,
+      "global_gates": 114,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 58,
+      "passes_window_gmax_plus_1": 38,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "qft_like",
+      "gates": 465,
+      "global_gates": 59,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 30,
+      "passes_window_gmax": 1,
+      "passes_window_gmax_plus_1": 1,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "qft_like",
+      "gates": 528,
+      "global_gates": 228,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 124,
+      "passes_window_gmax_plus_1": 79,
+      "passes_window_gmax_plus_2": 58
+    },
+    {
+      "family": "qft_like",
+      "gates": 528,
+      "global_gates": 177,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 93,
+      "passes_window_gmax_plus_1": 60,
+      "passes_window_gmax_plus_2": 44
+    },
+    {
+      "family": "qft_like",
+      "gates": 528,
+      "global_gates": 122,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 32,
+      "passes_window_gmax": 62,
+      "passes_window_gmax_plus_1": 40,
+      "passes_window_gmax_plus_2": 1
+    },
+    {
+      "family": "qft_like",
+      "gates": 595,
+      "global_gates": 295,
+      "local_qubits": 24,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 165,
+      "passes_window_gmax_plus_1": 104,
+      "passes_window_gmax_plus_2": 76
+    },
+    {
+      "family": "qft_like",
+      "gates": 595,
+      "global_gates": 244,
+      "local_qubits": 26,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 132,
+      "passes_window_gmax_plus_1": 84,
+      "passes_window_gmax_plus_2": 62
+    },
+    {
+      "family": "qft_like",
+      "gates": 595,
+      "global_gates": 189,
+      "local_qubits": 28,
+      "max_global_operands": 2,
+      "n": 34,
+      "passes_window_gmax": 99,
+      "passes_window_gmax_plus_1": 64,
+      "passes_window_gmax_plus_2": 47
+    }
+  ],
+  "repetitions": 10,
+  "schema_version": 1
+}

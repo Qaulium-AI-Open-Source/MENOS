@@ -1,12 +1,12 @@
 MENOS EXECUTION REPORT
 circuit    qubits=8 clbits=0 operations=92 depth=16 global_phase=0
 light_cone qubits 8->8 operations 92->92
-candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=4096 work_units=61952
+candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=4632 work_units=61952
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="the stabilizer engine does not track global phase -- only the dense engine can produce a statevector"
 candidate 2strategy=direct_mps feasible=false winner=false reason="the MPS engine cannot produce a statevector -- reconstructing the full state defeats the reason to use it"
 strategy   direct_dense (exact)
 region 0   qubits=[0,1,2,3,4,5,6,7] engine=dense backend=cpu
-estimated  state_bytes=4096 work_units=61952
+estimated  state_bytes=4632 work_units=61952
 --- plan fields not printed by explain() ---
-region 0: operations=92 observable_terms=0 state_bytes=4096 work_units=61952 global_to_local_size=8
+region 0: operations=92 observable_terms=0 state_bytes=4632 work_units=61952 global_to_local_size=8
 reduced_circuit: qubits=8 operations=92

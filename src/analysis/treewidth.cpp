@@ -18,6 +18,7 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/pauli_row.h"
 
 namespace menos::analysis {
@@ -264,7 +265,7 @@ namespace {
 // with AVX2: each byte's popcount is looked up from its two nibbles
 // (vpshufb), and the byte counts are summed into four 64-bit lanes (vpsadbw).
 // The tail and short spans use the scalar popcount. Exact integer arithmetic,
-// so the same count as the scalar loop (docs/adr/0025 section 12.3, C.1c).
+// so the same count as the scalar loop (docs/adr/0028 section 12.3, C.1c).
 [[gnu::target("avx2,popcnt")]] std::size_t and_popcount_avx2(const std::uint64_t* a,
                                                              const std::uint64_t* b,
                                                              std::size_t first,
@@ -335,7 +336,6 @@ const bool kHasAvx2 = [] {
 
 }  // namespace
 #endif
-
 // fill(v) = C(deg(v), 2) - |{edges already present among v's neighbors}|
 // -- the number of NEW fill-in edges eliminating v right now would add.
 // Each edge {a, b} among v's neighbours is counted once from a and once from
@@ -388,6 +388,13 @@ std::size_t compute_fill(const BitAdjacency& adjacency,
 }  // namespace detail
 
 namespace {
+
+// One std::set<std::size_t> node: the element, plus the links and colour that
+// both libstdc++ and the MSVC STL pack into four pointer-sized words.
+// One allocation each (common::tree_node_bytes, written out because it is
+// needed as a constant).
+constexpr std::uint64_t kSetNodeBytes =
+    sizeof(std::size_t) + (4 * sizeof(void*)) + common::kHeapBlockOverheadBytes;
 
 // The original std::set-based fill count, kept as the fallback for graphs too
 // large for a dense bitset (see estimate_treewidth_min_fill) and as the
@@ -449,9 +456,11 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         adjacency.set(b, a);
     }
     std::vector<std::size_t> scratch;
+    std::size_t max_scratch = 0;  // the most entries scratch held, for search_peak_bytes
     std::vector<std::size_t> initial_fill(graph.num_nodes);
     for (std::size_t v = 0; v < graph.num_nodes; ++v) {
         initial_fill[v] = compute_fill(adjacency, v, scratch);
+        max_scratch = std::max(max_scratch, scratch.size());
     }
     // The next vertex: the remaining one with the smallest fill, ties to the
     // lowest index (min_fill_queue.h).
@@ -467,6 +476,11 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
     std::vector<std::size_t> affected;
     std::vector<std::size_t> drop(graph.num_nodes, 0);
     std::vector<std::pair<std::size_t, std::size_t>> new_edges;
+    // The most entries each list grown by push_back ever held, for
+    // search_peak_bytes below.
+    std::size_t max_neighbors = 0;
+    std::size_t max_affected = 0;
+    std::size_t max_new_edges = 0;
 
     for (std::size_t step = 0; step < graph.num_nodes; ++step) {
         const std::size_t best_vertex = queue.pop_min();
@@ -475,6 +489,7 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
         neighbors.clear();
         adjacency.for_each_neighbor(best_vertex, [&](std::size_t u) { neighbors.push_back(u); });
         const std::size_t degree = neighbors.size();
+        max_neighbors = std::max(max_neighbors, degree);
         if (degree_exceeds_budget(degree, max_peak_bytes)) {
             // width is defined as the max degree over every step
             // (including this one, had it been recorded), so the final
@@ -506,12 +521,13 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
                 }
             }
         }
+        max_new_edges = std::max(max_new_edges, new_edges.size());
         for (const std::size_t nb : neighbors) {
             adjacency.reset(nb, best_vertex);
         }
         adjacency.clear_row(best_vertex);
 
-        // Exact incremental update (docs/adr/0025 section 12.3, C.2b).
+        // Exact incremental update (docs/adr/0028 section 12.3, C.2b).
         // fill(u) counts the non-adjacent pairs among u's neighbours.
         //  - A neighbour of best_vertex loses it as a neighbour and gains
         //    the others: its fill is recomputed in full.
@@ -537,15 +553,47 @@ EliminationOrder estimate_treewidth_min_fill_dense(const TensorNetworkGraph& gra
                 ++drop[u];
             });
         }
+        max_affected = std::max(max_affected, affected.size());
         for (const std::size_t u : affected) {
             queue.set_fill(u, queue.fill(u) - drop[u]);
             drop[u] = 0;
         }
         for (const std::size_t nb : neighbors) {
             queue.set_fill(nb, compute_fill(adjacency, nb, scratch));
+            max_scratch = std::max(max_scratch, scratch.size());
             is_affected[nb] = false;
         }
     }
+
+    // The most heap bytes the search held at once (EliminationOrder::
+    // search_peak_bytes). Everything here lives until the return, so the peak
+    // is the sum at the end: the bitset adjacency (its bit rows, one span and
+    // one degree per node), the initial fill counts, the queue's three arrays,
+    // the result's two lists, the affected flags and the drop counts, each
+    // sized once, plus the four lists grown by push_back, each bounded by
+    // common::grown_vector_bytes at the most entries it held (the same
+    // platform-independent bound the sparse search and the engines use, so
+    // a plan's figures are the same on every platform). Deterministic, so
+    // the search execute() runs again on the same graph holds at most this.
+    const auto sized = [](std::uint64_t count, std::uint64_t element_bytes) {
+        return common::heap_block_bytes(common::checked_mul(count, element_bytes));
+    };
+    const std::uint64_t n = graph.num_nodes;
+    const std::uint64_t words = (n + 63) / 64;
+    std::uint64_t bytes = sized(common::checked_mul(n, words), sizeof(std::uint64_t));
+    bytes = common::checked_add(bytes, sized(n, sizeof(BitAdjacency::WordRange)));
+    bytes = common::checked_add(bytes, common::checked_mul(8, sized(n, sizeof(std::size_t))));
+    bytes = common::checked_add(bytes, sized(words, sizeof(std::uint64_t)));
+    bytes =
+        common::checked_add(bytes, common::grown_vector_bytes(max_scratch, sizeof(std::size_t)));
+    bytes =
+        common::checked_add(bytes, common::grown_vector_bytes(max_neighbors, sizeof(std::size_t)));
+    bytes =
+        common::checked_add(bytes, common::grown_vector_bytes(max_affected, sizeof(std::size_t)));
+    bytes = common::checked_add(
+        bytes,
+        common::grown_vector_bytes(max_new_edges, sizeof(std::pair<std::size_t, std::size_t>)));
+    result.search_peak_bytes = bytes;
     return result;
 }
 
@@ -553,9 +601,10 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
                                                     std::uint64_t max_peak_bytes,
                                                     const MinFillStopPredicate& stop_after_step) {
     std::vector<std::set<std::size_t>> adjacency(graph.num_nodes);
+    std::uint64_t entries = 0;  // the adjacency sets' total size
     for (const auto& [a, b] : graph.edges) {
-        adjacency.at(a).insert(b);
-        adjacency.at(b).insert(a);
+        entries += adjacency.at(a).insert(b).second ? 1U : 0U;
+        entries += adjacency.at(b).insert(a).second ? 1U : 0U;
     }
     std::vector<bool> eliminated(graph.num_nodes, false);
 
@@ -568,6 +617,24 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
     result.order.reserve(graph.num_nodes);
     result.per_step_degree.reserve(graph.num_nodes);
     result.width = 0;
+
+    // Held throughout: each vertex's set (with its sentinel node), fill
+    // count and two result slots, the elimination flags, and the affected
+    // set's sentinel. A step adds its neighbor list and affected set.
+    // Five arrays (the sets, the fill counts, the flags and the result's two
+    // lists) are one allocation each.
+    const std::uint64_t fixed =
+        common::checked_add(common::checked_mul(graph.num_nodes,
+                                                sizeof(std::set<std::size_t>) + kSetNodeBytes +
+                                                    (3 * sizeof(std::size_t))),
+                            ((graph.num_nodes + 63) / 64 * sizeof(std::uint64_t)) + kSetNodeBytes +
+                                (5 * common::kHeapBlockOverheadBytes));
+    const auto note = [&](std::uint64_t step_bytes) {
+        result.search_peak_bytes = std::max(
+            result.search_peak_bytes,
+            common::checked_add(common::checked_add(fixed, entries * kSetNodeBytes), step_bytes));
+    };
+    note(0);
 
     for (std::size_t step = 0; step < graph.num_nodes; ++step) {
         std::size_t best_vertex = 0;
@@ -612,15 +679,18 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
 
         const std::vector<std::size_t> neighbors(adjacency[best_vertex].begin(),
                                                  adjacency[best_vertex].end());
+        const std::uint64_t neighbor_bytes = neighbors.size() * sizeof(std::size_t);
         for (std::size_t i = 0; i < neighbors.size(); ++i) {
             for (std::size_t j = i + 1; j < neighbors.size(); ++j) {
-                adjacency[neighbors[i]].insert(neighbors[j]);
-                adjacency[neighbors[j]].insert(neighbors[i]);
+                entries += adjacency[neighbors[i]].insert(neighbors[j]).second ? 1U : 0U;
+                entries += adjacency[neighbors[j]].insert(neighbors[i]).second ? 1U : 0U;
             }
         }
+        note(common::heap_block_bytes(neighbor_bytes));
         for (const std::size_t nb : neighbors) {
-            adjacency[nb].erase(best_vertex);
+            entries -= adjacency[nb].erase(best_vertex);
         }
+        entries -= adjacency[best_vertex].size();
         adjacency[best_vertex].clear();
         eliminated[best_vertex] = true;
 
@@ -636,6 +706,7 @@ EliminationOrder estimate_treewidth_min_fill_sparse(const TensorNetworkGraph& gr
                 affected.insert(nb2);
             }
         }
+        note(common::heap_block_bytes(neighbor_bytes) + (affected.size() * kSetNodeBytes));
         for (const std::size_t v : affected) {
             fill[v] = compute_fill_sparse(adjacency, v);
         }
@@ -655,6 +726,66 @@ EliminationOrder estimate_treewidth_min_fill(const TensorNetworkGraph& graph,
     return graph.num_nodes <= kDenseMinFillMaxNodes
                ? estimate_treewidth_min_fill_dense(graph, max_peak_bytes, stop_after_step)
                : estimate_treewidth_min_fill_sparse(graph, max_peak_bytes, stop_after_step);
+}
+
+std::uint64_t closed_timelines_bytes(const ClosedTimelines& timelines) {
+    std::uint64_t bytes = common::heap_block_bytes(timelines.per_qubit.size() *
+                                                   sizeof(std::vector<ClosedTimelineEntry>));
+    for (const std::vector<ClosedTimelineEntry>& combined : timelines.per_qubit) {
+        bytes = common::checked_add(
+            bytes, common::grown_vector_bytes(combined.size(), sizeof(ClosedTimelineEntry)));
+    }
+    return bytes;
+}
+
+std::uint64_t closed_timelines_peak_bytes(const ClosedTimelines& timelines,
+                                          std::size_t num_operations) {
+    // ket_timelines(): node_index, and per qubit its ket entries, each list
+    // grown one entry at a time; then the result beside them.
+    std::uint64_t bytes = common::checked_add(
+        common::heap_block_bytes(num_operations * sizeof(std::size_t)),
+        common::heap_block_bytes(timelines.per_qubit.size() *
+                                 sizeof(std::vector<std::pair<std::size_t, std::size_t>>)));
+    for (const std::vector<ClosedTimelineEntry>& combined : timelines.per_qubit) {
+        std::uint64_t ket = 0;
+        for (const ClosedTimelineEntry& entry : combined) {
+            ket += entry.kind == ClosedTimelineEntry::Kind::KetGate ? 1U : 0U;
+        }
+        bytes = common::checked_add(
+            bytes, common::grown_vector_bytes(ket, sizeof(std::pair<std::size_t, std::size_t>)));
+    }
+    return common::checked_add(bytes, closed_timelines_bytes(timelines));
+}
+
+std::uint64_t line_graph_bytes(const LineGraph& line_graph) {
+    return common::checked_add(
+        common::heap_block_bytes(line_graph.graph.edges.size() *
+                                 sizeof(std::pair<std::size_t, std::size_t>)),
+        common::grown_vector_bytes(line_graph.wire_of.size(), sizeof(WireId)));
+}
+
+std::uint64_t line_graph_peak_bytes(const ClosedTimelines& timelines, const LineGraph& line_graph) {
+    const std::uint64_t wires = line_graph.wire_of.size();
+    const std::uint64_t edges = line_graph.graph.edges.size();
+    // wires_of_tensor_node: one map node per tensor node and its wire list
+    // (2 entries per wire in total, each list grown one at a time); the
+    // unique_edges set; then the result's edge vector and wire_of.
+    const std::uint64_t map_node =
+        common::tree_node_bytes(sizeof(std::pair<const std::size_t, std::vector<std::size_t>>)) +
+        (2 * common::kHeapBlockOverheadBytes);  // and its own wire list, grown
+    const std::uint64_t edge_node =
+        common::tree_node_bytes(sizeof(std::pair<std::size_t, std::size_t>));
+    std::uint64_t bytes = common::checked_mul(timelines.num_nodes + 1, map_node);
+    bytes = common::checked_add(bytes, common::grown_vector_bytes(2 * wires, sizeof(std::size_t)));
+    bytes = common::checked_add(bytes, common::checked_mul(edges + 1, edge_node));
+    return common::checked_add(bytes, line_graph_bytes(line_graph));
+}
+
+std::uint64_t elimination_order_bytes(const EliminationOrder& order) {
+    return common::checked_add(
+        common::heap_block_bytes(common::checked_mul(order.order.capacity(), sizeof(std::size_t))),
+        common::heap_block_bytes(
+            common::checked_mul(order.per_step_degree.capacity(), sizeof(std::size_t))));
 }
 
 }  // namespace menos::analysis

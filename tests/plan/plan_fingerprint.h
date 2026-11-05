@@ -1,4 +1,4 @@
-// What two planners are compared on (Phase 21, docs/adr/0025 sections 3 and
+// What two planners are compared on (Phase 24, docs/adr/0028 sections 3 and
 // 6): Plan::explain() plus the plan fields explain() does not print, or the
 // refusal a job ends in.
 //

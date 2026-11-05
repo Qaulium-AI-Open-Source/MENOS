@@ -32,6 +32,8 @@ Cost grows **exponentially** with qubit count: one more qubit doubles both memor
 
 Gates are applied by a single generic kernel that handles any operand count: it enumerates the `2^(n-k)` groups of amplitudes that a `k`-qubit gate mixes, gathers each group, multiplies by the gate matrix, and scatters the result back. Counts are drawn by one pass over the cumulative outcome distribution. The same algorithm runs on an NVIDIA GPU; see [CUDA](/engines/cuda).
 
+When the state does not fit the memory budget and the job wants counts or an expectation value, the same kernels run over a **scratch file** instead (the disk tier, since Phase 23): a window of the file that fits the budget is read, every gate that can be applied to it is applied, and it is written back, in as few passes as the circuit allows. Results are bit for bit the in-memory ones. See [Memory Constraints](/planning/memory-constraints#the-disk-tier).
+
 ## When it is chosen
 
 | Situation | Outcome |
@@ -39,7 +41,8 @@ Gates are applied by a single generic kernel that handles any operand count: it 
 | You request a statevector | Dense, or a factorized plan of dense regions |
 | Small circuit with no cheaper engine | Dense |
 | Large non-Clifford circuit, low entanglement | Usually MPS instead |
-| More qubits than fit in the memory budget | Dense is refused; the plan report says how many bytes it needed |
+| More qubits than fit in the memory budget, counts or expectation wanted | Dense on the disk tier, if the scratch directory has the room; the plan report says `tier=disk` |
+| More qubits than fit in the memory budget, statevector wanted | Dense is refused; the plan report says how many bytes it needed |
 
 ```python
 from menos import Circuit, Opcode, RunOptions, run
@@ -62,7 +65,7 @@ assert len(result.statevector) == 2**n
 
 ## Limits
 
-- Memory is the limit. By default a job may use half of physical memory; see [Memory Constraints](/planning/memory-constraints).
+- Memory is the limit. By default a job may use half of physical memory; see [Memory Constraints](/planning/memory-constraints). Beyond it, the disk tier reaches as far as the scratch directory's space and bandwidth allow, for counts and expectation values only.
 - The number of qubits must be representable in the cost arithmetic (at most 62), although memory binds long before that.
 - A unitary gate is limited to five qubits.
 

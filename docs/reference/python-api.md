@@ -6,7 +6,7 @@ The native API, exported from the top-level `menos` package. It is the thin laye
 from menos import Circuit, NoiseMethod, Opcode, RunOptions, Result, run
 ```
 
-The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
+The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `release_device_memory`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
 
 ## `run`
 
@@ -54,6 +54,14 @@ options.shots = 100
 options.seed = 1
 assert sum(menos.run(circuit, options).counts.values()) == 100
 ```
+
+## `release_device_memory`
+
+```text
+release_device_memory() -> None
+```
+
+Gives back to the CUDA driver the device memory MENOS keeps between jobs (Phase 22). MENOS allocates every GPU state from one memory pool and keeps a finished job's state memory in the pool, so the next job of the same size pays no allocation; the planner counts that memory as available, and `explain()` shows it as `device_pool_bytes` beside `device_available_bytes`. Call this when another process needs the GPU. A no-op in a build without CUDA, on a machine without a GPU, or when the pool is already empty.
 
 ## Readout mitigation
 
@@ -119,7 +127,7 @@ RunOptions()
 | `shots` | `int` | `0` | Samples to draw. `0` requests no counts |
 | `want_statevector` | `bool` | `False` | Return the exact statevector |
 | `seed` | `int` | `0` | Seed for sampling |
-| `memory_budget_bytes` | `int` or `None` | `None` | Memory budget; `None` means 50% of physical memory |
+| `memory_budget_bytes` | `int` or `None` | `None` | The budget the planner checks each candidate's estimated peak against; `None` means 50% of physical memory. It selects plans and refuses jobs; it is not a process cap |
 | `expectation` | `Observable` or `None` | `None` | Observable to evaluate |
 | `time_budget_seconds` | `float` or `None` | `None` | Wall-clock budget for one execution attempt. Must be finite and > 0, otherwise `run` raises `InvalidCircuitError` |
 | `noise_method` | `NoiseMethod` | `NoiseMethod.Exact` | `Auto` lets a noisy counts request be sampled by [trajectories](/build/noise-models#trajectory-simulation) when cheaper; `Exact` keeps the density matrix |
@@ -127,6 +135,8 @@ RunOptions()
 | `max_threads` | `int` or `None` | `None` | Most CPU threads for gate application. `None` means every hardware thread; a value above the hardware count is treated as it; `0` raises `InvalidCircuitError`. Results are bit-for-bit identical for every value |
 | `fuse_diagonal_gates` | `bool` | `False` | Fuse each run of consecutive diagonal gates (`rz rzz cp cz s t ...`) into one diagonal unitary per block of at most 5 qubits before the CPU dense engine applies them. Exact up to rounding (within `1e-12`), but not bit-for-bit identical to the unfused run, and a CUDA run never fuses; off by default |
 | `backend` | `Backend` or `None` | `None` | `None`: the planner chooses. `Backend.Cpu` or `Backend.Cuda` forces one (Phase 17); see [Forcing a backend](/planning/backend-selection#forcing-a-backend). A CUDA request that cannot be honoured raises `UnsupportedFeatureError` or `ResourceExceededError`, never runs on the CPU |
+| `tier` | `Tier` or `None` | `None` | `None`: the planner reaches for the disk tier only when the dense state does not fit `memory_budget_bytes` and no statevector is wanted (Phase 23). `Tier.Disk` forces it and never falls back: a statevector request, a noisy circuit or `Backend.Cuda` raises `UnsupportedFeatureError`, too little scratch space or a window over the budget raises `ResourceExceededError`. `Tier.InMemory` never uses it. Counts and expectation values on the disk tier are bit-for-bit the in-memory engine's |
+| `scratch_directory` | `pathlib.Path` or `None` | `None` | Where the disk tier keeps its scratch file (16 × 2ⁿ bytes, removed when the run ends). `None` means the system's temporary directory. The planner leaves 5% of the volume or 8 GiB, whichever is larger, untouched |
 
 At least one of counts (`shots > 0` with a measured circuit), a statevector, or an expectation must be requested. All fields are read/write.
 
@@ -143,6 +153,10 @@ menos._core.plan_cache_clear() -> None
 
 `Backend.Cpu` and `Backend.Cuda`, for `RunOptions.backend` (Phase 17).
 
+## `Tier`
+
+`Tier.InMemory`, `Tier.Disk` and `Tier.HostOffloaded`, for `RunOptions.tier` (Phase 23). `Tier.HostOffloaded` was measured and not built; requesting it raises `UnsupportedFeatureError`. See [Memory Constraints](/planning/memory-constraints).
+
 ## `Result`
 
 | Property | Type | Meaning |
@@ -152,7 +166,10 @@ menos._core.plan_cache_clear() -> None
 | `expectation_value` | `complex` or `None` | The expectation value |
 | `expectation_standard_error` | `float` or `None` | The measured standard error of a sampled expectation value; `None` for an exact one |
 | `exact` | `bool` | Whether nothing was approximated or sampled. `False` for a trajectory result |
-| `actual_state_bytes` | `int` | Peak bytes the engine actually used |
+| `actual_state_bytes` | `int` | The state bytes the engine reports for the run |
+| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured by the runtime's memory ledger (Phase 21). Execution buffers only, not process memory: see [Memory Constraints](/planning/memory-constraints#what-the-budget-governs-and-what-the-peak-measures) |
+| `peak_device_bytes` | `int` | The same for CUDA device memory; `0` for a plan with no CUDA region (Phase 21) |
+| `peak_disk_bytes` | `int` | The same for the disk tier's scratch file; `0` for a plan with no disk-tier region (Phase 23) |
 | `execute_seconds` | `float` | Seconds executing the attempt that succeeded |
 | `sample_seconds` | `float` | Seconds sampling |
 | `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend` and `reason`. Empty if the job never replanned (Phase 17) |
@@ -208,18 +225,20 @@ assert sig(core.from_qasm3) == (
 
 assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
     ["shots", "want_statevector", "seed", "memory_budget_bytes", "expectation", "time_budget_seconds",
-     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "backend"]
+     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "backend", "tier",
+     "scratch_directory"]
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
-     "actual_state_bytes", "execute_seconds", "sample_seconds", "replans", "explain"]
+     "actual_state_bytes", "peak_host_bytes", "peak_device_bytes", "peak_disk_bytes",
+     "execute_seconds", "sample_seconds", "replans", "explain"]
 )
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX".split()
 )
 assert sorted(menos.__all__) == sorted(
-    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "run", "run_batch", "ReadoutMitigationOptions",
-     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "MenosError",
+    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "Tier", "run", "run_batch", "ReadoutMitigationOptions",
+     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "release_device_memory", "MenosError",
      "InvalidCircuitError", "UnsupportedFeatureError", "ResourceExceededError", "InternalError"]
 )
 assert sorted(n for n in dir(core.MitigatedResult) if not n.startswith("_")) == sorted(
@@ -235,4 +254,5 @@ assert defaults.expectation is None
 assert defaults.noise_method == menos.NoiseMethod.Exact and defaults.expectation_precision is None
 assert defaults.max_threads is None
 assert defaults.fuse_diagonal_gates is False
+assert defaults.backend is None and defaults.tier is None and defaults.scratch_directory is None
 ```

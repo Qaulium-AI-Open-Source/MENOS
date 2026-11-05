@@ -25,13 +25,14 @@ actual     state_bytes=40 execute_s=0.000006 sample_s=0.000010
 | `noise` | `channels=… readout_errors=…` in the original circuit. **Only present when the job contains noise** ([Noise Models](/build/noise-models)) |
 | `light_cone` | Qubits and operations before and after [light-cone reduction](/observables/light-cone-reduction) |
 | `time_budget` | The budget in seconds. **Only present when the job set one** |
-| `candidate i` | One per enumerated candidate: strategy, feasible, winner, peak bytes, work units. A refused or [pruned](#pruned-candidates) candidate shows `reason="…"` instead. With a time budget each feasible one also shows `est_seconds` |
+| `tier` | `disk (requested)` or `in_memory (requested)`. **Only present when the job set `RunOptions.tier`** (since Phase 23) |
+| `candidate i` | One per enumerated candidate: strategy, feasible, winner, peak bytes, work units. A candidate on the GPU also shows `device_bytes`; one on the disk tier shows `tier=disk passes=… chunk_qubits=… disk_bytes=…` (since Phase 23). A refused or [pruned](#pruned-candidates) candidate shows `reason="…"` instead. With a time budget each feasible one also shows `est_seconds` |
 | `strategy` | The chosen strategy and `(exact)` or `(approximate)` |
-| `region i` | A region's qubits, engine and backend; for factorized plans `why=` explains the engine choice |
+| `region i` | A region's qubits, engine and backend, and `tier=disk` when it runs on the disk tier; for factorized plans `why=` explains the engine choice |
 | `cut` | Present for `cut_and_recombine`: cuts, fragments, branches, distinct evaluations, peak bytes |
-| `estimated` | The plan's predicted bytes and work units |
+| `estimated` | The plan's estimated peak bytes, an upper bound, and its work units. When the plan puts anything on the GPU, also `device_available_bytes`, the free device memory it was checked against. When it uses the disk tier, also `disk_available_bytes`, `scratch_directory` and the directory's `disk_write_bandwidth` and `disk_read_bandwidth` followed by `(measured)`, or `disk_bandwidth=unmeasured` |
 | `replan i` | Present only after a replan; see below |
-| `actual` | What was measured: bytes used, seconds executing and sampling |
+| `actual` | What happened: the engine's state bytes, seconds executing and sampling, and the measured `peak_host_bytes` and `peak_device_bytes` (since Phase 21), with `peak_disk_bytes` when it is not 0 (since Phase 23) |
 | `expectation` | The expectation value, when one was requested |
 
 Extra detail can appear on a `region` line: `accumulated_error_bound` for an approximating MPS run, and `actual_peak_bytes` for a tensor-network region.
@@ -42,7 +43,13 @@ Labels are padded to 11 characters. Labels that are already 11 or more character
 
 ## Determinism
 
-The report is byte-identical across runs of the same job, **except** the two wall-clock fields, `execute_s` and `sample_s`. Estimated seconds are machine-dependent, so `est_seconds` and the `time_budget` line are printed only when a time budget was set. Without one, a report does not depend on the machine's speed.
+The report is byte-identical across runs of the same job, with two exceptions:
+
+- the two wall-clock fields, `execute_s` and `sample_s`;
+- for a plan that uses the GPU, `device_available_bytes`, which depends on what other processes hold;
+- for a plan that uses the disk tier, `disk_available_bytes`, which depends on what else is on the volume, and the two bandwidth figures, which are measured once per process.
+
+Estimated seconds are machine-dependent, so `est_seconds` and the `time_budget` line are printed only when a time budget was set. Without one, a report does not depend on the machine's speed. Byte figures count the standard library's container sizes, so they can differ slightly between platforms.
 
 ## Why losers are listed
 
@@ -58,7 +65,7 @@ That is usually all you need to understand why a large job was planned the way i
 ## Pruned candidates
 
 ::: info Not in a published release yet
-Pruning is on the development branch (up to Phase 21, planner performance) and is not in a published release. A released version costs every candidate in full.
+Pruning is on the development branch (up to Phase 24, planner performance) and is not in a published release. A released version costs every candidate in full.
 :::
 
 Costing a tensor-network or cut-and-recombine candidate is itself a search. Once a cheaper feasible candidate is known, the planner stops such a search as soon as its running total passes that candidate's work units. A candidate stopped this way could never have won: the winner is the feasible candidate with the fewest work units. Its line shows where it was stopped instead of its full figures:

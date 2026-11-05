@@ -1,6 +1,8 @@
 #pragma once
 
+#include <complex>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <span>
 #include <utility>
@@ -33,6 +35,15 @@ namespace menos::engines::dense {
     std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
     std::uint32_t bitstring_width);
 
+// The same, over amplitudes held outside a StateVector: the CUDA backend's
+// host copy, which is the result's own statevector buffer (docs/adr/0025).
+[[nodiscard]] std::map<BitString, std::uint64_t> sample(
+    std::span<const std::complex<double>> amplitudes,
+    std::uint64_t shots,
+    std::uint64_t seed,
+    std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+    std::uint32_t bitstring_width);
+
 // The same algorithm over explicit outcome probabilities: probabilities[b] is
 // the probability of basis state b (the density-matrix engine's diagonal,
 // docs/adr/0016 section 4). Both overloads share one implementation, so they
@@ -43,5 +54,32 @@ namespace menos::engines::dense {
     std::uint64_t seed,
     std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
     std::uint32_t bitstring_width);
+
+// The same algorithm over a state that is not in memory all at once (Phase
+// 23, docs/adr/0027 section 3.4): num_amplitudes amplitudes in chunks of
+// chunk_amplitudes (a power of two dividing num_amplitudes), where read_chunk(c)
+// returns the amplitudes of chunk c, basis states c * chunk_amplitudes onward,
+// valid until the next call. The walk visits the basis states in increasing
+// order and asks for each chunk once, in order, only as far as the last shot
+// needs; it sums the same |amplitude|^2 in the same order as the span
+// overload, so the counts are bit for bit those of sample(span) over the whole
+// state. The histogram and the uniforms are charged as the other overloads
+// charge them.
+[[nodiscard]] std::map<BitString, std::uint64_t> sample_streamed(
+    std::uint64_t num_amplitudes,
+    std::uint64_t chunk_amplitudes,
+    const std::function<std::span<const std::complex<double>>(std::uint64_t)>& read_chunk,
+    std::uint64_t shots,
+    std::uint64_t seed,
+    std::span<const std::pair<std::uint32_t, std::uint32_t>> measure_targets,
+    std::uint32_t bitstring_width);
+
+// The heap bytes either sample() overload allocates for `shots` draws whose
+// outcomes are measured on `measured_qubits` qubits, into bitstring_width-bit
+// keys: the sorted uniforms (8 bytes per shot) and the histogram it returns,
+// which outlives the call (docs/adr/0025 section 3.4).
+[[nodiscard]] std::uint64_t sample_bytes(std::uint64_t shots,
+                                         std::uint32_t measured_qubits,
+                                         std::uint32_t bitstring_width);
 
 }  // namespace menos::engines::dense

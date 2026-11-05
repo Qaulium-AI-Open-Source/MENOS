@@ -1,5 +1,6 @@
 #include "plan/execution_engines.h"
 
+#include "engines/dense_tiered/disk_dense_engine.h"
 #include "plan/available_engines.h"
 
 #ifdef MENOS_ENABLE_CUDA
@@ -14,6 +15,12 @@ const std::vector<const SimulationEngine*>& execution_engines() {
     static const std::vector<const SimulationEngine*> kEngines = [] {
         std::vector<const SimulationEngine*> engines = noisy_job_engines();
         engines.push_back(&trajectory_engine());
+        // The disk tier (Phase 23, docs/adr/0027): (Dense, Cpu, Disk). An
+        // execution engine only, never a candidate of its own -- the planner
+        // reaches it through the DirectDense candidate when the in-memory
+        // state does not fit.
+        static const engines::dense_tiered::DiskDenseEngine kDiskDense;
+        engines.push_back(&kDiskDense);
 #ifdef MENOS_ENABLE_CUDA
         static const engines::dense_cuda::CudaDenseEngine kCudaDense;
         // Runtime-gated, not build-gated: a CUDA-enabled binary on a machine
@@ -27,9 +34,10 @@ const std::vector<const SimulationEngine*>& execution_engines() {
     return kEngines;
 }
 
-const SimulationEngine* find_execution_engine(Engine engine, Backend backend) {
+const SimulationEngine* find_execution_engine(Engine engine, Backend backend, Tier tier) {
     for (const SimulationEngine* candidate : execution_engines()) {
-        if (candidate->engine_id() == engine && candidate->backend() == backend) {
+        if (candidate->engine_id() == engine && candidate->backend() == backend &&
+            candidate->tier() == tier) {
             return candidate;
         }
     }

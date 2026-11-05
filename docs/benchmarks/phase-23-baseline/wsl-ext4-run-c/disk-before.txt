@@ -1,0 +1,2 @@
+Filesystem     Type     1B-blocks        Avail
+/dev/sdd       ext4 1081101176832 972161208320

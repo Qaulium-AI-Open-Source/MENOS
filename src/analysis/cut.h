@@ -76,6 +76,15 @@ inline constexpr std::size_t kMaxCuts = 2;
 
 [[nodiscard]] std::optional<CutPlan> find_cut_plan(const Circuit& circuit, std::size_t max_cuts);
 
+// Upper bounds on heap bytes (Phase 21, docs/adr/0025 section 3.4).
+// find_cut_plan_peak_bytes: the most find_cut_plan(circuit, kMaxCuts) holds at
+// once, including its result -- the best plan so far, the candidate plan
+// being built and that build's own working arrays -- from the circuit's sizes
+// alone. cut_plan_heap_bytes: what one CutPlan holds, from its own
+// containers.
+[[nodiscard]] std::uint64_t find_cut_plan_peak_bytes(const Circuit& circuit);
+[[nodiscard]] std::uint64_t cut_plan_heap_bytes(const CutPlan& plan);
+
 // One fragment evaluation: which Pauli each of its measured cuts carries, and
 // which eigenstate each of its prepared cuts starts in. The vectors are
 // parallel to CutFragment::measured / ::prepared.
@@ -106,6 +115,10 @@ struct FragmentAssignment {
 // evaluation order -- and therefore the floating-point summation order of the
 // reconstruction -- is deterministic.
 [[nodiscard]] std::vector<FragmentAssignment> enumerate_assignments(const CutFragment& fragment);
+
+// The heap bytes enumerate_assignments() returns, from the vector itself.
+[[nodiscard]] std::uint64_t assignments_heap_bytes(
+    const std::vector<FragmentAssignment>& assignments);
 
 // The index into enumerate_assignments() that a given branch selects for this
 // fragment. `branch_terms[c]` is the wire-cut term index chosen for cut c.

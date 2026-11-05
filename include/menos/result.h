@@ -56,7 +56,8 @@ struct ReplanEvent {
 // counts (ordered by key -- std::map -- so output is deterministic),
 // optional statevector, exact, the Plan, actual state bytes as tracked by
 // the engine (not process RSS), wall-clock seconds for execute and
-// sample.
+// sample, and the peak host memory, device memory and disk space the
+// execution held.
 class Result {
 public:
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -69,7 +70,10 @@ public:
            double execute_seconds,
            double sample_seconds,
            std::vector<ReplanEvent> replans = {},
-           std::optional<double> expectation_standard_error = std::nullopt);
+           std::optional<double> expectation_standard_error = std::nullopt,
+           std::uint64_t peak_host_bytes = 0,
+           std::uint64_t peak_device_bytes = 0,
+           std::uint64_t peak_disk_bytes = 0);
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
     [[nodiscard]] const std::map<BitString, std::uint64_t>& counts() const;
@@ -90,6 +94,23 @@ public:
     [[nodiscard]] bool exact() const;
     [[nodiscard]] const Plan& plan() const;
     [[nodiscard]] std::uint64_t actual_state_bytes() const;
+    // The most memory the successful attempt's execution held at once, in
+    // bytes, on the host and on the CUDA device (Phase 21, docs/adr/0025
+    // section 3.2). Measured, not estimated: the runtime's memory ledger
+    // adds up every buffer whose size grows with the problem -- states,
+    // workspace, samplers, histograms, tensors -- as it is allocated and
+    // freed. Allocations that do not grow with the problem, and the
+    // allocator's own overhead, are left out, so the figure is at most what
+    // the process allocated and at most the plan's estimate. Planning is not
+    // included. peak_device_bytes() is 0 for a plan with no CUDA region.
+    [[nodiscard]] std::uint64_t peak_host_bytes() const;
+    [[nodiscard]] std::uint64_t peak_device_bytes() const;
+    // The most scratch-file space the successful attempt held at once, in
+    // bytes (Phase 23, docs/adr/0027): the disk tier's state file, measured
+    // by the same ledger. 0 for a plan with no disk-tier region, which is
+    // every plan whose state fits in memory; explain() appends
+    // peak_disk_bytes= to its actual line only when it is not 0.
+    [[nodiscard]] std::uint64_t peak_disk_bytes() const;
     [[nodiscard]] double execute_seconds() const;
     [[nodiscard]] double sample_seconds() const;
 
@@ -130,6 +151,9 @@ private:
     double sample_seconds_;
     std::vector<ReplanEvent> replans_;
     std::optional<double> expectation_standard_error_;
+    std::uint64_t peak_host_bytes_;
+    std::uint64_t peak_device_bytes_;
+    std::uint64_t peak_disk_bytes_;
 };
 
 }  // namespace menos

@@ -5,10 +5,10 @@ light_cone qubits 4->4 operations 46->46
 candidate 0strategy=direct_dense feasible=false winner=false reason="operation 5 is a noise channel; this engine simulates pure states only"
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 5 is a noise channel; this engine simulates pure states only"
 candidate 2strategy=direct_mps feasible=false winner=false reason="operation 5 is a noise channel; this engine simulates pure states only"
-candidate 3strategy=direct_density_matrix feasible=true winner=true peak_bytes=4480 work_units=52496
+candidate 3strategy=direct_density_matrix feasible=true winner=true peak_bytes=18520 work_units=52496
 strategy   direct_density_matrix (exact)
 region 0   qubits=[0,1,2,3] engine=density_matrix backend=cpu
-estimated  state_bytes=4480 work_units=52496
+estimated  state_bytes=18520 work_units=52496
 --- plan fields not printed by explain() ---
-region 0: operations=46 observable_terms=0 state_bytes=4480 work_units=52496 global_to_local_size=4
+region 0: operations=46 observable_terms=0 state_bytes=18520 work_units=52496 global_to_local_size=4
 reduced_circuit: qubits=4 operations=46

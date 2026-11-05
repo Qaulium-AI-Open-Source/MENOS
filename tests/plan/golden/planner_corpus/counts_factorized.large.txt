@@ -1,10 +1,10 @@
 MENOS EXECUTION REPORT
 circuit    qubits=64 clbits=64 operations=2824 depth=61 global_phase=0
 light_cone qubits 64->64 operations 2824->2824
-candidate 0strategy=direct_dense feasible=false winner=false reason="checked_pow2: n = 64 exceeds the maximum of 62"
+candidate 0strategy=direct_dense feasible=false winner=false reason="checked_pow2: n = 64 exceeds the maximum of 62; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read"
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
-candidate 2strategy=direct_mps feasible=false winner=false reason="direct mps simulation requires 870446746240 bytes, budget is 8589934592 bytes"
-candidate 3strategy=factorized feasible=true winner=true peak_bytes=4096 work_units=1847296
+candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=346648 work_units=3825728
+candidate 3strategy=factorized feasible=true winner=true peak_bytes=428744 work_units=1847296
 strategy   factorized (exact)
 region 0   qubits=[0,1,2,3,4,5,6,7] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
 region 1   qubits=[8,9,10,11,12,13,14,15] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
@@ -14,14 +14,14 @@ region 4   qubits=[32,33,34,35,36,37,38,39] engine=dense backend=cpu why="dense 
 region 5   qubits=[40,41,42,43,44,45,46,47] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
 region 6   qubits=[48,49,50,51,52,53,54,55] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
 region 7   qubits=[56,57,58,59,60,61,62,63] engine=dense backend=cpu why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
-estimated  state_bytes=4096 work_units=1847296
+estimated  state_bytes=428744 work_units=1847296
 --- plan fields not printed by explain() ---
-region 0: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 1: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 2: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 3: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 4: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 5: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 6: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
-region 7: operations=353 observable_terms=0 state_bytes=4096 work_units=230912 global_to_local_size=64
+region 0: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 1: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 2: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 3: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 4: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 5: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 6: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
+region 7: operations=353 observable_terms=0 state_bytes=7064 work_units=230912 global_to_local_size=64
 reduced_circuit: qubits=64 operations=2824

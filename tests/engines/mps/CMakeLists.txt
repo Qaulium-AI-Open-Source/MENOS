@@ -8,7 +8,7 @@ add_executable(menos_engines_mps_tests
 )
 
 target_link_libraries(menos_engines_mps_tests PRIVATE
-    menos_engines_mps menos_engines_dense menos_ir GTest::gtest_main
+    menos_engines_mps menos_engines_dense menos_ir menos_analysis GTest::gtest_main
 )
 target_include_directories(menos_engines_mps_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(menos_engines_mps_tests PRIVATE ${MENOS_WARNING_FLAGS})

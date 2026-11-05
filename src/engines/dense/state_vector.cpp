@@ -1,5 +1,7 @@
 #include "engines/dense/state_vector.h"
 
+#include <utility>
+
 #include "common/checked_math.h"
 #include "common/error.h"
 #include "kernels/dense_kernels.h"
@@ -22,6 +24,7 @@ StateVector::StateVector(int num_qubits, std::uint64_t budget_bytes) : num_qubit
                                        std::to_string(budget_bytes) + " bytes");
     }
     data_.resize(num_amplitudes);
+    charge_.set(common::buffer_bytes(data_));
 }
 
 int StateVector::num_qubits() const {
@@ -38,6 +41,12 @@ std::span<std::complex<double>> StateVector::amplitudes() {
 
 std::span<const std::complex<double>> StateVector::amplitudes() const {
     return {data_.data(), data_.size()};
+}
+
+std::vector<std::complex<double>> StateVector::release() && {
+    // From here the buffer is the result's, charged by whoever holds it.
+    charge_.release();
+    return std::move(data_);
 }
 
 void initialize(StateVector& state, double global_phase) {

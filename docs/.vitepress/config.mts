@@ -199,9 +199,9 @@ export default defineConfig({
   appearance: 'force-dark',
   cleanUrls: true,
   // Only the public documentation is built. Architecture decision records and the
-  // internal build plan and engineering notes stay in the repository, unpublished
-  // by the site.
-  srcExclude: ['adr/**', 'BUILD_PLAN.md', 'ARCHITECTURE_NOTES.md', 'ENGINE_TECHNIQUES.md', 'node_modules/**'],
+  // internal build plan, benchmark records and engineering notes stay in the
+  // repository, unpublished by the site.
+  srcExclude: ['adr/**', 'benchmarks/**', 'BUILD_PLAN.md', 'ARCHITECTURE_NOTES.md', 'ENGINE_TECHNIQUES.md', 'node_modules/**'],
   head: [['link', { rel: 'icon', type: 'image/png', href: '/favicon.png' }]],
   themeConfig: {
     logo: { src: '/logo.png', alt: 'MENOS' },

@@ -32,8 +32,13 @@ namespace menos::plan {
 //   - plans whose winner is a Direct* strategy (one region whose operations
 //     are the light-cone-reduced circuit's, so re-parameterisation is the
 //     light-cone pass again -- linear -- plus a copy). Factorized and
-//     CutAndRecombine winners are computed but never stored.
-// Everything else goes straight to plan_job, unchanged.
+//     CutAndRecombine winners are computed but never stored, and neither is
+//     a plan on the disk tier (Phase 23), priced from the scratch directory's
+//     figures of the moment.
+// Everything else goes straight to plan_job, unchanged. The hardware profile
+// is part of the key as well (plan_job_cached): the device's free memory is
+// read again for every job (docs/adr/0025, Q3), so a plan is reused only
+// under the memory figures and rates it was planned for.
 //
 // The cache is process-global, mutex-protected, LRU, kPlanCacheCapacity
 // entries. plan_cache_clear() empties it (tests, or after a hardware profile

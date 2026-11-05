@@ -20,6 +20,19 @@ public:
     // src/api, which is the layer that owns both the planner and the runtime.
     // Keeping the decision there is what stops a second planner appearing in
     // here.
+    //
+    // The Result takes the plan over (Phase 21, docs/adr/0025): on return,
+    // `plan` has been moved into the Result, with this execution's own
+    // figures recorded on it (MPS error bounds, tensor-network and cut peaks,
+    // the trajectory standard error), so the job holds one copy of its plan,
+    // not two. If execution throws -- an abandoned attempt included -- `plan`
+    // is left exactly as it was, which is what lets the replan loop describe
+    // the plan it is replacing.
+    [[nodiscard]] Result execute(Plan&& plan,
+                                 const menos::plan::JobSpec& job_spec,
+                                 const ExecutionMonitor* monitor = nullptr) const;
+
+    // The same, for a caller that keeps its plan: runs a copy of it.
     [[nodiscard]] Result execute(const Plan& plan,
                                  const menos::plan::JobSpec& job_spec,
                                  const ExecutionMonitor* monitor = nullptr) const;

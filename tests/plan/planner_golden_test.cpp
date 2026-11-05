@@ -1,10 +1,17 @@
-// Golden plans for the fixed Phase 21 planner corpus (docs/adr/0025 sections
+// Golden plans for the fixed Phase 24 planner corpus (docs/adr/0028 sections
 // 3 and 6): every corpus job's plan, as Plan::explain() plus the plan fields
 // explain() does not print, must match the file recorded from the pre-phase
 // planner at d89dde3. A planner speed-up that changes any of it fails here.
 //
 // To re-record (only with the owner's approval of the changed plans):
 //   MENOS_UPDATE_GOLDEN=1 ./menos_plan_tests --gtest_filter='PlannerGolden*'
+
+#if defined(_WIN32) && !defined(_CRT_SECURE_NO_WARNINGS)
+// std::getenv reads MENOS_UPDATE_GOLDEN; MSVC warns about it as it does for
+// every C standard call with a _s variant (benchmarks/tiered_gate_benchmark.cpp
+// takes the same route).
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <gtest/gtest.h>
 
@@ -65,7 +72,11 @@ TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
         ASSERT_TRUE(in.good()) << "missing golden file " << path;
         std::stringstream expected;
         expected << in.rdbuf();
-        EXPECT_EQ(actual, expected.str());
+        // The files are recorded with "\n"; a checkout with core.autocrlf=true
+        // (Windows) delivers them with "\r\n", which is not a plan difference.
+        std::string recorded = expected.str();
+        std::erase(recorded, '\r');
+        EXPECT_EQ(actual, recorded);
     }
 }
 

@@ -2,7 +2,7 @@
 // eliminate next. Exposed in this header only so
 // tests/analysis/min_fill_queue_test.cpp can compare it against a linear scan
 // and the planner structure microbenchmarks can time it alone
-// (docs/adr/0025 section 12). Not public API.
+// (docs/adr/0028 section 12). Not public API.
 
 #pragma once
 
@@ -22,7 +22,7 @@ namespace menos::analysis::detail {
 // vertex a scan of every remaining vertex in increasing index order with a
 // strict `<` would choose.
 //
-// An indexed binary min-heap (docs/adr/0025 section 12.3, C.2a): one entry
+// An indexed binary min-heap (docs/adr/0028 section 12.3, C.2a): one entry
 // per remaining vertex, and a position table so set_fill moves a vertex's
 // entry up or down in place instead of adding a new one. The heap therefore
 // never holds more than n entries. Each entry is one integer,

@@ -40,6 +40,16 @@ std::string refusal_message(const ReplanRequested& request, double budget, const
         plan::backend_name(plan.regions.empty() ? Backend::Cpu : plan.regions[0].backend));
 }
 
+// One attempt at `plan`. Runtime::execute moves the plan into the Result only
+// on success; an abandoned attempt leaves it as it was, which the replan loop
+// below relies on to describe the plan it replaces (docs/adr/0025).
+Result run_attempt(const runtime::Runtime& rt,
+                   Plan& plan,
+                   const plan::JobSpec& job_spec,
+                   const BudgetMonitor& monitor) {
+    return rt.execute(std::move(plan), job_spec, &monitor);
+}
+
 }  // namespace
 
 ElapsedSource steady_elapsed_source() {
@@ -71,7 +81,7 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
     // than a null monitor threaded through the loop, so the unmonitored case is
     // visibly untouched.
     if (!job_spec.time_budget_seconds.has_value()) {
-        return rt.execute(initial_plan, job_spec);
+        return rt.execute(std::move(initial_plan), job_spec);
     }
 
     const double budget = *job_spec.time_budget_seconds;
@@ -132,7 +142,7 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
         // budget bounds an attempt rather than the whole job.
         const BudgetMonitor monitor(budget, make_elapsed());
         try {
-            return rt.execute(current, job_spec, &monitor).with_replans(std::move(replans));
+            return run_attempt(rt, current, job_spec, monitor).with_replans(std::move(replans));
         } catch (const ReplanRequested& request) {
             // A floor is attributed to one (engine, backend) pair, so only a
             // single-region plan yields one. A multi-region plan divided its
@@ -150,8 +160,10 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
                     "could use");
             }
 
-            observations.observe(
-                current.regions[0].engine, current.regions[0].backend, request.elapsed_seconds());
+            observations.observe(current.regions[0].engine,
+                                 current.regions[0].backend,
+                                 current.regions[0].tier,
+                                 request.elapsed_seconds());
 
             const double predicted = predicted_seconds_of(current);
             Plan replanned;
@@ -178,11 +190,16 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
                 .boundaries_crossed = request.boundaries_crossed(),
                 .engine = current.regions[0].engine,
                 .backend = current.regions[0].backend,
+                // Names the tier only when it is not the in-memory one, so a
+                // pre-Phase-23 report reads exactly as it did.
                 .reason = std::format(
-                    "observed runtime exceeded the time budget; {} on {} is excluded by an "
+                    "observed runtime exceeded the time budget; {} on {}{} is excluded by an "
                     "observed floor of {:.6g} s",
                     plan::engine_name(current.regions[0].engine),
                     plan::backend_name(current.regions[0].backend),
+                    current.regions[0].tier == Tier::InMemory
+                        ? std::string()
+                        : std::format(" (tier {})", plan::tier_name(current.regions[0].tier)),
                     request.elapsed_seconds()),
                 .superseded_plan = std::move(current),
             });

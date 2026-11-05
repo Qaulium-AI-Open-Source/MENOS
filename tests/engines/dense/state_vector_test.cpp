@@ -4,6 +4,8 @@
 
 #include <cmath>
 #include <numbers>
+#include <utility>
+#include <vector>
 
 #include "common/error.h"
 
@@ -17,10 +19,16 @@ TEST(StateVectorTest, SizedCorrectly) {
     EXPECT_EQ(state.amplitudes().size(), 8U);
 }
 
-TEST(StateVectorTest, DataIsAligned) {
-    const StateVector state(5, /*budget_bytes=*/1'000'000);
-    const auto* ptr = state.amplitudes().data();
-    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(ptr) % kStateVectorAlignment, 0U);
+// The amplitudes leave by move: the released vector owns the very buffer the
+// state held, so a requested statevector costs no second copy (docs/adr/0025).
+TEST(StateVectorTest, ReleaseHandsOverTheBufferWithoutCopying) {
+    StateVector state(5, /*budget_bytes=*/1'000'000);
+    initialize(state, 0.0);
+    const std::complex<double>* buffer = state.amplitudes().data();
+    const std::vector<std::complex<double>> released = std::move(state).release();
+    EXPECT_EQ(released.data(), buffer);
+    ASSERT_EQ(released.size(), 32U);
+    EXPECT_EQ(released[0], std::complex<double>(1.0, 0.0));
 }
 
 TEST(StateVectorTest, ThrowsResourceExceededBeforeAllocatingWhenBudgetTooSmall) {

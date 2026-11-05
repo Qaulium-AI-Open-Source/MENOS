@@ -2,6 +2,7 @@
 
 #include <complex>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -164,6 +165,17 @@ struct EngineExecutionRequest {
     // CPU dense engine only; every other engine applies the operations as
     // given. Off unless the job asked for it.
     bool fuse_diagonal_gates = false;
+    // Where the disk tier creates its scratch file (Phase 23, docs/adr/0027
+    // section 3.3); empty means the system's temporary directory. Read only
+    // by the disk-tier engine.
+    std::filesystem::path scratch_directory = {};
+    // The chunked executor's chunk and window sizes, as qubit counts, for
+    // tests that run the tier on a small state (docs/adr/0027 section 9
+    // Q10: an internal seam, not public API). 0 lets the engine choose, which
+    // every job does; a set chunk with an unset window takes the smallest
+    // window that fits the gates. Read only by the disk-tier engine.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
@@ -244,6 +256,23 @@ struct EngineEstimateRequest {
     // 0 for every other engine, and the trajectory engine reports 0 as
     // infeasible rather than costing an empty run.
     std::uint64_t trajectories = 0;
+    // The counts request's shape, which the peak-byte figure depends on (Phase
+    // 21, docs/adr/0025 section 3.4): shots sizes the sampling buffers and
+    // bounds the histogram, bitstring_width sizes every outcome key, and
+    // is_sole_region says whether the engine returns a histogram (true) or a
+    // RegionCountsSampler that the caller draws from (false, a Factorized
+    // region). They match EngineExecutionRequest's fields of the same names.
+    // The defaults describe a request with no counts; a caller that asks for
+    // counts and leaves shots at 0 is costed for an empty histogram.
+    std::uint64_t shots = 0;
+    std::uint32_t bitstring_width = 0;
+    bool is_sole_region = true;
+    // The chunked executor's chunk and window sizes, as EngineExecutionRequest
+    // takes them (Phase 23, docs/adr/0027): 0, the default, lets the engine
+    // choose. Read only by the disk-tier engine, whose estimate() reports the
+    // plan it will execute.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
     // Branch-and-bound bound (planning speed only, never a result change).
     // When set below its default, the caller already holds a feasible
     // alternative costing exactly this many work units, so an engine whose
@@ -282,6 +311,14 @@ public:
     // runtime resolve a Region's (engine, backend) pair to exactly one
     // implementation.
     [[nodiscard]] virtual Backend backend() const = 0;
+    // Where this implementation keeps the region's state (Phase 23,
+    // docs/adr/0027). Defaulted, unlike backend(), because every engine before
+    // Phase 23 keeps its state in one in-memory buffer and only the tiered
+    // dense engines say otherwise; the runtime resolves a Region's (engine,
+    // backend, tier) triple to exactly one implementation.
+    [[nodiscard]] virtual Tier tier() const {
+        return Tier::InMemory;
+    }
     [[nodiscard]] virtual EngineCapabilities capabilities() const = 0;
 
     // The work-unit/peak-byte cost of running request.operations on an

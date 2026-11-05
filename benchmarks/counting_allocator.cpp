@@ -1,5 +1,5 @@
 // A counting global operator new/delete, linked only into the planner
-// benchmark (Phase 21 step 1, docs/adr/0025 section 5). It counts heap
+// benchmark (Phase 24 step 1, docs/adr/0028 section 5). It counts heap
 // allocations, bytes requested and the peak of live bytes, and otherwise
 // forwards to malloc/free, so it measures the planner's own allocation
 // behaviour without valgrind or heaptrack. Never linked into the library.

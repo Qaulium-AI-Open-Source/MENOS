@@ -23,7 +23,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 - **Infeasible is a first-class answer.** A candidate that cannot run is reported with the reason.
 - **Independent qubit groups are simulated independently** and recombined exactly.
 - **Work the output cannot depend on is removed** (light-cone reduction) before planning.
-- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes.
+- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes. Every memory estimate is an upper bound on what the job really holds, checked by measurement, and each result reports its measured peak.
 - **Exact results, reproducibly.** Every engine reachable from Python is exact, and the same circuit, options and seed give the same counts.
 
 ## Key capabilities
@@ -32,7 +32,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 |---|---|
 | Output | Counts, exact statevectors, exact Pauli expectation values, exact noisy simulation |
 | Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix |
-| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds |
+| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds; a disk tier for dense states beyond the memory budget, priced from measured bandwidth |
 | Integration | Qiskit `BackendV2` (`MENOSBackend`), `EstimatorV2` (`MENOSEstimator`) and `SamplerV2` (`MENOSSampler`), with Qiskit Aer noise models; the PennyLane device `menos.qubit`; OpenQASM 3 import (`menos.from_qasm3`, static subset) and OpenQASM 2/3 on the command line |
 | Mitigation | Opt-in readout-error mitigation with calibrated, reported uncertainty; batch execution of several circuits (`run_batch`) |
 | GPU | NVIDIA CUDA dense backend, bitwise identical to the CPU |
@@ -139,7 +139,7 @@ Analytic results are exact and agree with `default.qubit` within 1e-12. Paramete
 
 | Engine | Outputs | Best for |
 |---|---|---|
-| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector |
+| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector. Beyond the memory budget it streams the state through a scratch file (the disk tier: counts and expectation values, bitwise the same) |
 | Stabilizer | counts, expectation | Clifford circuits, hundreds of qubits |
 | Pauli propagation | expectation | local observables on circuits of Clifford gates and rotations |
 | MPS | counts, expectation | low-entanglement circuits, large qubit counts |
@@ -180,7 +180,7 @@ With `time_budget_seconds`, the planner's time estimate uses the calibrated sing
 
 ## CUDA
 
-Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6).
+Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6). GPU states are allocated from a memory pool that keeps a finished job's memory for the next job; `release_device_memory()` gives it back to the driver.
 
 Building with CUDA requires setting the GPU architecture explicitly:
 

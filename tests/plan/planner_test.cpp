@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "menos/simulation_engine.h"
 
 namespace menos::plan {
@@ -39,7 +40,11 @@ TEST(PlanJobTest, DirectDenseCoversAllQubitsWithinBudget) {
     EXPECT_EQ(plan.regions[0].local_to_global, (std::vector<QubitId>{0, 1, 2}));
     EXPECT_EQ(plan.regions[0].engine, Engine::Dense);
     EXPECT_EQ(plan.regions[0].backend, Backend::Cpu);
-    EXPECT_EQ(plan.estimated_state_bytes, 8U * sizeof(std::complex<double>));
+    // The state, plus the runtime's clbit-map sentinel node for this circuit
+    // without clbits (docs/adr/0025 section 3.4).
+    EXPECT_EQ(plan.estimated_state_bytes,
+              common::heap_block_bytes(8U * sizeof(std::complex<double>)) +
+                  common::tree_node_bytes(sizeof(std::pair<const ClbitId, QubitId>)));
 }
 
 TEST(PlanJobTest, UsesExplicitBudgetOverDefault) {
@@ -200,20 +205,26 @@ TEST(PlanJobTwoCandidateTest, ExactTieGoesToDirect) {
 
 TEST(PlanJobTwoCandidateTest, FactorizedMemoryInfeasibleWhileDirectFeasibleStillPicksDirect) {
     // Same 10-qubit/1-real-component/8-idle circuit as the "pricier" test
-    // above, but with a budget between Direct's peak (16384 bytes) and
-    // Factorized's peak (64 + 16384 = 16448 bytes, since Factorized needs
-    // both a region buffer AND the global recombination buffer
-    // simultaneously) -- Factorized becomes infeasible purely on memory,
-    // regardless of work units.
+    // above, but with a budget between Direct's peak and Factorized's --
+    // Factorized needs both a region buffer AND the global recombination
+    // buffer simultaneously, so it becomes infeasible purely on memory,
+    // regardless of work units. Since Phase 21 (docs/adr/0025 section 3.4),
+    // with each allocation charged common::kHeapBlockOverheadBytes (80):
+    // Direct is the state 16384 + 80, the CX matrix 256 + 80 and the clbit-map
+    // sentinel node 120 = 16920; Factorized is the region's 64 + 80 and
+    // 256 + 80, the global 16384 + 80, the sentinel 120 and nine per-region
+    // target lists (each its header, 24 or 32 bytes depending on the standard
+    // library, and 160 for two allocations) -- at least 18720. 17000 lies
+    // between them on every supported build.
     Circuit circuit(10, 0);
     circuit.append(Opcode::CX, {0, 1});
     const JobSpec job{.circuit = circuit,
                       .shots = 0,
                       .want_statevector = true,
                       .seed = 0,
-                      .memory_budget_bytes = 16400,
+                      .memory_budget_bytes = 17000,
                       .expectation = std::nullopt};
-    const HardwareProfile hw{.total_memory_bytes = 16400};
+    const HardwareProfile hw{.total_memory_bytes = 17000};
     const Plan plan = plan_job(job, hw);
     ASSERT_EQ(plan.candidates.size(), 4U);
     EXPECT_TRUE(plan.candidates[0].feasible);
@@ -414,41 +425,63 @@ TEST(PlanJobExpectationTest, CountsOnlyRequestNeverEnumeratesDirectTensorNetwork
 // budget on a tree topology; this is the cheap version that keeps the same
 // routing behaviour honest on every run.
 //
-// A 20-qubit single-layer brickwork circuit plus one T gate, with a
-// full-width observable so light-cone reduction is a no-op. Measured
-// directly rather than guessed: dense needs 16 * 2^20 = 16,777,216 bytes,
-// MPS needs 2,432, and the contraction needs 512 (its closed network's line
-// graph stays narrow for a single nearest-neighbour layer). A 1,000-byte
-// budget therefore admits the contraction and nothing else.
+// A 24-qubit binary-tree circuit (the topology of
+// tests/api/tensor_network_scale_test.cpp), three layers of RY and CZ plus
+// one T gate, with a full-width observable so light-cone reduction is a
+// no-op. Its long-range CZs make the MPS bonds explode through the SWAP
+// network while the closed network's line graph stays narrow. Since Phase 21
+// every candidate's figure is what it really allocates (docs/adr/0025
+// section 3.4), measured on this circuit at about 263 KB for the
+// contraction, 299 KB for the cut, 268 MB for dense and 2.7 GB for MPS.
+// Until Phase 21 this test used a 20-qubit brickwork and a 1,000-byte
+// budget, which only the old figures (MPS 2,432 bytes, the contraction 512)
+// allowed; with the real figures MPS is smaller than the contraction there.
 //
-// Note this budget is deliberately artificial, and is disclosed as such: a
-// constrained budget is a legitimate operating condition for MENOS, but on
-// its own it would be weak evidence for the criterion, which is why the
-// realistic-budget test exists alongside it.
+// The budget is the contraction's own figure, read from an unconstrained
+// plan, so it admits the contraction and -- because every other candidate's
+// figure is larger -- nothing else. It is deliberately artificial, and is
+// disclosed as such: a constrained budget is a legitimate operating
+// condition for MENOS, but on its own it would be weak evidence for the
+// criterion, which is why the realistic-budget test exists alongside it.
 TEST(PlanJobExpectationTest, TightBudgetLeavesDirectTensorNetworkTheOnlyFeasibleCandidate) {
-    constexpr std::uint32_t n = 20;
+    constexpr std::uint32_t n = 24;
     Circuit circuit(n, 0);
-    for (QubitId q = 0; q < n; ++q) {
-        circuit.append(Opcode::H, {q});
-    }
-    for (QubitId q = 0; q + 1 < n; q += 2) {
-        circuit.append(Opcode::CX, {q, static_cast<QubitId>(q + 1)});
-    }
-    for (QubitId q = 1; q + 1 < n; q += 2) {
-        circuit.append(Opcode::CX, {q, static_cast<QubitId>(q + 1)});
+    for (std::uint32_t layer = 0; layer < 3; ++layer) {
+        for (std::uint32_t q = 0; q < n; ++q) {
+            const double angle =
+                0.37 + (0.11 * static_cast<double>(layer)) + (0.017 * static_cast<double>(q));
+            circuit.append(Opcode::RY, {q}, {angle});
+        }
+        for (std::uint32_t parent = layer % 2; parent < n; parent += 2) {
+            for (std::uint32_t k = 1; k <= 2; ++k) {
+                const std::uint32_t child = (2 * parent) + k;
+                if (child < n) {
+                    circuit.append(Opcode::CZ, {parent, child});
+                }
+            }
+        }
     }
     circuit.append(Opcode::T, {0});
     PauliString z_all;
     z_all.num_qubits = n;
     z_all.x_words = {0};
     z_all.z_words = {(std::uint64_t{1} << n) - 1};  // Z on every qubit
-    const JobSpec job{.circuit = circuit,
-                      .shots = 0,
-                      .want_statevector = false,
-                      .seed = 0,
-                      .memory_budget_bytes = 1000,
-                      .expectation = Observable{{{z_all, {1.0, 0.0}}}}};
+    JobSpec job{.circuit = circuit,
+                .shots = 0,
+                .want_statevector = false,
+                .seed = 0,
+                .memory_budget_bytes = std::uint64_t{1} << 40,
+                .expectation = Observable{{{z_all, {1.0, 0.0}}}}};
     const HardwareProfile hw{.total_memory_bytes = 1ULL << 40};
+    std::uint64_t contraction_bytes = 0;
+    for (const CandidateSummary& c : plan_job(job, hw).candidates) {
+        if (c.strategy == Strategy::DirectTensorNetwork) {
+            ASSERT_TRUE(c.feasible);
+            contraction_bytes = c.estimated_peak_bytes;
+        }
+    }
+    ASSERT_GT(contraction_bytes, 0U);
+    job.memory_budget_bytes = contraction_bytes;
     const Plan plan = plan_job(job, hw);
 
     for (const CandidateSummary& c : plan.candidates) {
@@ -457,7 +490,8 @@ TEST(PlanJobExpectationTest, TightBudgetLeavesDirectTensorNetworkTheOnlyFeasible
             EXPECT_TRUE(c.is_winner);
         } else {
             EXPECT_FALSE(c.feasible) << "strategy " << static_cast<int>(c.strategy)
-                                     << " unexpectedly feasible under a 1,000-byte budget";
+                                     << " unexpectedly feasible within the contraction's own "
+                                        "figure";
         }
     }
     ASSERT_EQ(plan.strategy, Strategy::DirectTensorNetwork);
@@ -508,7 +542,7 @@ TEST(PlanJobExpectationTest, TensorNetworkLosesToACheaperCandidateOnCost) {
 
 TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsStillPruned) {
     // The same job with a (generous) time budget. Branch and bound stays on in
-    // a CPU-only job (docs/adr/0025 section 13, D.1b): every candidate is held
+    // a CPU-only job (docs/adr/0028 section 13, D.1b): every candidate is held
     // to the budget before it can serve as the bound, and Pauli, which fits
     // it, is the bound. The plan is the one the unbudgeted job gets.
     Circuit circuit(1, 0);
@@ -881,9 +915,19 @@ TEST(RuntimeObservationTest, AnObservedFloorAboveTheBudgetMovesTheWinnerToAnothe
         << "the observed engine must not be re-selected";
     // Which candidate takes over is the EXISTING selection rule's business --
     // cheapest work units among the survivors -- not something this phase
-    // overrides. Here that is DirectMPS, which undercuts DirectDense on work
-    // units; the assertion is that the rule still ran, not that dense wins.
-    EXPECT_EQ(after.strategy, Strategy::DirectMPS);
+    // overrides; the assertion is that the rule still ran. Which survivor
+    // that is depends on the engines' cost models: until Phase 21 it was
+    // DirectMPS, whose cost then used the Schmidt-rank bound; with the bond
+    // the MPS engine actually builds (docs/adr/0025 Q7) dense is cheaper here.
+    const CandidateSummary* cheapest = nullptr;
+    for (const CandidateSummary& c : after.candidates) {
+        if (c.feasible &&
+            (cheapest == nullptr || c.estimated_work_units < cheapest->estimated_work_units)) {
+            cheapest = &c;
+        }
+    }
+    ASSERT_NE(cheapest, nullptr);
+    EXPECT_EQ(after.strategy, cheapest->strategy);
     EXPECT_LE(winner_of(after).estimated_seconds, *job.time_budget_seconds)
         << "the replacement must itself respect the budget";
     for (const CandidateSummary& c : after.candidates) {
@@ -1157,7 +1201,7 @@ TEST(RuntimeObservationTest, EveryDirectCandidateIsExcludedByItsOwnObservedFloor
         for (const CandidateSummary& candidate : initial.candidates) {
             const std::optional<Engine> engine = engine_of_direct(candidate.strategy);
             // A pruned candidate is one the engine could run but that lost on
-            // work units before it was costed in full (docs/adr/0025 section
+            // work units before it was costed in full (docs/adr/0028 section
             // 13, D.1b); its floor must exclude it just the same.
             const bool pruned =
                 !candidate.feasible && candidate.infeasible_reason.starts_with(kPrunedReasonPrefix);
@@ -1208,6 +1252,57 @@ TEST(RuntimeObservationTest, ObserveKeepsTheLargerFloor) {
     observations.observe(Engine::Dense, Backend::Cpu, 2.0);
     EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu), std::optional<double>{5.0});
     EXPECT_EQ(observations.floor_for(Engine::MPS, Backend::Cpu), std::nullopt);
+}
+
+// A floor is attributed to one (engine, backend, tier) triple (Phase 23,
+// docs/adr/0027): an overrun of the disk tier says nothing about the in-memory
+// engine of the same (engine, backend), and the reverse.
+TEST(RuntimeObservationTest, FloorsAreKeyedByTier) {
+    RuntimeObservations observations;
+    observations.observe(Engine::Dense, Backend::Cpu, Tier::Disk, 5.0);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu), std::nullopt);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::InMemory), std::nullopt);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::Disk),
+              std::optional<double>{5.0});
+    observations.observe(Engine::Dense, Backend::Cpu, 3.0);
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu), std::optional<double>{3.0});
+    EXPECT_EQ(observations.floor_for(Engine::Dense, Backend::Cpu, Tier::Disk),
+              std::optional<double>{5.0});
+}
+
+// A planned job whose state fits in memory never prints a tier (every
+// pre-Phase-23 report is byte-identical); a candidate or region costed for a
+// tier prints it on its own line and nowhere else.
+TEST(PlanExplainTest, TierIsPrintedOnlyWhenItIsNotInMemory) {
+    const JobSpec job = make_job(3, /*budget=*/1'000'000);
+    const HardwareProfile hw{.total_memory_bytes = 1'000'000};
+    const Plan plan = plan_job(job, hw);
+    const std::string before = plan.explain();
+    EXPECT_EQ(before.find("tier="), std::string::npos) << before;
+    for (const CandidateSummary& candidate : plan.candidates) {
+        EXPECT_EQ(candidate.tier, Tier::InMemory);
+    }
+    ASSERT_EQ(plan.regions.size(), 1U);
+    EXPECT_EQ(plan.regions[0].tier, Tier::InMemory);
+
+    Plan tiered = plan;
+    ASSERT_FALSE(tiered.candidates.empty());
+    tiered.candidates[0].tier = Tier::Disk;
+    tiered.regions[0].tier = Tier::Disk;
+    const std::string after = tiered.explain();
+    EXPECT_NE(after.find("candidate 0strategy=direct_dense feasible=true winner=true"),
+              std::string::npos)
+        << after;
+    // The candidate line carries the tier's figures (zero here: the plan
+    // was never costed for the tier), the region line the tier alone.
+    EXPECT_NE(after.find(" tier=disk passes=0 chunk_qubits=0 disk_bytes=0\n"), std::string::npos)
+        << after;
+    EXPECT_NE(after.find("engine=dense backend=cpu tier=disk\n"), std::string::npos) << after;
+    // Only those two lines changed.
+    EXPECT_EQ(after.size(),
+              before.size() +
+                  std::string(" tier=disk passes=0 chunk_qubits=0 disk_bytes=0").size() +
+                  std::string(" tier=disk").size());
 }
 
 }  // namespace

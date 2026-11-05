@@ -21,7 +21,7 @@ namespace {
 //
 // Walks the operation's own qubit list rather than returning a copy of it:
 // the backward walk below visits every operation, and on a plan-cache hit
-// the copies were most of its cost (docs/adr/0025 section 13, D.3).
+// the copies were most of its cost (docs/adr/0028 section 13, D.3).
 template <typename F>
 bool any_touched_qubit(const Operation& op, F&& f) {
     return std::visit(

@@ -1,16 +1,20 @@
 #include "cost/cost_model.h"
 
 #include <algorithm>
+#include <complex>
 #include <limits>
 #include <numeric>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
 #include "common/observable_restrict.h"
+#include "common/rng.h"
 
 namespace menos::cost {
 
@@ -18,6 +22,13 @@ using common::checked_add;
 using common::checked_mul;
 using common::checked_pow2;
 using common::ResourceExceeded;
+
+std::uint64_t measurement_bookkeeping_bytes(const Circuit& circuit) {
+    const std::uint64_t clbits = circuit.num_clbits();
+    const std::uint64_t node = common::tree_node_bytes(sizeof(std::pair<const ClbitId, QubitId>));
+    return checked_add(checked_mul(clbits + 1, node),
+                       common::grown_vector_bytes(clbits, sizeof(std::pair<QubitId, ClbitId>)));
+}
 
 EngineChoice pick_cheapest_engine(std::span<const SimulationEngine* const> engines,
                                   const EngineEstimateRequest& request,
@@ -73,20 +84,30 @@ CostEstimate estimate_direct(const Circuit& circuit,
                              std::uint64_t budget_bytes,
                              const AccuracyPolicy& accuracy_policy,
                              std::uint64_t trajectories,
+                             std::uint64_t shots,
                              std::uint64_t prune_above_work_units) {
-    const EngineEstimateRequest request{circuit.num_qubits(),
-                                        &circuit.operations(),
-                                        want_statevector,
-                                        want_counts,
-                                        want_expectation,
-                                        observable,
-                                        accuracy_policy,
-                                        budget_bytes,
-                                        trajectories,
-                                        prune_above_work_units};
+    const EngineEstimateRequest request{.num_qubits = circuit.num_qubits(),
+                                        .operations = &circuit.operations(),
+                                        .want_statevector = want_statevector,
+                                        .want_counts = want_counts,
+                                        .want_expectation = want_expectation,
+                                        .observable = observable,
+                                        .accuracy_policy = accuracy_policy,
+                                        .budget_bytes = budget_bytes,
+                                        .trajectories = trajectories,
+                                        .shots = want_counts ? shots : 0,
+                                        .bitstring_width = circuit.num_clbits(),
+                                        .is_sole_region = true,
+                                        .prune_above_work_units = prune_above_work_units};
     CostEstimate estimate = engine.estimate(request);
     if (!estimate.feasible) {
         return estimate;
+    }
+    try {
+        estimate.estimated_peak_bytes =
+            checked_add(estimate.estimated_peak_bytes, measurement_bookkeeping_bytes(circuit));
+    } catch (const ResourceExceeded& e) {
+        return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
     if (estimate.estimated_peak_bytes > budget_bytes) {
         return CostEstimate{/*feasible=*/false,
@@ -108,7 +129,8 @@ CostEstimate estimate_factorized(const Circuit& circuit,
                                  bool want_expectation,
                                  const Observable* observable,
                                  std::uint64_t budget_bytes,
-                                 const AccuracyPolicy& accuracy_policy) {
+                                 const AccuracyPolicy& accuracy_policy,
+                                 std::uint64_t shots) {
     const std::size_t num_components = graph.components.size();
     const std::uint32_t n = circuit.num_qubits();
 
@@ -181,6 +203,7 @@ CostEstimate estimate_factorized(const Circuit& circuit,
     try {
         std::uint64_t peak_bytes = 0;
         std::uint64_t total_work = 0;
+        std::uint64_t active_regions = 0;
         for (std::size_t c = 0; c < num_components; ++c) {
             // An idle component (no GateOp/UnitaryOp ever touches it) is
             // free: the runtime never allocates its state or samples it,
@@ -202,25 +225,71 @@ CostEstimate estimate_factorized(const Circuit& circuit,
                 component_observable = &*restricted;
             }
 
-            const EngineEstimateRequest request{m,
-                                                &component_ops[c],
-                                                want_statevector,
-                                                want_counts,
-                                                want_expectation,
-                                                component_observable,
-                                                accuracy_policy,
-                                                budget_bytes};
+            const EngineEstimateRequest request{.num_qubits = m,
+                                                .operations = &component_ops[c],
+                                                .want_statevector = want_statevector,
+                                                .want_counts = want_counts,
+                                                .want_expectation = want_expectation,
+                                                .observable = component_observable,
+                                                .accuracy_policy = accuracy_policy,
+                                                .budget_bytes = budget_bytes,
+                                                .shots = want_counts ? shots : 0,
+                                                .bitstring_width = circuit.num_clbits(),
+                                                .is_sole_region = false};
             const EngineChoice choice = pick_cheapest_engine(engines, request);
             if (!choice.estimate.feasible) {
                 return choice.estimate;
             }
-            peak_bytes = std::max(peak_bytes, choice.estimate.estimated_peak_bytes);
+            // A sum, not a max (Phase 21, docs/adr/0025 section 3.4): the
+            // regions run one after another, but each one's outputs -- its
+            // counts sampler, its expectation terms -- are held until every
+            // region has run, and a region's peak covers its outputs.
+            peak_bytes = checked_add(peak_bytes, choice.estimate.estimated_peak_bytes);
             total_work = checked_add(total_work, choice.estimate.estimated_work_units);
+            ++active_regions;
+        }
+
+        // The runtime's own state for combining the regions
+        // (execute_factorized): the measurement bookkeeping and its
+        // per-region lists; for counts, the sampler and RNG lists and the
+        // combined histogram, with each shot's combined outcome and the
+        // region outcome being ORed into it; for an expectation, each region's
+        // term list (an idle region's is built by the runtime itself).
+        const std::uint64_t regions = num_components;
+        peak_bytes = checked_add(peak_bytes, measurement_bookkeeping_bytes(circuit));
+        peak_bytes = checked_add(peak_bytes,
+                                 checked_mul(regions,
+                                             sizeof(std::vector<std::pair<QubitId, ClbitId>>) +
+                                                 (2 * common::kHeapBlockOverheadBytes)));
+        if (want_counts) {
+            // Only a region that ran contributes a sampler and its RNG.
+            const std::uint32_t width = circuit.num_clbits();
+            peak_bytes = checked_add(
+                peak_bytes,
+                checked_add(common::grown_vector_bytes(active_regions, sizeof(void*)),
+                            common::grown_vector_bytes(active_regions, sizeof(common::Rng))));
+            peak_bytes = checked_add(
+                peak_bytes, common::heap_block_bytes(checked_mul(active_regions, sizeof(void*))));
+            peak_bytes =
+                checked_add(peak_bytes,
+                            common::counts_map_bytes(
+                                common::distinct_outcomes_bound(shots, std::min(n, width)), width));
+            peak_bytes = checked_add(peak_bytes, 2 * common::bitstring_heap_bytes(width));
+        }
+        if (want_expectation) {
+            const std::uint64_t terms = observable->terms.size();
+            peak_bytes =
+                checked_add(peak_bytes,
+                            checked_add(common::heap_block_bytes(checked_mul(
+                                            regions, sizeof(std::vector<std::complex<double>>))),
+                                        checked_mul(regions,
+                                                    common::heap_block_bytes(checked_mul(
+                                                        terms, sizeof(std::complex<double>))))));
         }
 
         if (want_statevector) {
-            const std::uint64_t global_bytes =
-                checked_mul(checked_pow2(n), sizeof(std::complex<double>));
+            const std::uint64_t global_bytes = common::heap_block_bytes(
+                checked_mul(checked_pow2(n), sizeof(std::complex<double>)));
             peak_bytes = checked_add(peak_bytes, global_bytes);
             // One full 2^n-amplitude multiply pass per region (the
             // incremental recombination routine, src/runtime/recombine_statevector.h).
@@ -263,32 +332,79 @@ CostEstimate pruned_cut_estimate(std::size_t fragment_index,
         {}};
 }
 
+// A circuit's heap bytes as Circuit::append builds it: the operation list,
+// grown one operation at a time, and each operation's own vectors.
+std::uint64_t built_circuit_bytes(const Circuit& circuit) {
+    std::uint64_t bytes =
+        common::grown_vector_bytes(circuit.operations().size(), sizeof(Operation));
+    for (const Operation& op : circuit.operations()) {
+        bytes = checked_add(
+            bytes,
+            std::visit(
+                [](const auto& o) -> std::uint64_t {
+                    using T = std::decay_t<decltype(o)>;
+                    if constexpr (std::is_same_v<T, GateOp>) {
+                        return common::heap_block_bytes(o.qubits.capacity() * sizeof(QubitId)) +
+                               common::heap_block_bytes(o.params.capacity() * sizeof(double));
+                    } else if constexpr (std::is_same_v<T, UnitaryOp>) {
+                        return common::heap_block_bytes(o.qubits.capacity() * sizeof(QubitId)) +
+                               common::heap_block_bytes(o.matrix.capacity() *
+                                                        sizeof(std::complex<double>));
+                    } else if constexpr (std::is_same_v<T, ChannelOp>) {
+                        std::uint64_t kraus =
+                            common::heap_block_bytes(o.kraus.capacity() * sizeof(o.kraus[0]));
+                        for (const auto& k : o.kraus) {
+                            kraus += common::heap_block_bytes(k.capacity() *
+                                                              sizeof(std::complex<double>));
+                        }
+                        return common::heap_block_bytes(o.qubits.capacity() * sizeof(QubitId)) +
+                               kraus;
+                    } else {
+                        static_assert(std::is_same_v<T, MeasureOp>);
+                        return 0;
+                    }
+                },
+                op));
+    }
+    return bytes;
+}
+
+std::uint64_t observable_bytes(const Observable& observable) {
+    std::uint64_t bytes =
+        common::heap_block_bytes(observable.terms.capacity() * sizeof(observable.terms[0]));
+    for (const auto& [term, coefficient] : observable.terms) {
+        static_cast<void>(coefficient);
+        bytes += common::heap_block_bytes(term.x_words.capacity() * sizeof(std::uint64_t)) +
+                 common::heap_block_bytes(term.z_words.capacity() * sizeof(std::uint64_t));
+    }
+    return bytes;
+}
+
 }  // namespace
 
-CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
-                          const Observable& observable,
-                          std::span<const SimulationEngine* const> engines,
-                          std::uint64_t budget_bytes,
-                          const AccuracyPolicy& accuracy_policy,
-                          std::uint64_t prune_above_work_units) {
+CutEstimate estimate_cut(const Circuit& circuit,
+                         const analysis::CutPlan& cut_plan,
+                         const Observable& observable,
+                         std::span<const SimulationEngine* const> engines,
+                         std::uint64_t budget_bytes,
+                         const AccuracyPolicy& accuracy_policy,
+                         std::uint64_t prune_above_work_units) {
+    const auto refuse = [](std::string reason) {
+        return CutEstimate{CostEstimate{/*feasible=*/false, 0, 0, std::move(reason), {}}, {}};
+    };
     if (cut_plan.fragments.size() < 2) {
-        return CostEstimate{
-            /*feasible=*/false, 0, 0, "a cut plan needs at least two fragments", {}};
+        return refuse("a cut plan needs at least two fragments");
     }
     // An approximate fragment would make the 8^K signed sum's error
     // uncharacterized (docs/adr/0013 section 5.2). Refuse rather than guess.
     if (accuracy_policy.kind != AccuracyPolicyKind::Exact) {
-        return CostEstimate{/*feasible=*/false,
-                            0,
-                            0,
-                            "cut reconstruction requires exact fragments: no reviewed source "
-                            "bounds how a truncated fragment's error composes across the 8^K "
-                            "signed terms of the reconstruction",
-                            {}};
+        return refuse(
+            "cut reconstruction requires exact fragments: no reviewed source "
+            "bounds how a truncated fragment's error composes across the 8^K "
+            "signed terms of the reconstruction");
     }
 
     try {
-        std::uint64_t peak_bytes = 0;
         std::uint64_t total_work = 0;
         std::size_t costed_fragments = 0;
         // Under a branch-and-bound bound, fragments are costed in descending
@@ -323,7 +439,6 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
             // once per branch.
             const std::uint64_t evaluations = analysis::distinct_evaluation_count(fragment);
             std::uint64_t fragment_work = 0;
-            std::uint64_t fragment_peak = 0;
             for (const auto& [term, coefficient] : observable.terms) {
                 static_cast<void>(coefficient);
                 const PauliString fragment_term =
@@ -339,41 +454,36 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
                                                     budget_bytes};
                 const EngineChoice choice = pick_cheapest_engine(engines, request);
                 if (!choice.estimate.feasible) {
-                    return CostEstimate{
-                        /*feasible=*/false,
-                        0,
-                        0,
-                        "no engine can run one cut fragment: " + choice.estimate.infeasible_reason,
-                        {}};
+                    return refuse("no engine can run one cut fragment: " +
+                                  choice.estimate.infeasible_reason);
                 }
                 fragment_work = checked_add(fragment_work, choice.estimate.estimated_work_units);
-                fragment_peak = std::max(fragment_peak, choice.estimate.estimated_peak_bytes);
                 // Branch and bound, term by term: the fragment's work so far,
                 // times its evaluation count, is already part of the total.
                 if (prune_above_work_units != std::numeric_limits<std::uint64_t>::max()) {
                     const std::uint64_t running =
                         checked_add(total_work, checked_mul(evaluations, fragment_work));
                     if (running > prune_above_work_units) {
-                        return pruned_cut_estimate(costed_fragments,
-                                                   cut_plan.fragments.size(),
-                                                   running,
-                                                   prune_above_work_units);
+                        return CutEstimate{pruned_cut_estimate(costed_fragments,
+                                                               cut_plan.fragments.size(),
+                                                               running,
+                                                               prune_above_work_units),
+                                           {}};
                     }
                 }
             }
 
             total_work = checked_add(total_work, checked_mul(evaluations, fragment_work));
-            // Eq. (4.3): max, not sum.
-            peak_bytes = std::max(peak_bytes, fragment_peak);
             ++costed_fragments;
             // Branch and bound: every remaining fragment and the
             // recombination term below only add work, so a running total
             // strictly above the bound can no longer win.
             if (total_work > prune_above_work_units) {
-                return pruned_cut_estimate(costed_fragments - 1,
-                                           cut_plan.fragments.size(),
-                                           total_work,
-                                           prune_above_work_units);
+                return CutEstimate{pruned_cut_estimate(costed_fragments - 1,
+                                                       cut_plan.fragments.size(),
+                                                       total_work,
+                                                       prune_above_work_units),
+                                   {}};
             }
         }
 
@@ -384,18 +494,89 @@ CostEstimate estimate_cut(const analysis::CutPlan& cut_plan,
         }
         total_work = checked_add(total_work, checked_mul(branches, observable.terms.size()));
 
-        if (peak_bytes > budget_bytes) {
-            return CostEstimate{/*feasible=*/false,
-                                0,
-                                0,
-                                "cut fragments require " + std::to_string(peak_bytes) +
-                                    " bytes, budget is " + std::to_string(budget_bytes) + " bytes",
-                                {}};
+        // The engine for every evaluation, and what execute_cut holds at once.
+        const std::uint64_t term_count = observable.terms.size();
+        const std::uint64_t value_bytes =
+            common::heap_block_bytes(checked_mul(term_count, sizeof(std::complex<double>)));
+        const std::uint64_t plan_bytes = analysis::cut_plan_heap_bytes(cut_plan);
+        std::uint64_t held =
+            checked_add(plan_bytes,
+                        common::heap_block_bytes(
+                            checked_mul(cut_plan.fragments.size(),
+                                        sizeof(std::vector<std::vector<std::complex<double>>>))));
+        std::uint64_t peak_bytes = analysis::find_cut_plan_peak_bytes(circuit);
+        std::uint64_t evaluation_count = 0;
+        std::vector<std::vector<CutEvaluation>> chosen;
+        chosen.reserve(cut_plan.fragments.size());
+        for (const analysis::CutFragment& fragment : cut_plan.fragments) {
+            const std::vector<analysis::FragmentAssignment> assignments =
+                analysis::enumerate_assignments(fragment);
+            const std::uint64_t assignment_bytes = analysis::assignments_heap_bytes(assignments);
+            std::vector<CutEvaluation> fragment_choices;
+            fragment_choices.reserve(assignments.size());
+            for (const analysis::FragmentAssignment& assignment : assignments) {
+                const Circuit fragment_circuit =
+                    analysis::build_fragment_circuit(fragment, assignment);
+                Observable fragment_observable;
+                fragment_observable.terms.reserve(term_count);
+                for (const auto& [term, coefficient] : observable.terms) {
+                    static_cast<void>(coefficient);
+                    fragment_observable.terms.emplace_back(
+                        analysis::build_fragment_term(fragment, term, assignment),
+                        std::complex<double>{1.0, 0.0});
+                }
+                const EngineEstimateRequest request{fragment_circuit.num_qubits(),
+                                                    &fragment_circuit.operations(),
+                                                    /*want_statevector=*/false,
+                                                    /*want_counts=*/false,
+                                                    /*want_expectation=*/true,
+                                                    &fragment_observable,
+                                                    accuracy_policy,
+                                                    budget_bytes};
+                const EngineChoice choice = pick_cheapest_engine(engines, request);
+                if (!choice.estimate.feasible) {
+                    return refuse("no engine can run one cut fragment evaluation: " +
+                                  choice.estimate.infeasible_reason);
+                }
+                fragment_choices.push_back(CutEvaluation{engines[choice.engine_index]->engine_id(),
+                                                         choice.estimate.estimated_peak_bytes});
+                const std::uint64_t evaluating =
+                    checked_add(checked_add(built_circuit_bytes(fragment_circuit),
+                                            observable_bytes(fragment_observable)),
+                                choice.estimate.estimated_peak_bytes);
+                peak_bytes = std::max(peak_bytes,
+                                      checked_add(checked_add(held, assignment_bytes), evaluating));
+                // The evaluation's term values, kept for the reconstruction.
+                held = checked_add(
+                    held, checked_add(sizeof(std::vector<std::complex<double>>), value_bytes));
+            }
+            evaluation_count = checked_add(evaluation_count, assignments.size());
+            chosen.push_back(std::move(fragment_choices));
         }
-        return CostEstimate{
-            /*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}};
+        // The reconstruction: per term, one value per evaluation, gathered
+        // per fragment, and recombine_cut_term's per-cut branch indices.
+        peak_bytes = std::max(
+            peak_bytes,
+            checked_add(
+                held,
+                checked_add(
+                    common::heap_block_bytes(checked_mul(
+                        cut_plan.fragments.size(), sizeof(std::vector<std::complex<double>>))),
+                    checked_add(
+                        checked_add(checked_mul(evaluation_count, sizeof(std::complex<double>)),
+                                    checked_mul(cut_plan.fragments.size(),
+                                                common::kHeapBlockOverheadBytes)),
+                        common::heap_block_bytes(cut_plan.cuts.size() * sizeof(std::size_t))))));
+
+        if (peak_bytes > budget_bytes) {
+            return refuse("cut fragments require " + std::to_string(peak_bytes) +
+                          " bytes, budget is " + std::to_string(budget_bytes) + " bytes");
+        }
+        return CutEstimate{
+            CostEstimate{/*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}},
+            std::move(chosen)};
     } catch (const ResourceExceeded& e) {
-        return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
+        return refuse(e.what());
     }
 }
 

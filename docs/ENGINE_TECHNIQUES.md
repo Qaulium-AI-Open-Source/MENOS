@@ -2,14 +2,17 @@
 
 Engineering notes for maintainers; kept off the documentation site. This
 file records the data structures the planner's analysis passes use after
-Phase 21 step 2, why each is exact, and where the idea comes from. The
+Phase 24 step 2, why each is exact, and where the idea comes from. The
 measurements and the decisions behind them are in
-`docs/adr/0025-phase-21-planner-performance.md`, sections 10 and 12.
+`docs/adr/0028-phase-24-planner-performance.md`, sections 10 and 12.
 Everything here is written for MENOS; no code is copied from elsewhere.
 
 The planner's output (the chosen plan, its cost and `explain()`) is the same
-as before every change below. That is checked by 45 golden plan files and a
-differential test against a frozen copy of the pre-phase planner.
+as before every change below. That is checked by 45 golden plan files
+(`tests/plan/golden/planner_corpus`). On the fork this was also checked by a
+differential test against a frozen copy of the pre-phase planner; that test
+was retired when the work was merged with the memory roadmap, whose
+accounting changed every estimate by design (`docs/adr/0028` section 15).
 
 ## Min-fill elimination (tensor-network costing)
 
@@ -95,7 +98,7 @@ This is the stabilizer-formalism view of Clifford dynamics
 (Gottesman–Knill). It matched the SVD on every two-qubit Clifford and on
 8,000 random 3- and 4-qubit cases. Since the rank cache, the SVD is about
 2% of the most Clifford-heavy corpus job, so it is not implemented
-(docs/adr/0025 section 12.3, C.4).
+(docs/adr/0028 section 12.3, C.4).
 
 ## Branch-and-bound across candidates (plan selection)
 
@@ -121,6 +124,7 @@ optimum.
   the figure it reached. It is not costed again only to print its full
   figure.
 
-The plan is unchanged by construction. `tests/plan/prune_equivalence.h`
-states exactly which `explain()` lines may differ from the frozen pre-phase
-planner, and the differential test enforces it.
+The plan is unchanged by construction. `docs/adr/0028` section 13 states
+exactly which `explain()` lines may differ from the planner without pruning
+(a losing candidate, or a losing engine in a region's `why=`, reported as
+pruned), and the golden plan files pin it.

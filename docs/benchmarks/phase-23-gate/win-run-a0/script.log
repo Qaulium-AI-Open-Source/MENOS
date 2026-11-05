@@ -1,0 +1,10 @@
+30266fd Phase 23 step 5: the gate driver and scripts; the device race is a refusal
+ M src/common/observable_restrict.cpp
+wsl vhd before: 63802703872 bytes; C: free 253498347520 bytes
+11:08:18 start power: status=2 charge=94
+11:08:21 after-build power: status=2 charge=94
+== gate 11:08:21
+gate driver exit 1
+11:25:25 end power: status=2 charge=98
+wsl vhd after: 63802703872 bytes; C: free 253503553536 bytes
+== done 11:25:25

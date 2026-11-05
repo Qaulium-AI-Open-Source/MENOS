@@ -1,6 +1,6 @@
-# Phase 21 baseline: planner latency (step 1)
+# Phase 24 baseline: planner latency (step 1)
 
-The reference figures for every later Phase 21 claim (`docs/adr/0025` section 5). A step-2
+The reference figures for every later Phase 24 claim (`docs/adr/0028` section 5). A step-2
 change is reported as a same-machine ratio against this table, measured with the same
 command. Every figure was measured on planner, analysis, cost and engine sources identical to
 `main` at `d89dde3`. The step-1 commit adds only the benchmark, the corpus, the golden

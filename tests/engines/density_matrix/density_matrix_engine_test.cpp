@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "common/memory_bounds.h"
+
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -353,8 +355,13 @@ TEST(DensityMatrixEngineTest, TheBudgetIsCheckedAtSixteenTimesFourToTheN) {
 
 // n = 2: init 4^2 = 16; H (k=1) 2 * 2^(4+1) = 64; CX (k=2) 2 * 2^(4+2) = 128;
 // a one-qubit channel 2^(4+2) = 64; counts 2^2 = 4. Total 276 work units.
-// Peak: rho 16 * 16 = 256, the channel's 4x4 superoperator 16 * 16 = 256, the
-// diagonal 8 * 4 = 32. Total 544 bytes.
+// Peak (docs/adr/0025 section 3.4), each buffer one allocation
+// (common::heap_block_bytes): rho 16 * 16 = 256, plus the largest transient,
+// which here is the CX's: its generated 4 x 4 matrix and the conjugated copy,
+// 2 * 256, and its column-qubit list, 2 * 4. The channel's transient (its 4 x 4
+// superoperator 256, the operand lists) and the counts outputs are both
+// smaller. Until Phase 21 this was 544: rho, the superoperator and the
+// diagonal, without the gate's buffers.
 TEST(DensityMatrixEngineTest, EstimateFollowsTheDocumentedFormulas) {
     Circuit circuit(2, 2);
     circuit.append(Opcode::H, {0});
@@ -371,7 +378,9 @@ TEST(DensityMatrixEngineTest, EstimateFollowsTheDocumentedFormulas) {
                                               .observable = nullptr});
     ASSERT_TRUE(estimate.feasible) << estimate.infeasible_reason;
     EXPECT_EQ(estimate.estimated_work_units, 276U);
-    EXPECT_EQ(estimate.estimated_peak_bytes, 544U);
+    EXPECT_EQ(estimate.estimated_peak_bytes,
+              common::heap_block_bytes(256) + (2 * common::heap_block_bytes(256)) +
+                  common::heap_block_bytes(8));
 }
 
 TEST(DensityMatrixEngineTest, AStatevectorIsRefused) {

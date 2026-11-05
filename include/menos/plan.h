@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -81,6 +82,18 @@ enum class Engine { Dense, Stabilizer, Pauli, MPS, TensorNetwork, DensityMatrix,
 // them separately: the algorithm by work units, then the backend by calibrated
 // wall-clock seconds (docs/adr/0014).
 enum class Backend { Cpu, Cuda };
+// Where a region's state lives while it executes (Phase 23, docs/adr/0027).
+// InMemory is every engine before Phase 23: the state is one buffer in the
+// backend's own memory. Disk keeps the state in a scratch file and runs the
+// gates chunk by chunk through a window in host memory; HostOffloaded keeps it
+// in host memory and runs the chunks on the CUDA device (measured in step 1
+// and not built, docs/adr/0027 section 10.1). A tier is a third coordinate of
+// an implementation beside Engine and Backend: (Dense, Cpu, Disk) is the
+// chunked executor over a scratch file, (Dense, Cpu, InMemory) is DenseEngine.
+// The planner reaches for a tier other than InMemory only when the in-memory
+// state does not fit (reach-only, section 9 Q5), so a job that fits is
+// planned, executed and explained exactly as before.
+enum class Tier { InMemory, Disk, HostOffloaded };
 
 // Sentinel for Region::global_to_local: this global qubit does not belong
 // to the region.
@@ -127,6 +140,27 @@ struct DeviceCost {
 // candidates and by SimulationEngine::estimate() (Phase 4 onward) -- the
 // same shape serves both a whole-circuit candidate and a single region's
 // per-engine estimate.
+// What executing a candidate on a memory tier other than InMemory costs
+// (Phase 23, docs/adr/0027 section 3): the state is read and written through
+// the tier's link once per pass, which is what the planner prices with the
+// link's measured bandwidth beside the work units. All zero for an in-memory
+// engine, which never mentions it, so every pre-Phase-23 estimate is unchanged.
+struct TierCost {
+    // Gate passes over the whole state (docs/adr/0027 section 3.2), from the
+    // circuit's own pass plan: what the executor will run, not a model of it.
+    std::uint64_t passes = 0;
+    // The chunk the executor chose, 2^chunk_qubits amplitudes, and its window
+    // of 2^window_qubits amplitudes in host memory.
+    std::uint32_t chunk_qubits = 0;
+    std::uint32_t window_qubits = 0;
+    // Bytes crossing the tier's link in all: the initial write of the state,
+    // each pass's read and write, and the reads the outputs need.
+    std::uint64_t link_bytes = 0;
+    // The scratch file's size, 16 * 2^n, for the disk tier; 0 for a tier with
+    // no file.
+    std::uint64_t file_bytes = 0;
+};
+
 struct CostEstimate {
     bool feasible;
     std::uint64_t estimated_peak_bytes;
@@ -135,6 +169,9 @@ struct CostEstimate {
     // Everything about running this candidate on an accelerator. All zero for
     // a CPU engine, which never mentions it (Phase 10, docs/adr/0014).
     DeviceCost device = {};
+    // Everything about running this candidate on a memory tier. All zero for
+    // an in-memory engine (Phase 23, docs/adr/0027).
+    TierCost tier = {};
 };
 
 // A region is a contiguous local-index sub-circuit assigned an engine and
@@ -152,6 +189,14 @@ struct Region {
     std::vector<Operation> operations;
     Engine engine;
     Backend backend;
+    // Where this region's state lives while it executes (Phase 23). InMemory
+    // for every region of a job whose state fits its budget.
+    Tier tier = Tier::InMemory;
+    // The tier's own figures for this region (Phase 23, docs/adr/0027): the
+    // pass plan's chunk and window the executor runs with, which the runtime
+    // hands to the engine so the plan the planner priced is the plan that
+    // runs. All zero for an in-memory region.
+    TierCost tier_cost = {};
     // Why `engine` was chosen over the other available engine(s) for this
     // region, for explain() (docs/BUILD_PLAN.md Phase 4: mixed-engine
     // Factorized plans and the 99%-Clifford-plus-one-T case must show
@@ -195,6 +240,14 @@ struct Region {
 // fragment runs actually performed (4^m * 6^p summed over fragments) -- the
 // gap between them is what makes cutting affordable, so explain() shows both
 // rather than leaving the reader to assume they are equal.
+// The engine one fragment evaluation runs on, and the peak it was costed at,
+// chosen by plan_job (Phase 21, docs/adr/0025): the runtime runs each
+// evaluation on exactly this engine and does no planning of its own.
+struct CutEvaluation {
+    Engine engine;
+    std::uint64_t estimated_peak_bytes;
+};
+
 struct CutSummary {
     std::size_t cut_count;
     std::size_t fragment_count;
@@ -203,6 +256,9 @@ struct CutSummary {
     // Measured after execution: the largest peak any single fragment actually
     // reached. nullopt on a plan-only preview.
     std::optional<std::uint64_t> actual_peak_bytes = std::nullopt;
+    // evaluations[f][a]: fragment f's a-th distinct assignment, in
+    // analysis::enumerate_assignments order.
+    std::vector<std::vector<CutEvaluation>> evaluations = {};
 };
 
 // What a DirectTrajectory plan samples, for explain() and for the runtime
@@ -240,8 +296,16 @@ struct CandidateSummary {
     // winner's to Cuda (docs/adr/0014). Recorded so explain() and the tests
     // can see which hardware the chosen plan is actually for.
     Backend backend = Backend::Cpu;
+    // The memory tier this candidate was costed for (Phase 23). InMemory
+    // unless the planner reached for a tier because the in-memory state does
+    // not fit; explain() prints it only then, with the tier's figures below.
+    Tier tier = Tier::InMemory;
+    TierCost tier_cost = {};
     // The accelerator terms this candidate was costed with; all zero for a CPU
-    // backend. Separate from estimated_peak_bytes, which is host memory.
+    // backend. Separate from estimated_peak_bytes, which is host memory. A
+    // Factorized candidate stays on the Cpu backend even when some of its
+    // regions run on CUDA; its device_bytes is then the largest such region's,
+    // since regions run one at a time (docs/adr/0025 section 10.5).
     DeviceCost device = {};
     // estimated_work_units converted to wall-clock seconds using the
     // calibrated throughput of the machine that planned this job
@@ -315,6 +379,34 @@ struct Plan {
     // explain() can say the backend was requested rather than chosen. Unset
     // when the planner chose, and then explain() prints nothing extra.
     std::optional<Backend> requested_backend = std::nullopt;
+    // The CUDA device's free memory this plan was checked against, read when
+    // the job was planned (Phase 21, docs/adr/0025 section 9, Q3). Set only
+    // when a candidate or a region of this plan runs on CUDA, so explain()
+    // shows the figure a device decision rested on, and every plan with no
+    // CUDA in it reports exactly as before. Like estimated_seconds, it is a
+    // measured figure: it changes with other processes' use of the GPU.
+    std::optional<std::uint64_t> device_available_bytes = std::nullopt;
+    // The part of device_available_bytes that is MENOS's own memory pool,
+    // retained from earlier jobs (Phase 22, docs/adr/0026 section 3.4), and
+    // whether the pool is in use at all (false on a device without
+    // memory-pool support). Set exactly when device_available_bytes is.
+    std::optional<std::uint64_t> device_pool_bytes = std::nullopt;
+    std::optional<bool> device_pooled = std::nullopt;
+    // The memory tier the caller forced (RunOptions::tier, Phase 23,
+    // docs/adr/0027), so explain() can say the tier was requested rather than
+    // reached. Unset when the planner chose, and then explain() prints
+    // nothing extra.
+    std::optional<Tier> requested_tier = std::nullopt;
+    // The scratch directory a disk-tier decision rested on, with the space
+    // available on it and its measured bandwidth (0 when unmeasured), read
+    // when the job was planned. Set only when a candidate or a region of this
+    // plan is on the disk tier, so every plan with no disk tier in it reports
+    // exactly as before. Like device_available_bytes, these are measured
+    // figures of the moment.
+    std::optional<std::filesystem::path> scratch_directory = std::nullopt;
+    std::optional<std::uint64_t> disk_available_bytes = std::nullopt;
+    std::optional<double> disk_write_bytes_per_second = std::nullopt;
+    std::optional<double> disk_read_bytes_per_second = std::nullopt;
 
     // A deterministic text report: the "circuit", "light_cone",
     // candidate, "strategy" and region lines, and the "estimated" line

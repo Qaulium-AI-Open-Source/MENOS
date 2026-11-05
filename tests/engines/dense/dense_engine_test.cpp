@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "common/memory_bounds.h"
+
 namespace menos::engines::dense {
 namespace {
 
@@ -35,8 +37,12 @@ TEST(DenseEngineTest, NameAndCapabilities) {
 // want_statevector=true, want_counts=false.
 // work = 2^2 (init) + 2^(2+1) (H) + 2^(2+2) (CX) + 2^2 (statevector pass)
 //      = 4 + 8 + 16 + 4 = 32
-// peak_bytes = 16 * 2^2 = 64
-// Formula relocated verbatim from Phase 3's cost::region_cost
+// peak_bytes = the state 16 * 2^2 = 64, plus the largest gate's transient:
+// CX's generated 4 x 4 matrix, 16 * 16 = 256 (H's is 64), each one allocation
+// (common::heap_block_bytes). The statevector is moved into the result, so it
+// costs nothing more (docs/adr/0025 section 3.4; until Phase 21 the figure was
+// the state alone, 64).
+// The work-unit formula is relocated verbatim from Phase 3's cost::region_cost
 // (docs/BUILD_PLAN.md Phase 4: "refactor the dense engine behind the
 // interface without changing behavior").
 TEST(DenseEngineTest, ExactHandComputableValueWithStatevector) {
@@ -49,7 +55,8 @@ TEST(DenseEngineTest, ExactHandComputableValueWithStatevector) {
         dense_estimate(engine, 2, ops, /*want_statevector=*/true, /*want_counts=*/false);
     ASSERT_TRUE(estimate.feasible);
     EXPECT_EQ(estimate.estimated_work_units, 32U);
-    EXPECT_EQ(estimate.estimated_peak_bytes, 64U);
+    EXPECT_EQ(estimate.estimated_peak_bytes,
+              common::heap_block_bytes(64) + common::heap_block_bytes(256));
 }
 
 TEST(DenseEngineTest, ExactHandComputableValueWithCounts) {
@@ -91,8 +98,9 @@ TEST(DenseEngineTest, EmptyRegionIsJustInitialization) {
     const DenseEngine engine;
     const CostEstimate estimate = dense_estimate(engine, 3, {}, false, false);
     ASSERT_TRUE(estimate.feasible);
-    EXPECT_EQ(estimate.estimated_work_units, 8U);    // 2^3
-    EXPECT_EQ(estimate.estimated_peak_bytes, 128U);  // 16 * 2^3
+    EXPECT_EQ(estimate.estimated_work_units, 8U);  // 2^3
+    // 16 * 2^3, one allocation (docs/adr/0025 section 3.4).
+    EXPECT_EQ(estimate.estimated_peak_bytes, common::heap_block_bytes(128));
 }
 
 TEST(DenseEngineTest, OverflowingOperandTermIsInfeasibleNotWraparound) {

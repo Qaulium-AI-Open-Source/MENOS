@@ -417,53 +417,31 @@ std::complex<double> i_power(int k) {
 
 }  // namespace
 
+void expectation_of_term_accumulate(std::span<const std::complex<double>> chunk,
+                                    std::span<const std::complex<double>> partner,
+                                    std::uint64_t x_local,
+                                    std::uint64_t z_local,
+                                    bool global_negative,
+                                    std::complex<double>& acc) {
+    for (std::size_t j = 0; j < chunk.size(); ++j) {
+        const std::uint64_t k = j ^ x_local;
+        const bool negative = ((std::popcount(z_local & k) & 1) != 0) != global_negative;
+        const std::complex<double> term = std::conj(chunk[j]) * partner[k];
+        acc += negative ? -term : term;
+    }
+}
+
+std::complex<double> expectation_term_phase(std::uint64_t x_mask, std::uint64_t z_mask) {
+    return i_power(std::popcount(x_mask & z_mask));
+}
+
 std::complex<double> expectation_of_term(std::span<const std::complex<double>> state,
                                          std::uint64_t x_mask,
                                          std::uint64_t z_mask) {
-    const int y_count = std::popcount(x_mask & z_mask);
-
+    // The whole state is one chunk: no high bits, so no global sign.
     std::complex<double> sum{0.0, 0.0};
-    for (std::size_t m = 0; m < state.size(); ++m) {
-        const std::uint64_t k = m ^ x_mask;
-        const bool negative = (std::popcount(z_mask & k) & 1) != 0;
-        const std::complex<double> term = std::conj(state[m]) * state[k];
-        sum += negative ? -term : term;
-    }
-    return i_power(y_count) * sum;
-}
-
-std::vector<std::complex<double>> expectation_of_diagonal_terms(
-    std::span<std::complex<double>> state, std::span<const std::uint64_t> z_masks) {
-    const std::size_t total = state.size();
-    common::ensure(total > 0 && (total & (total - 1)) == 0,
-                   "expectation_of_diagonal_terms: state size must be a power of two");
-    // Probabilities p[m] = re^2 + im^2, written over the state in place. The
-    // double view of a std::complex<double> array is standard-blessed, and
-    // p[m] lands in complex slot m / 2, which was read at iteration m / 2 <= m.
-    double* p = reinterpret_cast<double*>(state.data());
-    for (std::size_t m = 0; m < total; ++m) {
-        const double re = state[m].real();
-        const double im = state[m].imag();
-        p[m] = re * re + im * im;
-    }
-    // In-place Walsh-Hadamard transform: afterwards p[z] = sum over m of
-    // p[m] * (-1)^popcount(z & m), which is <Z-string z> for every z at once.
-    for (std::size_t len = 1; len < total; len <<= 1) {
-        for (std::size_t i = 0; i < total; i += len << 1) {
-            for (std::size_t j = i; j < i + len; ++j) {
-                const double a = p[j];
-                const double b = p[j + len];
-                p[j] = a + b;
-                p[j + len] = a - b;
-            }
-        }
-    }
-    std::vector<std::complex<double>> out;
-    out.reserve(z_masks.size());
-    for (const std::uint64_t z : z_masks) {
-        out.emplace_back(p[z], 0.0);
-    }
-    return out;
+    expectation_of_term_accumulate(state, state, x_mask, z_mask, /*global_negative=*/false, sum);
+    return expectation_term_phase(x_mask, z_mask) * sum;
 }
 
 }  // namespace menos::kernels::cpu
