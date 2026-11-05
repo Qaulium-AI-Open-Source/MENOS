@@ -32,7 +32,7 @@ namespace {
 // make the dev ctest run take minutes for these alone, so they are checked
 // only in optimised builds (the release and cuda-release ctest stages of
 // scripts/verify.sh). Every other job is checked in every build.
-bool checked_in_this_build(const std::string& name) {
+[[maybe_unused]] bool checked_in_this_build(const std::string& name) {
 #ifdef NDEBUG
     static_cast<void>(name);
     return true;
@@ -44,7 +44,7 @@ bool checked_in_this_build(const std::string& name) {
 #endif
 }
 
-std::filesystem::path golden_path(const std::string& name) {
+[[maybe_unused]] std::filesystem::path golden_path(const std::string& name) {
     std::string file = name;
     for (char& c : file) {
         if (c == '/') {

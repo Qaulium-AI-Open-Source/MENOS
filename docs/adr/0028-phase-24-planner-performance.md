@@ -1367,9 +1367,9 @@ toolkit, driver 566.14, so GPU tests skip there) for `scripts/verify.sh`.
   test in `windows-dev`: the MSVC debug STL makes `std::vector` 32 bytes
   instead of 24 and the memory estimates count it (257 histogram nodes ×
   8 bytes = the 2 056-byte difference in every counts plan), so on MSVC
-  the golden plans are checked in optimised builds only (`a` commit after
-  `fee38b9`); the memory fixtures still hold each build's estimate to its
-  heap tracker.
+  the golden plans are checked in optimised builds only (`84c5cc7`,
+  `MERGE_FIX2`); the memory fixtures still hold each build's estimate to
+  its heap tracker.
   Final subset on the merge commit: plan-cache, golden and memory-fixture
   tests, ctest exit 0; the preceding full run on the same code apart from
   the two optional fixes: 861/863, the two plan-cache tests being those
