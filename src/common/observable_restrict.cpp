@@ -39,4 +39,4 @@ Observable restrict_observable(const Observable& observable,
     return restricted;
 }
 
-}  
+}  // namespace menos::common
