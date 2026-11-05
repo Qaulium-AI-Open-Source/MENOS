@@ -1640,3 +1640,193 @@ measures before any code changes. Nothing below is built.
   6. the golden planner corpus is unchanged;
   7. results are bitwise identical;
   8. `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
+
+### 16.7 Owner answers (2026-11-05)
+
+The owner answered 16.6 the same day. A review followed, and the owner then
+accepted every correction it proposed. The answers below are the corrected
+ones and replace the proposals in 16.2–16.6 wherever they differ.
+
+- **Q1, workloads.** Every engine is measured on easy, representative and
+  stress workloads:
+
+  | Engine | Workloads |
+  |---|---|
+  | Dense, CPU and CUDA | random/general circuits, QFT, entangling circuits |
+  | Stabilizer | Clifford and graph-state circuits |
+  | Pauli propagation | Pauli-heavy expectation workloads |
+  | MPS | low- and high-entanglement circuits |
+  | Tensor network | low- and high-treewidth circuits |
+  | Cut-and-recombine | partitionable and highly connected circuits |
+  | Factorized | two independent blocks, and mixed-engine workloads |
+  | Density matrix, trajectory | noisy circuits (added in review) |
+  | Disk tier | the Phase 23 gate circuits (added in review) |
+- **Q2, prediction accuracy.**
+  - **Thresholds.** Set after the first complete benchmark.
+  - **Reported per engine:**
+    - the median and P90 of the symmetric error |log(actual / predicted)|;
+    - the actual/predicted ratio itself;
+    - systematic underprediction and overprediction, separately.
+  - **How predictions are made.** Every prediction comes from a calibrated
+    profile in the same process as the run it predicts. That is the only
+    setting in which a tight bound can be met, because calibration varies
+    about 1.5× between processes. The variation between processes is
+    reported separately.
+  - **Proposed eventual targets.** Median error ≤ 20% and P90 ≤ 50%,
+    subject to the baseline.
+- **Q3, timing.**
+  - **`plan_seconds()`.** C++ `Result::plan_seconds()` and Python
+    `plan_seconds` cover the initial plan only. On a plan-cache hit the
+    figure is the cost of the lookup, and the documentation says so.
+  - **`replan_seconds()`.** C++ `Result::replan_seconds()` and Python
+    `replan_seconds` are the sum of the replans' planning time. Each replan
+    line also prints its own figure.
+  - **Execution time.** It stays `execute_s` and `sample_s`.
+  - **Total wall-clock.** No total-time field is added. The caller's own
+    clock measures it, and `plan_s + replan_s + execute_s + sample_s`
+    accounts for MENOS's part of it.
+  - **`explain()`.** The `actual` line gains `plan_s=` and `replan_s=`, and
+    the timing normalisers in the tests learn both fields.
+- **Q4, search limit.**
+  - A deterministic node-count limit is added only if the post-pruning
+    measurement shows a real planning-time problem.
+  - There is never a wall-clock limit.
+  - When the limit is reached, the candidate is refused with a named reason
+    in `explain()`, as a pruned candidate is today.
+- **Q5, observations.**
+  - **The key.** A per-region observation is keyed by the region's
+    identity: its qubit set within the job, and its engine, backend and
+    tier.
+  - **What it is never applied to.** A region of another qubit set,
+    whatever its size.
+  - **What the planner uses.** Only the time floor.
+  - **What `explain()` reports.** Each replan line reports each region's
+    estimated and actual time.
+  - **Dropped.** Gate distribution and memory metrics would have no
+    consumer (prime directive 2), so they are not recorded.
+- **Q6, scope.** Factorized plans only. Circuit cutting stays refused on an
+  overrun, with its message unchanged, until its reconstruction cost is
+  modelled separately.
+- **Q7, calibration.**
+  - **The threaded rate.** Measured at 20 qubits as the primary point and
+    validated against 18 and 22 qubits.
+  - **The single-thread rate.** The 13-qubit rate is kept.
+  - **Which rate prices a candidate.** The rate matching the thread count
+    the kernel uses at the candidate's size.
+  - **`max_threads` below the hardware thread count.** A job that sets
+    `RunOptions::max_threads` below the hardware thread count is priced at
+    the single-thread rate. That overpredicts, so it is the safe side under
+    a time budget.
+  - **Disk.** Reads and writes are priced at their own measured bandwidths.
+- **Q8, gate.** The mandatory criteria:
+  1. **Correctness:**
+     - results bitwise identical to the Phase 21 baseline;
+     - the golden planner corpus unchanged;
+     - `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
+  2. **Memory safety:** the sanitizer stages of both scripts.
+  3. **Deterministic planning:**
+     - the same job and the same hardware profile give the same plan;
+     - plans that change because item 9 changes `estimated_seconds` are
+       listed, not forbidden;
+     - an unbudgeted job keeps its plan.
+  4. **Replanning terminates,** by the proof in 16.8, pinned by an
+     injected-clock test.
+
+  The performance criteria are engine-specific and set from the first
+  baseline. Planning and replanning overhead are reported separately.
+- **Order.** Before implementation, 16.8 (the termination proof) and 16.9
+  (the benchmark method) are written. Step 1 then establishes the complete
+  baseline.
+  - It adds benchmark code only: the accuracy benchmark, and planning-time
+    measurement through the existing planner benchmarks.
+  - It changes no library code or behaviour.
+
+### 16.8 Termination of per-region replanning — [DERIVED]
+
+**Setting.** A job J has a time budget B. The planner, `plan_job`, chooses
+from a finite set P(J) of plans. P(J) is finite because:
+- the strategies are a fixed list;
+- the factorization's regions are fixed by the circuit;
+- each region has finitely many (engine, backend, tier) choices.
+
+For a plan p, let pred(p, O) be its predicted seconds under the
+observations O, and let feasible(p, O) require pred(p, O) ≤ B. Today's
+single-region argument (`replan_controller.cpp` lines 92–138) is the case
+where every plan has one region.
+
+**Assumptions,** each checked in the implementation and pinned by a test:
+- **A1 (monotone).** Every floor only rises, and pred(p, O) is
+  non-decreasing in every floor. A factorized plan's prediction is the sum
+  of its regions' predictions, each raised to its floor.
+- **A2 (plan floor).** At a crossing of plan p after total elapsed T > B,
+  the runtime records:
+  - a floor F_r = (observed time) for every region r of p that started, the
+    running one included, keyed by (qubit set, engine, backend, tier);
+  - a plan floor F_p = T, keyed by p's full region assignment.
+  The planner raises pred(p, O) to at least F_p.
+- **A3 (soundness).** Each F_r is the region's own time, a lower bound for
+  that region on that implementation. F_p is the time that exact plan
+  already took before being abandoned.
+  - Neither figure is applied to any other key.
+  - Time spent between regions is not attributed to any region. It is
+    covered by F_p alone, which is why A2 needs F_p: Σ F_r alone can be
+    below B when that overhead is large.
+
+**Claim.** `run_with_replanning` performs at most |P(J)| − 1 replans before
+it either completes or throws `ResourceExceeded`.
+
+**Proof.**
+1. Suppose plan p overruns. By A2, afterwards pred(p, O) ≥ F_p = T > B, so p
+   is infeasible.
+2. By A1, floors never fall, so p stays infeasible for the rest of the job.
+3. Hence every replan either throws (no feasible plan remains) or chooses a
+   plan not chosen before.
+4. P(J) is finite, so there are at most |P(J)| attempts, and at most
+   |P(J)| − 1 replans. ∎
+
+**Notes.**
+- The per-region floors F_r are not needed for termination; F_p alone
+  suffices. They exist so that a *different* plan that reuses a region on
+  the same implementation is priced with what was learned.
+- A2 makes the existing refusal of multi-region overruns unnecessary for
+  factorized plans. Cut plans keep it (Q6).
+- For a single-region plan, F_p and F_r coincide with today's floor, so the
+  existing proof is the special case.
+
+### 16.9 Benchmark method for step 1 — [MENOS]
+
+- **Builds.** Release presets: `scripts/verify-windows.ps1`'s release build
+  natively, and `release` and `cuda12-release` in the WSL clone `~/MENOS`.
+  The machine's load is logged before every round, as in section 14.
+- **Accuracy (item 1).** A new program,
+  `benchmarks/cost_model_accuracy_benchmark.cpp`, built on Q1's workloads.
+  - Each engine is forced where forcing exists. Otherwise the planner's
+    choice is checked.
+  - The profile is calibrated once per process.
+  - Each job runs once as a warm-up, then 5 timed repetitions.
+  - Actual time is `execute_seconds + sample_seconds`. Predicted time is the
+    chosen plan's `estimated_seconds`.
+  - Each per-engine table reports the Q2 statistics: median and P90 of
+    |log(actual / predicted)|, the ratio, and the signed bias.
+  - Three separate processes per platform show the variation between
+    processes.
+  - Sizes are chosen so that one run takes 0.1–10 s.
+- **Planning time (item 2).** The existing planner benchmarks on the 45-job
+  corpus, plus the 20-qubit, depth-10, 50-term expectation case from
+  `docs/BUILD_PLAN.md`.
+  - Reported: the median and spread of `plan_job` time, and the number of
+    min-fill search nodes visited.
+  - The node count is the figure a Q4 limit would be derived from.
+- **Calibration (item 9).**
+  - The dense work rate is measured at 13 qubits on 1 thread, and at 18, 20
+    and 22 qubits on every thread.
+  - The calibration's own cost is measured.
+  - The disk write and read bandwidths are recorded separately.
+  - The Phase 23 gate circuits are re-measured against both the current
+    pricing and the proposed one, computed offline from the recorded
+    figures.
+- **Replanning (item 3).** No baseline is needed: today a multi-region
+  overrun is refused. The test is an injected clock.
+- **Output.** Raw runs go in `docs/benchmarks/phase-24/step1/`. Tables are
+  copied into a new section 16.10, and the owner sets the performance
+  thresholds from them.
