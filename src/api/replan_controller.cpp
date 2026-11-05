@@ -168,11 +168,18 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
             const double predicted = predicted_seconds_of(current);
             Plan replanned;
             std::string failure;
+            // Real wall-clock, not the injected ElapsedSource: that one times
+            // execution attempts against the budget, and planning is neither
+            // (docs/adr/0028 section 16.7 Q3).
+            const auto planning_start = std::chrono::steady_clock::now();
             try {
                 replanned = plan::plan_job(job_spec, hardware_profile, observations);
             } catch (const common::ResourceExceeded& exceeded) {
                 failure = exceeded.what();
             }
+            const double plan_seconds =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start)
+                    .count();
 
             if (!failure.empty()) {
                 // The strict reading of time_budget_seconds, carried from plan
@@ -202,6 +209,7 @@ Result run_with_replanning(const plan::JobSpec& job_spec,
                         : std::format(" (tier {})", plan::tier_name(current.regions[0].tier)),
                     request.elapsed_seconds()),
                 .superseded_plan = std::move(current),
+                .plan_seconds = plan_seconds,
             });
             current = std::move(replanned);
         }

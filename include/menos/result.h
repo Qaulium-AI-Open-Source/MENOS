@@ -51,6 +51,10 @@ struct ReplanEvent {
     Backend backend;
     std::string reason;
     Plan superseded_plan;
+    // Wall-clock seconds the planner took to produce the plan that replaced
+    // superseded_plan (Phase 24, docs/adr/0028 section 16.7 Q3). Measured,
+    // never estimated; not charged against the time budget.
+    double plan_seconds = 0.0;
 };
 
 // counts (ordered by key -- std::map -- so output is deterministic),
@@ -113,6 +117,17 @@ public:
     [[nodiscard]] std::uint64_t peak_disk_bytes() const;
     [[nodiscard]] double execute_seconds() const;
     [[nodiscard]] double sample_seconds() const;
+    // Wall-clock seconds the initial plan took to produce (Phase 24,
+    // docs/adr/0028 section 16.7 Q3): the planner call menos::run made before
+    // the first execution attempt. On a plan-cache hit it is the cost of the
+    // lookup and the re-parameterisation, which is all that ran. 0 for a
+    // Result built by the runtime alone, outside menos::run.
+    [[nodiscard]] double plan_seconds() const;
+    // Wall-clock seconds spent replanning: the sum of every
+    // ReplanEvent::plan_seconds in replans(). 0 for a job that never replanned.
+    // Kept apart from plan_seconds() so the cost of an overrun is visible on
+    // its own.
+    [[nodiscard]] double replan_seconds() const;
 
     // Every plan that was abandoned before this Result was produced, oldest
     // first. Empty for a run that never crossed its time budget, which is
@@ -135,8 +150,14 @@ public:
     // supposed to be nearly free.
     [[nodiscard]] Result with_replans(std::vector<ReplanEvent> replans) &&;
 
+    // Attaches the initial plan's planning time, which only the api layer
+    // measures (it is the layer that calls the planner). Rvalue-qualified for
+    // the same reason as with_replans().
+    [[nodiscard]] Result with_plan_seconds(double plan_seconds) &&;
+
     // A deterministic text report. Byte-identical across runs of the same
-    // circuit, except for the two wall-clock fields (execute_s, sample_s),
+    // circuit, except for the wall-clock fields (execute_s, sample_s, plan_s,
+    // and, after a replan, replan_s and each replan line's replanned_in),
     // which are, by construction, not deterministic.
     [[nodiscard]] std::string explain() const;
 
@@ -154,6 +175,7 @@ private:
     std::uint64_t peak_host_bytes_;
     std::uint64_t peak_device_bytes_;
     std::uint64_t peak_disk_bytes_;
+    double plan_seconds_ = 0.0;
 };
 
 }  // namespace menos

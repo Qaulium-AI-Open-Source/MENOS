@@ -245,6 +245,10 @@ NB_MODULE(_core, m) {
         .def_prop_ro("peak_disk_bytes", &menos::Result::peak_disk_bytes)
         .def_prop_ro("execute_seconds", &menos::Result::execute_seconds)
         .def_prop_ro("sample_seconds", &menos::Result::sample_seconds)
+        // Phase 24 (docs/adr/0028 section 16.7 Q3): the initial plan's
+        // planning time, and the replans' planning time summed.
+        .def_prop_ro("plan_seconds", &menos::Result::plan_seconds)
+        .def_prop_ro("replan_seconds", &menos::Result::replan_seconds)
         // Phase 17 (docs/adr/0021 section 3): the abandoned attempts of a job
         // that replanned, one dict per ReplanEvent, in order. Empty for a job
         // that never replanned. Engines and backends are spelled as explain()
@@ -263,6 +267,7 @@ NB_MODULE(_core, m) {
                              entry["backend"] =
                                  std::string(menos::plan::backend_name(event.backend));
                              entry["reason"] = event.reason;
+                             entry["plan_seconds"] = event.plan_seconds;
                              events.append(entry);
                          }
                          return events;

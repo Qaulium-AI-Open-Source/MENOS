@@ -1,6 +1,7 @@
 #include "menos/menos.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -28,6 +29,8 @@ struct PlannedJob {
     Plan plan;
     plan::JobSpec job_spec;
     plan::HardwareProfile hardware_profile;
+    // Wall-clock seconds of the planner call alone (Result::plan_seconds()).
+    double plan_seconds = 0.0;
 };
 
 // Shared by run() and preview(): validate, build the JobSpec, and
@@ -114,8 +117,14 @@ PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) 
         plan::hardware_profile_for(options.time_budget_seconds.has_value() || measure_scratch),
         scratch_directory,
         measure_scratch);
+    // Timed around the planner call only: validation, the JobSpec and the
+    // hardware profile (whose calibration is cached per process) are not
+    // planning (docs/adr/0028 section 16.7 Q3).
+    const auto planning_start = std::chrono::steady_clock::now();
     Plan job_plan = plan::plan_job_cached(job_spec, hardware_profile);
-    return {std::move(job_plan), std::move(job_spec), hardware_profile};
+    const double plan_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start).count();
+    return {std::move(job_plan), std::move(job_spec), hardware_profile, plan_seconds};
 }
 
 }  // namespace
@@ -125,7 +134,8 @@ Result run(const Circuit& circuit, const RunOptions& options) {
     // A fresh steady_clock per execution attempt (Phase 11, docs/adr/0015 --
     // see BudgetMonitor for why the budget bounds an attempt, not the job).
     return api::run_with_replanning(
-        job.job_spec, job.hardware_profile, std::move(job.plan), &api::steady_elapsed_source);
+               job.job_spec, job.hardware_profile, std::move(job.plan), &api::steady_elapsed_source)
+        .with_plan_seconds(job.plan_seconds);
 }
 
 Plan preview(const Circuit& circuit, const RunOptions& options) {

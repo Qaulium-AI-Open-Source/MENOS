@@ -105,6 +105,18 @@ double Result::sample_seconds() const {
     return sample_seconds_;
 }
 
+double Result::plan_seconds() const {
+    return plan_seconds_;
+}
+
+double Result::replan_seconds() const {
+    double total = 0.0;
+    for (const ReplanEvent& event : replans_) {
+        total += event.plan_seconds;
+    }
+    return total;
+}
+
 const std::vector<ReplanEvent>& Result::replans() const {
     return replans_;
 }
@@ -112,6 +124,12 @@ const std::vector<ReplanEvent>& Result::replans() const {
 Result Result::with_replans(std::vector<ReplanEvent> replans) && {
     Result moved = std::move(*this);
     moved.replans_ = std::move(replans);
+    return moved;
+}
+
+Result Result::with_plan_seconds(double plan_seconds) && {
+    Result moved = std::move(*this);
+    moved.plan_seconds_ = plan_seconds;
     return moved;
 }
 
@@ -127,9 +145,10 @@ std::string Result::explain() const {
     // no budget -- produces a report byte-identical to a pre-Phase-11 one.
     for (const ReplanEvent& event : replans_) {
         out += label("replan " + std::to_string(event.sequence)) +
-               std::format("threshold={:.6g} s crossed at elapsed={:.6g} s\n",
+               std::format("threshold={:.6g} s crossed at elapsed={:.6g} s replanned_in={:.6f} s\n",
                            event.threshold_seconds,
-                           event.observed_seconds);
+                           event.observed_seconds,
+                           event.plan_seconds);
         out +=
             label("") + std::format("abandoned after {} safe boundaries on engine={} backend={}\n",
                                     event.boundaries_crossed,
@@ -144,16 +163,22 @@ std::string Result::explain() const {
         out += label("") + std::format("now  strategy={}\n", plan::strategy_name(plan_.strategy));
     }
     // The measured peaks (docs/adr/0025) follow the pre-Phase-21 fields, so
-    // a reader of the older fields finds them where they were.
-    out +=
-        label("actual") + std::format(
-                              "state_bytes={} execute_s={:.6f} sample_s={:.6f} peak_host_bytes={} "
-                              "peak_device_bytes={}",
-                              actual_state_bytes_,
-                              execute_seconds_,
-                              sample_seconds_,
-                              peak_host_bytes_,
-                              peak_device_bytes_);
+    // a reader of the older fields finds them where they were. The initial
+    // planning time (Phase 24, docs/adr/0028 section 16.7 Q3) sits with the
+    // other wall-clock fields, before the peaks; the replanning time follows
+    // it only when something was replanned, so a run that never replanned
+    // carries no replan text at all (the Phase 11 invariant).
+    out += label("actual") +
+           std::format("state_bytes={} execute_s={:.6f} sample_s={:.6f} plan_s={:.6f}",
+                       actual_state_bytes_,
+                       execute_seconds_,
+                       sample_seconds_,
+                       plan_seconds_);
+    if (!replans_.empty()) {
+        out += std::format(" replan_s={:.6f}", replan_seconds());
+    }
+    out += std::format(
+        " peak_host_bytes={} peak_device_bytes={}", peak_host_bytes_, peak_device_bytes_);
     // The disk tier's scratch file (Phase 23, docs/adr/0027), printed only
     // when there was one, so every other report is byte-identical to a
     // pre-Phase-23 one.

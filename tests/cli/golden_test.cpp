@@ -35,8 +35,8 @@ std::string write_temp_qasm(const std::string& name, const std::string& text) {
 // not deterministic; blank them before comparing (matching
 // tests/api/explain_test.cpp's own normalize_timings precedent).
 std::string normalize_timings(const std::string& text) {
-    static const std::regex kTimingPattern(R"(execute_s=[^ \n]+ sample_s=[^ \n]+)");
-    return std::regex_replace(text, kTimingPattern, "execute_s=<t> sample_s=<t>");
+    static const std::regex kTimingPattern(R"((execute_s|sample_s|plan_s|replan_s)=[^ \n]+)");
+    return std::regex_replace(text, kTimingPattern, "$1=<t>");
 }
 
 // Byte figures are deterministic on one build but not across builds: since
@@ -120,7 +120,7 @@ TEST(CliGoldenTest, RunProducesExactOutputAfterNormalizingTimings) {
         "strategy   direct_stabilizer (exact)\n"
         "region 0   qubits=[0,1] engine=stabilizer backend=cpu\n"
         "estimated  state_bytes=<b> work_units=16\n"
-        "actual     state_bytes=<b> execute_s=<t> sample_s=<t> peak_host_bytes=<b> "
+        "actual     state_bytes=<b> execute_s=<t> sample_s=<t> plan_s=<t> peak_host_bytes=<b> "
         "peak_device_bytes=<b>\n"
         "00: 50\n"
         "11: 50\n";

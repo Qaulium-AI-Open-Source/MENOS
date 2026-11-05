@@ -455,6 +455,33 @@ TEST(ReplanTest, ExplainReportsThePredictionObservationThresholdReasonAndSequenc
     EXPECT_FALSE(result.replans()[0].superseded_plan.explain().empty());
 }
 
+// Phase 24 (docs/adr/0028 section 16.7 Q3): each replan records the wall-clock
+// time its planner call took, Result::replan_seconds() is their sum, and
+// explain() prints both. A Result produced here, outside menos::run, has made
+// no initial planner call of its own, so its plan_seconds() is 0.
+TEST(ReplanTest, EachReplanRecordsItsPlanningTimeAndTheResultSumsThem) {
+    const Circuit circuit = clifford_circuit(4);
+    const plan::JobSpec job = make_job(circuit, /*budget=*/1.0e9);
+    const Plan initial = plan::plan_job(job, kUnitRateProfile);
+    ScriptedClock clock({.before_seconds = 0.0,
+                         .after_seconds = 2.0e9,
+                         .cross_after_reads = 1,
+                         .crossing_attempts = 2});
+    const Result result = run_with_replanning(job, kUnitRateProfile, initial, clock.factory());
+    ASSERT_EQ(result.replans().size(), 2U);
+    double sum = 0.0;
+    for (const ReplanEvent& event : result.replans()) {
+        EXPECT_GT(event.plan_seconds, 0.0);
+        EXPECT_TRUE(std::isfinite(event.plan_seconds));
+        sum += event.plan_seconds;
+    }
+    EXPECT_DOUBLE_EQ(result.replan_seconds(), sum);
+    EXPECT_EQ(result.plan_seconds(), 0.0);
+    const std::string report = result.explain();
+    EXPECT_NE(report.find(" replanned_in="), std::string::npos) << report;
+    EXPECT_NE(report.find(" replan_s="), std::string::npos) << report;
+}
+
 // Gate criterion 8, the strongest form: with no replan, the report is
 // byte-identical to the one the same Result produced before Phase 11 existed --
 // which is to say, it contains no replan text whatsoever.

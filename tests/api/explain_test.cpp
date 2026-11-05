@@ -2,7 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <regex>
+#include <string>
 
 namespace menos {
 namespace {
@@ -22,8 +24,8 @@ Circuit make_circuit() {
 // not deterministic; blank them before comparing (acceptance criterion 6:
 // "explain() output for a fixed circuit is byte-identical across runs").
 std::string normalize_timings(const std::string& text) {
-    static const std::regex kTimingPattern(R"(execute_s=[^ ]+ sample_s=[^ ]+)");
-    return std::regex_replace(text, kTimingPattern, "execute_s=<t> sample_s=<t>");
+    static const std::regex kTimingPattern(R"((execute_s|sample_s|plan_s|replan_s)=[^ ]+)");
+    return std::regex_replace(text, kTimingPattern, "$1=<t>");
 }
 
 TEST(ExplainTest, ByteIdenticalAcrossRunsAfterNormalizingTimings) {
@@ -63,6 +65,50 @@ Circuit make_circuit_pinned_to_dense() {
     circuit.append_measure(1, 1);
     circuit.append_measure(2, 2);
     return circuit;
+}
+
+// Phase 24 (docs/adr/0028 section 16.7 Q3): menos::run reports how long its
+// planner call took, as a measured figure on the Result and on the actual
+// line, and a job that never replanned reports no replanning time.
+TEST(ExplainTest, RunReportsItsPlanningTimeAndNoReplanningTime) {
+    const Result result =
+        run(make_circuit(), RunOptions{.shots = 10, .want_statevector = false, .seed = 3});
+    EXPECT_GT(result.plan_seconds(), 0.0);
+    EXPECT_TRUE(std::isfinite(result.plan_seconds()));
+    EXPECT_EQ(result.replan_seconds(), 0.0);
+    const std::string text = result.explain();
+    const std::size_t actual = text.find("actual     state_bytes=");
+    ASSERT_NE(actual, std::string::npos) << text;
+    const std::string line = text.substr(actual, text.find('\n', actual) - actual);
+    // With the other wall-clock fields, before the measured peaks; and no
+    // replanning field, because nothing was replanned.
+    EXPECT_LT(line.find("sample_s="), line.find(" plan_s="));
+    EXPECT_LT(line.find(" plan_s="), line.find(" peak_host_bytes="));
+    EXPECT_EQ(text.find("replan"), std::string::npos) << text;
+}
+
+// A plan-cache hit still reports a planning time: the cost of the lookup and
+// the re-parameterisation, which is all the planner ran.
+TEST(ExplainTest, APlanCacheHitReportsTheTimeOfTheLookup) {
+    plan_cache_clear();
+    const auto circuit_with = [](double angle) {
+        Circuit circuit(3, 3);
+        circuit.append(Opcode::RY, {0}, {angle});
+        circuit.append(Opcode::CX, {0, 1});
+        circuit.append(Opcode::CX, {1, 2});
+        circuit.append_measure(0, 0);
+        circuit.append_measure(1, 1);
+        circuit.append_measure(2, 2);
+        return circuit;
+    };
+    const RunOptions options{.shots = 10, .want_statevector = true, .seed = 3};
+    static_cast<void>(run(circuit_with(0.25), options));
+    const PlanCacheStats before = plan_cache_stats();
+    const Result hit = run(circuit_with(0.5), options);
+    ASSERT_EQ(plan_cache_stats().hits, before.hits + 1) << "the second run must hit the cache";
+    EXPECT_GE(hit.plan_seconds(), 0.0);
+    EXPECT_TRUE(std::isfinite(hit.plan_seconds()));
+    EXPECT_EQ(hit.replan_seconds(), 0.0);
 }
 
 TEST(ExplainTest, MatchesTheDocumentedReportShape) {
