@@ -26,6 +26,10 @@ JobSpec make_job(std::uint32_t num_qubits, std::optional<std::uint64_t> budget =
         .seed = 0,
         .memory_budget_bytes = budget,
         .expectation = std::nullopt,
+        // These tests pin the per-gate figures and the budgets tuned to them
+        // (Phase 24 item 7 made fusion the default; the golden corpus pins
+        // the fused plans).
+        .fuse_gates = false,
     };
 }
 
@@ -218,12 +222,15 @@ TEST(PlanJobTwoCandidateTest, FactorizedMemoryInfeasibleWhileDirectFeasibleStill
     // between them on every supported build.
     Circuit circuit(10, 0);
     circuit.append(Opcode::CX, {0, 1});
+    // The budget is tuned to the per-gate figures: with fusion the fusion
+    // plan's own vectors put Direct at 17268 (Phase 24 item 7).
     const JobSpec job{.circuit = circuit,
                       .shots = 0,
                       .want_statevector = true,
                       .seed = 0,
                       .memory_budget_bytes = 17000,
-                      .expectation = std::nullopt};
+                      .expectation = std::nullopt,
+                      .fuse_gates = false};
     const HardwareProfile hw{.total_memory_bytes = 17000};
     const Plan plan = plan_job(job, hw);
     ASSERT_EQ(plan.candidates.size(), 4U);

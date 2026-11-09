@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ir/fuse_gates.h"
 #include "menos/simulation_engine.h"
 
 namespace menos::engines::dense {
@@ -28,5 +29,12 @@ public:
 // differs only in where they live; the tier's own cost is its TierCost.
 // Throws common::ResourceExceeded when the figure overflows.
 [[nodiscard]] std::uint64_t dense_work_units(const EngineEstimateRequest& request);
+
+// The same figure for the fused sweep (Phase 24 item 7, docs/adr/0028 section
+// 17): one pass of 2^(m + operand count) per block of `plan`, the plan of
+// request's operations, instead of one per gate. What every dense engine
+// charges with EngineEstimateRequest::fuse_gates set.
+[[nodiscard]] std::uint64_t dense_work_units(const EngineEstimateRequest& request,
+                                             const ir::FusionPlan& plan);
 
 }  // namespace menos::engines::dense

@@ -14,9 +14,11 @@
 #include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/cumulative_distribution.h"
+#include "engines/dense/fused_block.h"
 #include "engines/dense/sample.h"
 #include "engines/dense/state_vector.h"
 #include "ir/fuse_diagonal.h"
+#include "ir/fuse_gates.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
 #include "kernels/dense_kernels.h"
@@ -92,38 +94,69 @@ void apply_operations(StateVector& state,
     }
 }
 
+// The same sweep over a fusion plan's blocks (Phase 24 item 7, docs/adr/0028
+// section 17): one apply_matrix per block, the gap between two blocks the
+// safe boundary, `completed` counting blocks.
+void apply_fused(StateVector& state,
+                 std::span<const Operation> operations,
+                 const ir::FusionPlan& plan,
+                 const ExecutionMonitor* monitor,
+                 std::uint32_t max_threads) {
+    apply_blocks(
+        plan,
+        operations,
+        monitor,
+        [&](std::span<const std::complex<double>> matrix, std::span<const QubitId> operands) {
+            apply_matrix(state.amplitudes(), matrix, operands, max_threads);
+        });
+}
+
 // Everything execute() allocates, at the most it holds at once (Phase 21,
 // docs/adr/0025 section 3.4): the state, plus the larger of
 //   * one gate's transient: its generated matrix (a GateOp; a UnitaryOp's is
-//     borrowed) and the generic kernel's per-chunk scratch, and
+//     borrowed) and the generic kernel's per-chunk scratch, or with fusion one
+//     block's (engines/dense/fused_block.h), beside the fusion plan that lives
+//     through the sweep, and
 //   * the outputs, built after the sweep and returned: the sampling buffers and
 //     histogram (a sole region) or the region's cumulative distribution, and
 //     one complex per observable term.
-// The statevector output costs nothing extra: the state is moved into it.
-std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+// With fusion the plan is built before the state is allocated, so its
+// construction transient (docs/adr/0028 section 17) is a separate term, never
+// stacked on the state. The statevector output costs nothing extra: the state
+// is moved into it.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request, const ir::FusionPlan* plan) {
     const std::uint32_t n = request.num_qubits;
     const std::uint64_t state =
         common::heap_block_bytes(checked_mul(checked_pow2(n), sizeof(std::complex<double>)));
     const std::uint32_t threads = common::default_thread_count();
 
     std::uint64_t gate = 0;
-    for (const Operation& op : *request.operations) {
-        std::visit(
-            [&](const auto& o) {
-                using T = std::decay_t<decltype(o)>;
-                if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
-                    const std::size_t k = o.qubits.size();
-                    std::uint64_t bytes = apply_matrix_scratch_bytes(k, threads);
-                    if constexpr (std::is_same_v<T, GateOp>) {
-                        bytes = checked_add(bytes,
-                                            common::heap_block_bytes(checked_mul(
-                                                checked_pow2(static_cast<unsigned>(2 * k)),
-                                                sizeof(std::complex<double>))));
+    std::uint64_t plan_bytes = 0;
+    std::uint64_t construction = 0;
+    if (plan != nullptr) {
+        gate = max_block_transient_bytes(*plan, *request.operations, threads);
+        plan_bytes = plan->heap_bytes();
+        construction = ir::FusionPlan::construction_peak_bytes(
+            request.operations->size(), plan->block_count(), plan->block_qubits.size());
+    } else {
+        for (const Operation& op : *request.operations) {
+            std::visit(
+                [&](const auto& o) {
+                    using T = std::decay_t<decltype(o)>;
+                    if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
+                        const std::size_t k = o.qubits.size();
+                        std::uint64_t bytes = apply_matrix_scratch_bytes(k, threads);
+                        if constexpr (std::is_same_v<T, GateOp>) {
+                            bytes = checked_add(bytes,
+                                                common::heap_block_bytes(checked_mul(
+                                                    checked_pow2(static_cast<unsigned>(2 * k)),
+                                                    sizeof(std::complex<double>))));
+                        }
+                        gate = std::max(gate, bytes);
                     }
-                    gate = std::max(gate, bytes);
-                }
-            },
-            op);
+                },
+                op);
+        }
     }
 
     std::uint64_t outputs = 0;
@@ -141,7 +174,8 @@ std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
                                   static_cast<std::uint64_t>(request.observable->terms.size()),
                                   sizeof(std::complex<double>))));
     }
-    return checked_add(state, std::max(gate, outputs));
+    return std::max(construction,
+                    checked_add(checked_add(state, plan_bytes), std::max(gate, outputs)));
 }
 
 }  // namespace
@@ -176,23 +210,32 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
         return CostEstimate{/*feasible=*/false, 0, 0, *reason, {}};
     }
     try {
-        const std::uint64_t work = dense_work_units(request);
-        return CostEstimate{
-            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
+        if (!request.fuse_gates) {
+            const std::uint64_t work = dense_work_units(request);
+            return CostEstimate{/*feasible=*/true,
+                                peak_bytes_of(request, nullptr),
+                                work,
+                                /*infeasible_reason=*/"",
+                                {}};
+        }
+        // The state's size first: a qubit count beyond the dense ceiling is
+        // refused before the plan, whose operands must be below 64.
+        static_cast<void>(checked_pow2(request.num_qubits));
+        const ir::FusionPlan plan = ir::plan_fusion(*request.operations);
+        const std::uint64_t work = dense_work_units(request, plan);
+        CostEstimate estimate{
+            /*feasible=*/true, peak_bytes_of(request, &plan), work, /*infeasible_reason=*/"", {}};
+        estimate.fusion = FusionSummary{plan.fused_blocks, plan.gates_absorbed};
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
 }
 
-std::uint64_t dense_work_units(const EngineEstimateRequest& request) {
-    std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
-    for (const Operation& op : *request.operations) {
-        const std::size_t k = operand_count(op);
-        if (k == 0) {
-            continue;  // MeasureOp
-        }
-        work = checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
-    }
+namespace {
+
+// The output passes the request asks for, after the sweep's own work.
+std::uint64_t output_work_units(const EngineEstimateRequest& request, std::uint64_t work) {
     if (request.want_statevector) {
         work = checked_add(work, checked_pow2(request.num_qubits));
     }
@@ -207,15 +250,54 @@ std::uint64_t dense_work_units(const EngineEstimateRequest& request) {
     return work;
 }
 
+}  // namespace
+
+std::uint64_t dense_work_units(const EngineEstimateRequest& request) {
+    std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
+    for (const Operation& op : *request.operations) {
+        const std::size_t k = operand_count(op);
+        if (k == 0) {
+            continue;  // MeasureOp
+        }
+        work = checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
+    }
+    return output_work_units(request, work);
+}
+
+std::uint64_t dense_work_units(const EngineEstimateRequest& request, const ir::FusionPlan& plan) {
+    std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
+    for (std::size_t b = 0; b < plan.block_count(); ++b) {
+        const std::size_t k = plan.block_operands(b).size();
+        if (k == 0) {
+            continue;  // a barrier block (MeasureOp)
+        }
+        work = checked_add(work, checked_pow2(request.num_qubits + static_cast<std::uint32_t>(k)));
+    }
+    return output_work_units(request, work);
+}
+
 EngineExecutionResult DenseEngine::execute(const EngineExecutionRequest& request) const {
+    // The fusion plan first, before the state, so its construction never
+    // stacks on the state's allocation (peak_bytes_of). With the opt-in
+    // diagonal fusion the plan is built over the diagonal-fused list, which
+    // the estimate does not charge (docs/adr/0028 section 17.6).
+    std::optional<std::vector<Operation>> diagonal_fused;
+    std::span<const Operation> operations = request.operations;
+    if (request.fuse_diagonal_gates) {
+        diagonal_fused = ir::fuse_diagonal_gates(request.operations,
+                                                 static_cast<std::uint32_t>(kMaxUnitaryQubits));
+        operations = *diagonal_fused;
+    }
+    std::optional<ir::FusionPlan> plan;
+    if (request.fuse_gates) {
+        plan.emplace(ir::plan_fusion(operations));
+    }
     StateVector state(static_cast<int>(request.num_qubits), request.budget_bytes);
     initialize(state, request.global_phase);
-    if (request.fuse_diagonal_gates) {
-        const std::vector<Operation> fused = ir::fuse_diagonal_gates(
-            request.operations, static_cast<std::uint32_t>(kMaxUnitaryQubits));
-        apply_operations(state, fused, request.monitor, request.max_threads);
+    if (plan.has_value()) {
+        apply_fused(state, operations, *plan, request.monitor, request.max_threads);
     } else {
-        apply_operations(state, request.operations, request.monitor, request.max_threads);
+        apply_operations(state, operations, request.monitor, request.max_threads);
     }
 
     EngineExecutionResult result;

@@ -191,6 +191,15 @@ std::string Plan::explain() const {
         if (region.tier != Tier::InMemory) {
             out += std::format(" tier={}", tier_name(region.tier));
         }
+        // What gate fusion did to the sweep (Phase 24 item 7, docs/adr/0028
+        // section 17). Printed only when a gate was absorbed, so a report of
+        // a run with fusion off, or of a circuit in which nothing fused, is
+        // byte-identical to one from before fusion existed.
+        if (region.fusion.gates_absorbed != 0) {
+            out += std::format(" fusion=containment blocks={} absorbed={}",
+                               region.fusion.fused_blocks,
+                               region.fusion.gates_absorbed);
+        }
         if (!region.engine_selection_reason.empty()) {
             out += std::format(" why=\"{}\"", region.engine_selection_reason);
         }

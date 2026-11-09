@@ -55,6 +55,8 @@ struct Flags {
     std::optional<menos::Backend> backend;
     // Phase 23 (docs/adr/0027): RunOptions::tier and RunOptions::scratch_directory.
     std::optional<menos::Tier> tier;
+    // Phase 24 item 7: RunOptions::fuse_gates; --fusion on|off, on by default.
+    bool fuse_gates = true;
     std::optional<std::filesystem::path> scratch_directory;
     // Phase 19 (docs/adr/0023 section 3): values for an OpenQASM 3 program's
     // `input` declarations.
@@ -138,6 +140,18 @@ Flags parse_flags(const std::vector<std::string>& args, std::size_t start, bool 
                 flags.tier = menos::Tier::InMemory;
             } else {
                 throw UsageError("--tier must be 'disk' or 'in_memory', got '" + value + "'");
+            }
+        } else if (arg == "--fusion") {
+            if (i + 1 >= args.size()) {
+                throw UsageError("--fusion requires an argument");
+            }
+            const std::string& value = args[++i];
+            if (value == "on") {
+                flags.fuse_gates = true;
+            } else if (value == "off") {
+                flags.fuse_gates = false;
+            } else {
+                throw UsageError("--fusion must be 'on' or 'off', got '" + value + "'");
             }
         } else if (arg == "--scratch-dir") {
             if (i + 1 >= args.size()) {
@@ -254,6 +268,7 @@ int cmd_explain(const std::string& file, const Flags& flags, std::ostream& out) 
                                     .want_statevector = false,
                                     .seed = flags.seed.value_or(0),
                                     .time_budget_seconds = flags.time_budget,
+                                    .fuse_gates = flags.fuse_gates,
                                     .backend = flags.backend,
                                     .tier = flags.tier,
                                     .scratch_directory = flags.scratch_directory};
@@ -282,6 +297,7 @@ int cmd_run(const std::string& file, const Flags& flags, std::ostream& out) {
                                     .want_statevector = flags.statevector,
                                     .seed = *flags.seed,
                                     .time_budget_seconds = flags.time_budget,
+                                    .fuse_gates = flags.fuse_gates,
                                     .backend = flags.backend,
                                     .tier = flags.tier,
                                     .scratch_directory = flags.scratch_directory};
@@ -310,7 +326,7 @@ int dispatch(const std::vector<std::string>& args, std::ostream& out) {
         throw UsageError(
             "usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] "
             "[--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] "
-            "[--scratch-dir PATH] [--input NAME=VALUE]...");
+            "[--scratch-dir PATH] [--fusion on|off] [--input NAME=VALUE]...");
     }
     const std::string& command = args[0];
     const std::string& file = args[1];

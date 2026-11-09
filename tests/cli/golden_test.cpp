@@ -75,7 +75,7 @@ TEST(CliGoldenTest, ExplainProducesExactDeterministicOutput) {
         "circuit    qubits=2 clbits=2 operations=4 depth=3 global_phase=0\n"
         "light_cone qubits 2->2 operations 4->4\n"
         "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=<b> "
-        "work_units=32\n"
+        "work_units=24\n"
         "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=<b> "
         "work_units=16\n"
         "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=<b> "
@@ -112,7 +112,7 @@ TEST(CliGoldenTest, RunProducesExactOutputAfterNormalizingTimings) {
         "circuit    qubits=2 clbits=2 operations=4 depth=3 global_phase=0\n"
         "light_cone qubits 2->2 operations 4->4\n"
         "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=<b> "
-        "work_units=32\n"
+        "work_units=24\n"
         "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=<b> "
         "work_units=16\n"
         "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=<b> "
@@ -327,7 +327,10 @@ TEST(CliGoldenTest, TierDiskRunsOnTheDiskTierWithTheSameCounts) {
     EXPECT_NE(report.find("tier       disk (requested)\n"), std::string::npos) << report;
     EXPECT_NE(report.find(" tier=disk passes=1 chunk_qubits=2 disk_bytes=64\n"), std::string::npos)
         << report;
-    EXPECT_NE(report.find("engine=dense backend=cpu tier=disk\n"), std::string::npos) << report;
+    EXPECT_NE(
+        report.find("engine=dense backend=cpu tier=disk fusion=containment blocks=1 absorbed=2\n"),
+        std::string::npos)
+        << report;
     EXPECT_NE(report.find(" scratch_directory=\"" + scratch + "\""), std::string::npos) << report;
     EXPECT_NE(report.find(" peak_disk_bytes=64"), std::string::npos) << report;
     // The counts, after the report, are the in-memory run's.
@@ -347,7 +350,9 @@ TEST(CliGoldenTest, TierDiskRunsOnTheDiskTierWithTheSameCounts) {
               0)
         << explain_err.str();
     EXPECT_NE(explain_out.str().find("tier       disk (requested)\n"), std::string::npos);
-    EXPECT_NE(explain_out.str().find("engine=dense backend=cpu tier=disk\n"), std::string::npos);
+    EXPECT_NE(explain_out.str().find(
+                  "engine=dense backend=cpu tier=disk fusion=containment blocks=1 absorbed=2\n"),
+              std::string::npos);
 }
 
 TEST(CliGoldenTest, TierInMemoryAddsOnlyTheRequestLine) {

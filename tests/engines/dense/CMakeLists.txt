@@ -7,6 +7,7 @@ add_executable(menos_engines_dense_tests
     sample_test.cpp
     chunked_kernels_test.cpp
     dense_engine_test.cpp
+    fused_block_test.cpp
 )
 
 target_link_libraries(menos_engines_dense_tests PRIVATE menos_engines_dense menos_ir GTest::gtest_main)

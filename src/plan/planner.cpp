@@ -189,7 +189,8 @@ cost::CostEstimate estimate_disk_tier(const Circuit& circuit,
                                         .budget_bytes = budget - bookkeeping,
                                         .shots = want_counts ? job_spec.shots : 0,
                                         .bitstring_width = circuit.num_clbits(),
-                                        .is_sole_region = true};
+                                        .is_sole_region = true,
+                                        .fuse_gates = job_spec.fuse_gates};
     cost::CostEstimate estimate = engine->estimate(request);
     if (!estimate.feasible) {
         return estimate;
@@ -520,7 +521,8 @@ Plan plan_job(const JobSpec& job_spec,
                               budget,
                               job_spec.accuracy_policy,
                               /*trajectories=*/0,
-                              job_spec.shots);
+                              job_spec.shots,
+                              job_spec.fuse_gates);
     const std::size_t dense_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectDense,
@@ -627,7 +629,8 @@ Plan plan_job(const JobSpec& job_spec,
                               budget,
                               job_spec.accuracy_policy,
                               /*trajectories=*/0,
-                              job_spec.shots);
+                              job_spec.shots,
+                              job_spec.fuse_gates);
     const std::size_t stabilizer_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectStabilizer,
@@ -656,7 +659,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                       budget,
                                                       job_spec.accuracy_policy,
                                                       /*trajectories=*/0,
-                                                      job_spec.shots);
+                                                      job_spec.shots,
+                                                      job_spec.fuse_gates);
         pauli_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectPauli,
@@ -682,7 +686,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                          budget,
                                                                          job_spec.accuracy_policy,
                                                                          /*trajectories=*/0,
-                                                                         job_spec.shots);
+                                                                         job_spec.shots,
+                                                                         job_spec.fuse_gates);
     const std::size_t mps_index = candidates.size();
     candidates.push_back(CandidateSummary{
         .strategy = Strategy::DirectMPS,
@@ -709,7 +714,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                budget,
                                                                job_spec.accuracy_policy,
                                                                /*trajectories=*/0,
-                                                               job_spec.shots);
+                                                               job_spec.shots,
+                                                               job_spec.fuse_gates);
         density_matrix_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::DirectDensityMatrix,
@@ -763,7 +769,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                budget,
                                                                job_spec.accuracy_policy,
                                                                trajectories,
-                                                               job_spec.shots);
+                                                               job_spec.shots,
+                                                               job_spec.fuse_gates);
         } else {
             direct_trajectory_estimate = cost::CostEstimate{/*feasible=*/false, 0, 0, refusal, {}};
         }
@@ -793,7 +800,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                         reduced_observable,
                                                         budget,
                                                         job_spec.accuracy_policy,
-                                                        job_spec.shots);
+                                                        job_spec.shots,
+                                                        job_spec.fuse_gates);
         factorized_index = candidates.size();
         candidates.push_back(CandidateSummary{
             .strategy = Strategy::Factorized,
@@ -816,7 +824,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                reduced_observable,
                                                                budget,
                                                                job_spec.accuracy_policy,
-                                                               job_spec.shots));
+                                                               job_spec.shots,
+                                                               job_spec.fuse_gates));
         }
     }
 
@@ -853,6 +862,7 @@ Plan plan_job(const JobSpec& job_spec,
                                                                job_spec.accuracy_policy,
                                                                /*trajectories=*/0,
                                                                job_spec.shots,
+                                                               job_spec.fuse_gates,
                                                                incumbent_work_units());
         tensor_network_index = candidates.size();
         candidates.push_back(CandidateSummary{
@@ -886,6 +896,7 @@ Plan plan_job(const JobSpec& job_spec,
                                                        engines,
                                                        budget,
                                                        job_spec.accuracy_policy,
+                                                       job_spec.fuse_gates,
                                                        incumbent_work_units());
             cut_estimate = std::move(cut.estimate);
             cut_evaluations = std::move(cut.evaluations);
@@ -965,7 +976,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                        budget,
                                                                        job_spec.accuracy_policy,
                                                                        /*trajectories=*/0,
-                                                                       job_spec.shots);
+                                                                       job_spec.shots,
+                                                                       job_spec.fuse_gates);
         for (std::size_t i = 0; i < candidates.size(); ++i) {
             // Factorized is decided region by region below (item 4b).
             if (i != dense_index && candidates[i].feasible &&
@@ -1011,7 +1023,8 @@ Plan plan_job(const JobSpec& job_spec,
                                       budget,
                                       job_spec.accuracy_policy,
                                       /*trajectories=*/0,
-                                      job_spec.shots);
+                                      job_spec.shots,
+                                      job_spec.fuse_gates);
             CandidateSummary& dense_candidate = candidates[dense_index];
             // The device budget is enforced HERE, against the profile, exactly
             // as the host budget is enforced in cost::estimate_direct against
@@ -1091,7 +1104,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                                          reduced_observable,
                                                                          budget,
                                                                          job_spec.accuracy_policy,
-                                                                         job_spec.shots);
+                                                                         job_spec.shots,
+                                                                         job_spec.fuse_gates);
             std::vector<Backend> backends(regions.size(), Backend::Cpu);
             double mixed_seconds = 0.0;
             bool any_cuda = false;
@@ -1131,6 +1145,7 @@ Plan plan_job(const JobSpec& job_spec,
                     .shots = want_counts ? job_spec.shots : 0,
                     .bitstring_width = circuit.num_clbits(),
                     .is_sole_region = false,
+                    .fuse_gates = job_spec.fuse_gates,
                 };
                 const CostEstimate on_device = cuda_engine->estimate(request);
                 const bool fits =
@@ -1402,7 +1417,8 @@ Plan plan_job(const JobSpec& job_spec,
                                                 reduced_observable,
                                                 budget,
                                                 job_spec.accuracy_policy,
-                                                job_spec.shots);
+                                                job_spec.shots,
+                                                job_spec.fuse_gates);
         if (!factorized_backends.empty()) {
             // Same deterministic build as the decision above, so the indices
             // match; checked rather than assumed.
@@ -1437,6 +1453,7 @@ Plan plan_job(const JobSpec& job_spec,
                         .shots = want_counts ? job_spec.shots : 0,
                         .bitstring_width = circuit.num_clbits(),
                         .is_sole_region = false,
+                        .fuse_gates = job_spec.fuse_gates,
                     });
                     region.estimated_seconds =
                         cuda_seconds(on_device.estimated_work_units, on_device.device);
@@ -1572,7 +1589,8 @@ bool may_reach_disk_tier(const JobSpec& job_spec, const HardwareProfile& hardwar
                               budget,
                               job_spec.accuracy_policy,
                               /*trajectories=*/0,
-                              job_spec.shots);
+                              job_spec.shots,
+                              job_spec.fuse_gates);
     return !in_memory.feasible;
 }
 

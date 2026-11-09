@@ -61,6 +61,9 @@ struct JobSpec {
     std::uint32_t max_threads = common::default_thread_count();
     // RunOptions::fuse_diagonal_gates, read by the CPU dense engine only.
     bool fuse_diagonal_gates = false;
+    // RunOptions::fuse_gates (Phase 24 item 7): read by the planner, whose
+    // dense estimates charge the fused sweep, and by the dense engines.
+    bool fuse_gates = true;
     // A forced backend (RunOptions::backend has the semantics, docs/adr/0021
     // section 2). Unset: the planner chooses, as before.
     std::optional<Backend> backend = std::nullopt;

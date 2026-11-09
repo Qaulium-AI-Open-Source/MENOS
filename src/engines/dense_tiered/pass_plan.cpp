@@ -26,7 +26,7 @@ const std::vector<QubitId>* gate_qubits(const Operation& operation) {
 
 // The global operands of a gate as a mask over the global qubits: bit (q - L)
 // for each operand q >= L.
-std::uint64_t global_mask_of(const std::vector<QubitId>& qubits, std::uint32_t chunk_qubits) {
+std::uint64_t global_mask_of(std::span<const QubitId> qubits, std::uint32_t chunk_qubits) {
     std::uint64_t mask = 0;
     for (const QubitId q : qubits) {
         if (q >= chunk_qubits) {
@@ -43,7 +43,8 @@ std::uint64_t global_mask_of(const std::vector<QubitId>& qubits, std::uint32_t c
 PassPlan build_pass_plan(std::span<const Operation> operations,
                          std::uint32_t num_qubits,
                          std::uint32_t chunk_qubits,
-                         std::uint32_t window_qubits) {
+                         std::uint32_t window_qubits,
+                         const ir::FusionPlan* fusion) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
     // The global qubits are a 64-bit mask; the dense ceiling (checked_pow2,
     // 62 qubits) keeps every caller well inside it.
@@ -55,6 +56,15 @@ PassPlan build_pass_plan(std::span<const Operation> operations,
     plan.chunk_qubits = chunk_qubits;
     plan.window_qubits = window_qubits;
     const int window_globals = static_cast<int>(window_qubits - chunk_qubits);
+    // The units: the fusion plan's blocks, or the operations themselves.
+    const std::size_t units = fusion != nullptr ? fusion->block_count() : operations.size();
+    const auto unit_qubits = [&](std::size_t i) -> std::span<const QubitId> {
+        if (fusion != nullptr) {
+            return fusion->block_operands(i);
+        }
+        const std::vector<QubitId>* qubits = gate_qubits(operations[i]);
+        return qubits == nullptr ? std::span<const QubitId>{} : std::span<const QubitId>(*qubits);
+    };
 
     // Two walks: the first counts, so the vector is reserved exactly and the
     // plan's own footprint is what the estimate charges for it.
@@ -69,12 +79,12 @@ PassPlan build_pass_plan(std::span<const Operation> operations,
             }
             ++count;
         };
-        for (std::size_t i = 0; i < operations.size(); ++i) {
-            const std::vector<QubitId>* qubits = gate_qubits(operations[i]);
-            if (qubits == nullptr) {
+        for (std::size_t i = 0; i < units; ++i) {
+            const std::span<const QubitId> qubits = unit_qubits(i);
+            if (qubits.empty()) {
                 continue;  // belongs to whichever pass is open
             }
-            const std::uint64_t mask = global_mask_of(*qubits, chunk_qubits);
+            const std::uint64_t mask = global_mask_of(qubits, chunk_qubits);
             const int globals = std::popcount(mask);
             if (walk == 0) {
                 plan.max_global_operands =
@@ -101,7 +111,7 @@ PassPlan build_pass_plan(std::span<const Operation> operations,
             }
         }
         if (open) {
-            close(operations.size());
+            close(units);
         }
         if (walk == 0) {
             plan.passes.reserve(count);
@@ -113,7 +123,8 @@ PassPlan build_pass_plan(std::span<const Operation> operations,
 std::optional<PassPlan> choose_pass_plan(std::span<const Operation> operations,
                                          std::uint32_t num_qubits,
                                          std::uint32_t window_qubits,
-                                         bool needs_chunk_pair) {
+                                         bool needs_chunk_pair,
+                                         const ir::FusionPlan* fusion) {
     const std::uint32_t lowest =
         window_qubits > kPreferredMinChunkQubits ? kPreferredMinChunkQubits : 0;
     std::optional<PassPlan> best;
@@ -125,7 +136,8 @@ std::optional<PassPlan> choose_pass_plan(std::span<const Operation> operations,
         }
         const std::uint32_t window_globals = window_qubits - chunk_qubits;
         if (!needs_chunk_pair || window_globals >= 1) {
-            PassPlan plan = build_pass_plan(operations, num_qubits, chunk_qubits, window_qubits);
+            PassPlan plan =
+                build_pass_plan(operations, num_qubits, chunk_qubits, window_qubits, fusion);
             if (!plan.window_too_small &&
                 (!best.has_value() || plan.pass_count() < best->pass_count())) {
                 best = std::move(plan);

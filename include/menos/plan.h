@@ -166,6 +166,18 @@ struct TierCost {
     std::uint64_t link_write_bytes = 0;
 };
 
+// What gate fusion did to a dense region's sweep (Phase 24 item 7,
+// docs/adr/0028 section 17): the blocks of two or more gates the containment
+// rule formed, and the gates those blocks hold beyond their first, so the
+// sweep makes `gates_absorbed` fewer passes than the gate count. Both zero for
+// every non-dense engine, for a run with fusion off, and for a circuit in which
+// nothing fused; explain() prints them only when gates_absorbed is not zero, so
+// every other report is byte-identical to one from before fusion existed.
+struct FusionSummary {
+    std::uint64_t fused_blocks = 0;
+    std::uint64_t gates_absorbed = 0;
+};
+
 struct CostEstimate {
     bool feasible;
     std::uint64_t estimated_peak_bytes;
@@ -177,6 +189,9 @@ struct CostEstimate {
     // Everything about running this candidate on a memory tier. All zero for
     // an in-memory engine (Phase 23, docs/adr/0027).
     TierCost tier = {};
+    // The fusion outcome this estimate charged (Phase 24 item 7). All zero
+    // for every engine but the dense ones.
+    FusionSummary fusion = {};
 };
 
 // A region is a contiguous local-index sub-circuit assigned an engine and
@@ -218,6 +233,12 @@ struct Region {
     // outcome is statically |0>).
     std::uint64_t estimated_state_bytes;
     std::uint64_t estimated_work_units;
+    // What gate fusion does to this region's sweep (Phase 24 item 7,
+    // docs/adr/0028 section 17), from its engine's estimate: the engine
+    // builds the same plan from the same operations when it runs. All zero
+    // for a non-dense region, a run with fusion off, or a region in which
+    // nothing fused.
+    FusionSummary fusion = {};
     // Set only after execution (never at plan_job time -- there is
     // nothing to measure yet), and only for a region this engine == MPS
     // that actually truncated: the a-posteriori accumulated error bound

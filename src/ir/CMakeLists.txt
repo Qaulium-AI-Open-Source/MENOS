@@ -7,6 +7,7 @@ add_library(menos_ir STATIC
     final_writes.cpp
     noise.cpp
     fuse_diagonal.cpp
+    fuse_gates.cpp
 )
 
 target_include_directories(menos_ir PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)

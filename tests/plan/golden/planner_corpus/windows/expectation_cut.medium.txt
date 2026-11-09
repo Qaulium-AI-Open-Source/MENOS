@@ -1,7 +1,7 @@
 MENOS EXECUTION REPORT
 circuit    qubits=16 clbits=0 operations=277 depth=24 global_phase=0
 light_cone qubits 16->16 operations 277->277
-candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=1049112 work_units=47579136
+candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=1052428 work_units=23461888
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
 candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
 candidate 3strategy=direct_mps feasible=true winner=true peak_bytes=251312 work_units=2826256

@@ -188,6 +188,13 @@ struct EngineExecutionRequest {
     // window that fits the gates. Read only by the disk-tier engine.
     std::uint32_t tier_chunk_qubits = 0;
     std::uint32_t tier_window_qubits = 0;
+    // RunOptions::fuse_gates (Phase 24 item 7, docs/adr/0028 section 17,
+    // src/ir/fuse_gates.h): the dense engines (CPU, CUDA and the disk tier)
+    // sweep the state once per fused block instead of once per gate, with
+    // the plan their estimate() charged. On by default, as RunOptions' own
+    // default, so a request built directly runs the configuration jobs run
+    // in; off, every operation is applied on its own exactly as before.
+    bool fuse_gates = true;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
@@ -296,6 +303,12 @@ struct EngineEstimateRequest {
     // and ties already go to the earlier-enumerated candidate. An engine may
     // ignore the field; the default never prunes.
     std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max();
+    // Whether the dense engines fuse gates (Phase 24 item 7, docs/adr/0028
+    // section 17): their work units then count one pass per fused block and
+    // their peak bytes carry the fusion plan and the block transients, exactly
+    // what execute() with the same flag does. Matches
+    // EngineExecutionRequest::fuse_gates, on by default.
+    bool fuse_gates = true;
 };
 
 // Prefix of every infeasible_reason produced by the bound above.

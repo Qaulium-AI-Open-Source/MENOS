@@ -134,6 +134,7 @@ RunOptions()
 | `expectation_precision` | `float` or `None` | `None` | Target standard error of the expectation value. Finite and `> 0`, and requires `expectation`. Lets a noisy expectation be sampled by trajectories |
 | `max_threads` | `int` or `None` | `None` | Most CPU threads for gate application. `None` means every hardware thread; a value above the hardware count is treated as it; `0` raises `InvalidCircuitError`. Results are bit-for-bit identical for every value |
 | `fuse_diagonal_gates` | `bool` | `False` | Fuse each run of consecutive diagonal gates (`rz rzz cp cz s t ...`) into one diagonal unitary per block of at most 5 qubits before the CPU dense engine applies them. Exact up to rounding (within `1e-12`), but not bit-for-bit identical to the unfused run, and a CUDA run never fuses; off by default |
+| `fuse_gates` | `bool` | `True` | Gate fusion by containment in the dense engines (CPU, CUDA and the disk tier, Phase 24): a gate joins the newest block that shares a qubit with it when one qubit set contains the other, so the state is swept once per block instead of once per gate and no pass gets wider. Exact up to rounding (within `1e-12` of the gate-by-gate run); the fused run keeps every bit-for-bit identity the unfused one has (every thread count, CPU and CUDA, in memory and on the disk tier). `False` applies every gate on its own: results and `explain()` are then byte-identical to a run from before fusion existed |
 | `backend` | `Backend` or `None` | `None` | `None`: the planner chooses. `Backend.Cpu` or `Backend.Cuda` forces one (Phase 17); see [Forcing a backend](/planning/backend-selection#forcing-a-backend). A CUDA request that cannot be honoured raises `UnsupportedFeatureError` or `ResourceExceededError`, never runs on the CPU |
 | `tier` | `Tier` or `None` | `None` | `None`: the planner reaches for the disk tier only when the dense state does not fit `memory_budget_bytes` and no statevector is wanted (Phase 23). `Tier.Disk` forces it and never falls back: a statevector request, a noisy circuit or `Backend.Cuda` raises `UnsupportedFeatureError`, too little scratch space or a window over the budget raises `ResourceExceededError`. `Tier.InMemory` never uses it. Counts and expectation values on the disk tier are bit-for-bit the in-memory engine's |
 | `scratch_directory` | `pathlib.Path` or `None` | `None` | Where the disk tier keeps its scratch file (16 × 2ⁿ bytes, removed when the run ends). `None` means the system's temporary directory. The planner leaves 5% of the volume or 8 GiB, whichever is larger, untouched |
@@ -227,8 +228,8 @@ assert sig(core.from_qasm3) == (
 
 assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
     ["shots", "want_statevector", "seed", "memory_budget_bytes", "expectation", "time_budget_seconds",
-     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "backend", "tier",
-     "scratch_directory"]
+     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "fuse_gates", "backend",
+     "tier", "scratch_directory"]
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
@@ -256,5 +257,6 @@ assert defaults.expectation is None
 assert defaults.noise_method == menos.NoiseMethod.Exact and defaults.expectation_precision is None
 assert defaults.max_threads is None
 assert defaults.fuse_diagonal_gates is False
+assert defaults.fuse_gates is True
 assert defaults.backend is None and defaults.tier is None and defaults.scratch_directory is None
 ```

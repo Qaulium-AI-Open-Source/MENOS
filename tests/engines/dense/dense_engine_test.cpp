@@ -1,8 +1,11 @@
 #include "engines/dense/dense_engine.h"
+#include "engines/dense/fused_block.h"
+#include "ir/fuse_gates.h"
 
 #include <gtest/gtest.h>
 
 #include "common/memory_bounds.h"
+#include "common/thread_count.h"
 
 namespace menos::engines::dense {
 namespace {
@@ -19,6 +22,26 @@ CostEstimate dense_estimate(const DenseEngine& engine,
         .want_counts = want_counts,
         .want_expectation = false,
         .observable = nullptr,
+        // The per-gate formula these tests pin (Phase 24 item 7 made fusion
+        // the default; the fused figures have their own tests below).
+        .fuse_gates = false,
+    };
+    return engine.estimate(request);
+}
+
+CostEstimate fused_dense_estimate(const DenseEngine& engine,
+                                  std::uint32_t num_qubits,
+                                  const std::vector<Operation>& ops,
+                                  bool want_statevector,
+                                  bool want_counts) {
+    const EngineEstimateRequest request{
+        .num_qubits = num_qubits,
+        .operations = &ops,
+        .want_statevector = want_statevector,
+        .want_counts = want_counts,
+        .want_expectation = false,
+        .observable = nullptr,
+        .fuse_gates = true,
     };
     return engine.estimate(request);
 }
@@ -57,6 +80,43 @@ TEST(DenseEngineTest, ExactHandComputableValueWithStatevector) {
     EXPECT_EQ(estimate.estimated_work_units, 32U);
     EXPECT_EQ(estimate.estimated_peak_bytes,
               common::heap_block_bytes(64) + common::heap_block_bytes(256));
+}
+
+// With fusion (Phase 24 item 7, docs/adr/0028 section 17): H(0) then
+// CX(0,1) is one 2-qubit block, so the sweep is one pass of 2^(2+2) = 16
+// instead of 8 + 16, and the peak carries the plan and the block's build.
+TEST(DenseEngineTest, FusedBellIsOnePassAndChargesThePlanAndTheBlock) {
+    const DenseEngine engine;
+    const std::vector<Operation> ops{
+        GateOp{Opcode::H, {0}, {}},
+        GateOp{Opcode::CX, {0, 1}, {}},
+    };
+    const CostEstimate estimate =
+        fused_dense_estimate(engine, 2, ops, /*want_statevector=*/true, /*want_counts=*/false);
+    ASSERT_TRUE(estimate.feasible);
+    EXPECT_EQ(estimate.estimated_work_units, 4U + 16U + 4U);
+    EXPECT_EQ(estimate.fusion.fused_blocks, 1U);
+    EXPECT_EQ(estimate.fusion.gates_absorbed, 1U);
+    const ir::FusionPlan plan = ir::plan_fusion(ops);
+    const std::uint64_t unfused = dense_estimate(engine, 2, ops, true, false).estimated_peak_bytes;
+    // The state, the plan, and the block's transient (its 4 x 4 matrix beside
+    // the CX's generated 4 x 4 matrix and the two local operands) -- more than
+    // the unfused figure, never less.
+    EXPECT_EQ(estimate.estimated_peak_bytes,
+              common::heap_block_bytes(64) + plan.heap_bytes() +
+                  max_block_transient_bytes(plan, ops, common::default_thread_count()));
+    EXPECT_GE(estimate.estimated_peak_bytes, unfused);
+}
+
+TEST(DenseEngineTest, FusionOffChargesExactlyTheFormulaOfBeforeFusion) {
+    const DenseEngine engine;
+    const std::vector<Operation> ops{
+        GateOp{Opcode::H, {0}, {}},
+        GateOp{Opcode::CX, {0, 1}, {}},
+    };
+    const CostEstimate estimate = dense_estimate(engine, 2, ops, true, false);
+    EXPECT_EQ(estimate.fusion.fused_blocks, 0U);
+    EXPECT_EQ(estimate.fusion.gates_absorbed, 0U);
 }
 
 TEST(DenseEngineTest, ExactHandComputableValueWithCounts) {

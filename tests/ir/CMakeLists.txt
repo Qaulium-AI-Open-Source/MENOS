@@ -7,6 +7,7 @@ add_executable(menos_ir_tests
     channel_validate_test.cpp
     noise_test.cpp
     fuse_diagonal_test.cpp
+    fuse_gates_test.cpp
 )
 
 target_link_libraries(menos_ir_tests PRIVATE menos_ir GTest::gtest_main)

@@ -220,5 +220,77 @@
     "counts": "b022f01c32d9fafe",
     "statevector": "-",
     "expectation": "ffea56f4226a2691"
+  },
+  "dense_statevector_fused": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "83183ccbdaba0ea5",
+    "expectation": "-"
+  },
+  "dense_counts_fused": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_expectation_fused": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "3de7c9f686df57fd"
+  },
+  "dense_all_fused": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "83183ccbdaba0ea5",
+    "expectation": "3de7c9f686df57fd"
+  },
+  "dense_region_counts_fused": {
+    "strategy": "dense",
+    "counts": "2b3789cb8ffddf17",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_disk_counts_fused": {
+    "strategy": "dense_disk",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_disk_expectation_fused": {
+    "strategy": "dense_disk",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "3de7c9f686df57fd"
+  },
+  "run_dense_statevector_fused": {
+    "strategy": "DirectDense",
+    "counts": "-",
+    "statevector": "83183ccbdaba0ea5",
+    "expectation": "-"
+  },
+  "run_factorized_statevector_fused": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "483322311698a7a5",
+    "expectation": "-"
+  },
+  "run_factorized_counts_fused": {
+    "strategy": "Factorized",
+    "counts": "02cc67efd428ef7a",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "run_factorized_expectation_fused": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "80652eb29a9b9e2b"
+  },
+  "run_cut_expectation_fused": {
+    "strategy": "CutAndRecombine",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "bfc01552bf92ef15"
   }
 }

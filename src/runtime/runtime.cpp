@@ -113,6 +113,7 @@ Result execute_direct(Plan&& plan,
         .scratch_directory = job_spec.scratch_directory,
         .tier_chunk_qubits = region.tier_cost.chunk_qubits,
         .tier_window_qubits = region.tier_cost.window_qubits,
+        .fuse_gates = job_spec.fuse_gates,
     };
 
     const auto start_execute = std::chrono::steady_clock::now();
@@ -309,6 +310,7 @@ Result execute_factorized(Plan&& plan,
                 .monitor = monitor,
                 .max_threads = job_spec.max_threads,
                 .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
+                .fuse_gates = job_spec.fuse_gates,
             };
             // Reported to the monitor, never interpreted here: the api layer
             // attributes elapsed time per region from it (docs/adr/0028
@@ -509,6 +511,7 @@ Result execute_cut(Plan&& plan,
                 .monitor = monitor,
                 .max_threads = job_spec.max_threads,
                 .fuse_diagonal_gates = job_spec.fuse_diagonal_gates,
+                .fuse_gates = job_spec.fuse_gates,
             };
             EngineExecutionResult result = engine.execute(request);
             actual_peak_bytes = std::max(actual_peak_bytes, result.actual_bytes);

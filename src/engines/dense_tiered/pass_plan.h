@@ -6,6 +6,7 @@
 #include <span>
 #include <vector>
 
+#include "ir/fuse_gates.h"
 #include "menos/circuit.h"
 
 // The pass plan of the chunked executor (Phase 23, docs/adr/0027 section 3.2).
@@ -29,6 +30,11 @@
 // other operations without operands belong to whichever pass is open.
 namespace menos::engines::dense_tiered {
 
+// With gate fusion (Phase 24 item 7, docs/adr/0028 section 17) the units a
+// pass is made of are the fusion plan's blocks instead of the operations:
+// first_operation and end_operation then index blocks, and a block's operands
+// are the plan's. The greedy rule is the same.
+//
 // One pass: the operations [first_operation, end_operation) of the circuit,
 // whose global operands all lie in G. global_mask has bit (g - L) set for each
 // global qubit g in G, so popcount(global_mask) chunks' worth of index bits
@@ -66,11 +72,13 @@ struct PassPlan {
 // chunk_qubits; both at most num_qubits). Pure: a function of its arguments
 // only. A gate with more global operands than the window holds leaves
 // window_too_small set and the plan unusable, rather than throwing, so the
-// caller can report the reason as an infeasibility.
+// caller can report the reason as an infeasibility. With `fusion`, the plan
+// is over its blocks.
 [[nodiscard]] PassPlan build_pass_plan(std::span<const Operation> operations,
                                        std::uint32_t num_qubits,
                                        std::uint32_t chunk_qubits,
-                                       std::uint32_t window_qubits);
+                                       std::uint32_t window_qubits,
+                                       const ir::FusionPlan* fusion = nullptr);
 
 // The smallest chunk size the executor prefers when it has the choice:
 // 2^24 amplitudes, 256 MiB. Step 1 measured the scratch file's bandwidth flat
@@ -94,6 +102,7 @@ inline constexpr std::uint32_t kPreferredMinChunkQubits = 24;
 [[nodiscard]] std::optional<PassPlan> choose_pass_plan(std::span<const Operation> operations,
                                                        std::uint32_t num_qubits,
                                                        std::uint32_t window_qubits,
-                                                       bool needs_chunk_pair);
+                                                       bool needs_chunk_pair,
+                                                       const ir::FusionPlan* fusion = nullptr);
 
 }  // namespace menos::engines::dense_tiered

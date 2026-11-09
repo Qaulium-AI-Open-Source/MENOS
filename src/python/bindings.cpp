@@ -215,6 +215,10 @@ NB_MODULE(_core, m) {
         // Results do not depend on it. The Qiskit adapters do not set it.
         .def_rw("max_threads", &menos::RunOptions::max_threads)
         .def_rw("fuse_diagonal_gates", &menos::RunOptions::fuse_diagonal_gates)
+        // Phase 24 item 7 (docs/adr/0028 section 17): gate fusion by
+        // containment in the dense engines, on by default; False applies
+        // every gate on its own as before.
+        .def_rw("fuse_gates", &menos::RunOptions::fuse_gates)
         // Phase 17 (docs/adr/0021 section 2): None = the planner chooses (the
         // default); Backend.Cpu or Backend.Cuda forces one, and a request that
         // cannot be honoured raises rather than falling back.

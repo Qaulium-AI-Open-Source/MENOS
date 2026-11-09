@@ -523,6 +523,22 @@ std::vector<Fixture> build_fixtures() {
         f.shots = 20000;
         out.push_back(std::move(f));
     }
+    // The fused copies (Phase 24 item 7, docs/adr/0028 section 17.6 Q3): every
+    // fixture whose sweep gate fusion changes, run with it on, so the fused
+    // path's bytes and accounting are pinned beside the unfused ones.
+    const std::size_t unfused = out.size();
+    for (std::size_t i = 0; i < unfused; ++i) {
+        const Fixture& f = out[i];
+        const bool dense = f.engine == "dense" || f.engine == "dense_cuda" ||
+                           f.engine == "dense_disk" || f.engine == "run";
+        if (!dense || f.rss_baseline || f.probe_only || f.kind == FixtureKind::Mitigated) {
+            continue;
+        }
+        Fixture fused = f;
+        fused.name = f.name + "_fused";
+        fused.fuse_gates = true;
+        out.push_back(std::move(fused));
+    }
     return out;
 }
 
@@ -657,7 +673,8 @@ Measurement run_engine_fixture(const Fixture& fixture,
         .bitstring_width = circuit.num_clbits(),
         .is_sole_region = fixture.sole_region,
         .tier_chunk_qubits = fixture.tier_chunk_qubits,
-        .tier_window_qubits = fixture.tier_window_qubits};
+        .tier_window_qubits = fixture.tier_window_qubits,
+        .fuse_gates = fixture.fuse_gates};
     const CostEstimate estimate = engine->estimate(estimate_request);
     if (!estimate.feasible) {
         throw std::runtime_error(fixture.name +
@@ -688,6 +705,7 @@ Measurement run_engine_fixture(const Fixture& fixture,
         .scratch_directory = std::filesystem::current_path(),
         .tier_chunk_qubits = fixture.tier_chunk_qubits,
         .tier_window_qubits = fixture.tier_window_qubits,
+        .fuse_gates = fixture.fuse_gates,
     };
     // The CUDA engine's host figure is 0 for an expectation-only job, which
     // allocates nothing on the host to budget.
@@ -756,6 +774,7 @@ RunOptions options_for(const Fixture& fixture) {
     // the calibration. The dense_cuda fixtures and
     // tests/api/cuda_peak_memory_test.cpp cover the CUDA figures.
     options.backend = Backend::Cpu;
+    options.fuse_gates = fixture.fuse_gates;
     return options;
 }
 
@@ -837,7 +856,9 @@ Measurement run_job_fixture(const Fixture& fixture, const std::function<void()>&
                                             .seed = options.seed,
                                             .memory_budget_bytes = options.memory_budget_bytes,
                                             .expectation = options.expectation,
-                                            .accuracy_policy = options.accuracy_policy};
+                                            .accuracy_policy = options.accuracy_policy,
+                                            .fuse_gates = options.fuse_gates,
+                                            .backend = options.backend};
         if (on_window_start) {
             on_window_start();
         }

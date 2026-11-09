@@ -38,7 +38,8 @@ TEST(EstimateDirectTest, FeasibleWithinBudget) {
                                                   /*budget_bytes=*/1'000'000,
                                                   /*accuracy_policy=*/{},
                                                   /*trajectories=*/0,
-                                                  /*shots=*/0);
+                                                  /*shots=*/0,
+                                                  /*fuse_gates=*/false);
     ASSERT_TRUE(estimate.feasible);
     EXPECT_EQ(estimate.estimated_work_units, 32U);
     // The dense engine's figure (tests/engines/dense/dense_engine_test.cpp)
@@ -147,7 +148,8 @@ TEST(EstimateFactorizedTest, ExactHandComputableValue) {
                                                       /*observable=*/nullptr,
                                                       /*budget_bytes=*/1'000'000,
                                                       /*accuracy_policy=*/{},
-                                                      /*shots=*/0);
+                                                      /*shots=*/0,
+                                                      /*fuse_gates=*/false);
     ASSERT_TRUE(estimate.feasible);
     EXPECT_EQ(estimate.estimated_peak_bytes,
               kDenseBell + common::heap_block_bytes(128) + kClbitMapSentinel + (2 * kRegionList));

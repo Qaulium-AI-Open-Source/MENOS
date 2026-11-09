@@ -39,7 +39,7 @@ constexpr const char* kBellReport =
     "circuit    qubits=2 clbits=2 operations=4 depth=3 global_phase=0\n"
     "light_cone qubits 2->2 operations 4->4\n"
     "candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=<b> "
-    "work_units=32\n"
+    "work_units=24\n"
     "candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=<b> "
     "work_units=16\n"
     "candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=<b> "

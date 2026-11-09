@@ -75,6 +75,7 @@ struct EngineChoice {
     const AccuracyPolicy& accuracy_policy,
     std::uint64_t trajectories,
     std::uint64_t shots,
+    bool fuse_gates = true,
     std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max());
 
 // The Factorized candidate: one region per interaction-graph component,
@@ -131,6 +132,7 @@ struct CutEstimate {
     std::span<const SimulationEngine* const> engines,
     std::uint64_t budget_bytes,
     const AccuracyPolicy& accuracy_policy,
+    bool fuse_gates = true,
     std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max());
 
 [[nodiscard]] CostEstimate estimate_factorized(const Circuit& circuit,
@@ -142,6 +144,7 @@ struct CutEstimate {
                                                const Observable* observable,
                                                std::uint64_t budget_bytes,
                                                const AccuracyPolicy& accuracy_policy,
-                                               std::uint64_t shots);
+                                               std::uint64_t shots,
+                                               bool fuse_gates = true);
 
 }  // namespace menos::cost

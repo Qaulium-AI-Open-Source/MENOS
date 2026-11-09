@@ -96,6 +96,22 @@ struct RunOptions {
     // run, and the CUDA engine does not fuse, so with this on a CPU run is no
     // longer bitwise identical to a CUDA run of the same job. Off by default.
     bool fuse_diagonal_gates = false;
+    // Gate fusion (Phase 24 item 7, docs/adr/0028 section 17). The dense
+    // engines (CPU, CUDA and the disk tier) sweep the state once per fused
+    // block instead of once per gate: a gate joins the newest block that
+    // shares a qubit with it when one of the two qubit sets contains the
+    // other, so every merge removes a pass and widens none, and a diagonal
+    // pass is never turned into a dense one. On by default at every size; it
+    // reads nothing from the machine, so the same circuit gives the same
+    // blocks everywhere. A fused run is exact up to rounding (the block's
+    // matrix is the product of its gates, within common::kDefaultAbsTol of
+    // the gate-by-gate run) and keeps every bitwise identity the unfused run
+    // has: the same bytes on every thread count, on CPU and CUDA, in memory
+    // and on the disk tier. The plan report names the outcome on the region
+    // line (fusion=containment blocks= absorbed=). Off, every gate is
+    // applied on its own and results and reports are byte-identical to a run
+    // from before fusion existed.
+    bool fuse_gates = true;
     // The machine to run on (Phase 17, docs/adr/0021 section 2). A request, not
     // a preference: it is honoured or the job is refused, never quietly
     // replaced.

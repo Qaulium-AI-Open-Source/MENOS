@@ -12,6 +12,7 @@
 #include "common/error.h"
 #include "common/memory_bounds.h"
 #include "engines/dense/apply_matrix.h"
+#include "engines/dense/fused_block.h"
 #include "engines/dense/sample.h"
 #include "ir/gate_table.h"
 #include "kernels/dense_kernels.h"
@@ -119,7 +120,8 @@ void run_passes(const FileBackingStore& store,
                 const PassPlan& plan,
                 std::span<const Operation> operations,
                 const ExecutionMonitor* monitor,
-                std::uint32_t max_threads) {
+                std::uint32_t max_threads,
+                const ir::FusionPlan* fusion) {
     const std::uint32_t chunk_qubits = plan.chunk_qubits;
     const std::uint64_t chunk = store.chunk_amplitudes();
     common::ensure(
@@ -142,7 +144,49 @@ void run_passes(const FileBackingStore& store,
             for (std::uint64_t s = 0; s < slots; ++s) {
                 store.read(base | deposit_bits(s, set), window.slot(s, chunk));
             }
-            for (std::size_t i = pass.first_operation; i < pass.end_operation; ++i) {
+            // A gate's operands remapped into the window, then the kernel.
+            const auto apply_in_window = [&](std::span<const Complex> matrix,
+                                             std::span<const QubitId> qubits) {
+                operands.clear();
+                for (const QubitId q : qubits) {
+                    operands.push_back(window_bit(q, chunk_qubits, set));
+                }
+                dense::apply_matrix(used, matrix, operands, max_threads);
+            };
+            if (fusion != nullptr) {
+                // The pass's units are blocks; apply each as the in-memory
+                // engines do, with its own matrix or its gate's.
+                for (std::size_t b = pass.first_operation; b < pass.end_operation; ++b) {
+                    const std::span<const std::uint32_t> members = fusion->block_operations(b);
+                    if (members.empty() || fusion->block_operands(b).empty()) {
+                        continue;  // a barrier block applies nothing
+                    }
+                    if (members.size() == 1) {
+                        std::visit(
+                            [&](const auto& op) {
+                                using T = std::decay_t<decltype(op)>;
+                                if constexpr (std::is_same_v<T, GateOp>) {
+                                    const std::vector<Complex> matrix =
+                                        ir::generate_matrix(op.opcode, op.params);
+                                    apply_in_window(matrix, op.qubits);
+                                } else if constexpr (std::is_same_v<T, UnitaryOp>) {
+                                    apply_in_window(op.matrix, op.qubits);
+                                } else {
+                                    throw common::InternalError(
+                                        "disk tier: a block member is not a gate");
+                                }
+                            },
+                            operations[members[0]]);
+                    } else {
+                        const std::vector<Complex> matrix =
+                            dense::fused_block_matrix(*fusion, b, operations);
+                        apply_in_window(matrix, fusion->block_operands(b));
+                    }
+                }
+            }
+            for (std::size_t i = fusion != nullptr ? pass.end_operation : pass.first_operation;
+                 i < pass.end_operation;
+                 ++i) {
                 std::visit(
                     [&](const auto& op) {
                         using T = std::decay_t<decltype(op)>;

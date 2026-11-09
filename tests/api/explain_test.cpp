@@ -120,7 +120,8 @@ TEST(ExplainTest, MatchesTheDocumentedReportShape) {
     EXPECT_NE(text.find("circuit    qubits=3 clbits=3 operations=7 depth=5 global_phase=0\n"),
               std::string::npos);
     EXPECT_NE(text.find("strategy   direct_dense (exact)\n"), std::string::npos);
-    EXPECT_NE(text.find("region 0   qubits=[0,1,2] engine=dense backend=cpu\n"), std::string::npos);
+    EXPECT_NE(text.find("region 0   qubits=[0,1,2] engine=dense backend=cpu fusion=containment"),
+              std::string::npos);
     EXPECT_NE(text.find("estimated  state_bytes="), std::string::npos);
     EXPECT_NE(text.find("actual     state_bytes="), std::string::npos);
 }
@@ -134,8 +135,13 @@ TEST(ExplainTest, InfeasibleCandidateShowsItsRejectionReason) {
     // bytes, work units, winner, and rejection reasons.
     Circuit circuit(10, 0);
     circuit.append(Opcode::CX, {0, 1});
-    const RunOptions options{
-        .shots = 0, .want_statevector = true, .seed = 0, .memory_budget_bytes = 17000};
+    // The budget is tuned to the per-gate figures (the planner test above);
+    // with fusion on, Direct's peak is 17268.
+    const RunOptions options{.shots = 0,
+                             .want_statevector = true,
+                             .seed = 0,
+                             .memory_budget_bytes = 17000,
+                             .fuse_gates = false};
     const std::string text = run(circuit, options).explain();
 
     EXPECT_NE(text.find("candidate 0"), std::string::npos);

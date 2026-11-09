@@ -207,6 +207,9 @@ std::optional<std::string> plan_cache_key(const JobSpec& job_spec) {
     put(key, job_spec.expectation_precision.has_value());
     put(key, job_spec.expectation_precision.value_or(0.0));
     put(key, job_spec.max_threads);
+    // Gate fusion changes every dense candidate's work units and peak bytes
+    // (Phase 24 item 7), so a plan is reused only for the same setting.
+    put(key, job_spec.fuse_gates);
     // Optionals go in as (engaged, value): an optional's own bytes include an
     // indeterminate payload when it is disengaged.
     put(key, job_spec.backend.has_value());

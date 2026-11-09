@@ -2537,3 +2537,53 @@ at 20 qubits.
   thread and 2.0–2.5× on every thread at 20–24 qubits on this circuit
   family, before item 8.
 - **Q3–Q6:** as proposed in 17.4.
+
+### 17.6 Owner answers (2026-11-09)
+
+The owner took every recommendation of 17.4 and 17.5.5 ("let's go with the
+recommendation"), with four conditions as the acceptance bar: numerical
+correctness, memory accounting, cross-engine consistency and performance
+predictability are not compromised. The answers, and one refinement made
+while implementing, are:
+
+- **Q1, the window: containment, for dense and diagonal blocks alike.** A
+  gate joins the newest open block that shares a qubit with it only when
+  one of the two qubit sets contains the other; a dense gate never joins a
+  strictly wider diagonal block, and a dense block never takes a strictly
+  wider diagonal gate. **Refinement of 17.5.5's "5 for diagonal blocks":**
+  the single-thread rows of 17.5.1–17.5.2 price a 2-qubit diagonal pass at
+  2.1–7× a 1-qubit one (17.5.4), so merging two diagonal gates on disjoint
+  qubits is a loss on one thread, exactly as it is for dense gates, and the
+  grouping must not depend on the thread count. The containment rule is
+  therefore applied to both classes, and the union of diagonal gates on
+  disjoint qubits stays what it was before this item: the opt-in
+  `RunOptions::fuse_diagonal_gates`, unchanged, which a QAOA user on many
+  threads turns on knowingly. This is the "performance predictability"
+  condition applied to the one case where the threaded and single-thread
+  measurements disagree.
+- **Q2, the default: on, at every size.** `RunOptions::fuse_gates = true`;
+  `false` applies every gate on its own, with results and `explain()`
+  byte-identical to a run from before this item (pinned by the Phase 21
+  fixtures, the golden tests that set it, and `BackendRequestTest`).
+- **Q3, the Phase 21 baseline: kept, with fused copies beside it.** The
+  fixtures of `tests/memory/memory_fixtures.cpp` run with fusion off against
+  their unchanged entries in `baseline_{linux,windows}.json`, so the unfused
+  kernels stay pinned to the bytes of `1f89192`; every dense, CUDA, disk-tier
+  and whole-job fixture has a `_fused` copy, run with fusion on, whose
+  outputs and accounting are pinned by new entries in the same files,
+  generated once per platform. The regenerated files keep every existing
+  entry byte for byte (checked at generation on both platforms).
+- **Q4, which engines: the CPU dense engine, the CUDA dense engine and the
+  disk tier,** through the one `ir::plan_fusion` and the one
+  `engines::dense::fused_block_matrix`, so CPU/CUDA and in-memory/disk stay
+  bitwise identical with fusion on. The density-matrix and trajectory
+  engines are untouched.
+- **Q5, the cost model: the fused circuit is charged.** Every dense
+  estimate counts one pass per block, carries the fusion plan and the
+  largest block's transient in its peak bytes, and reports the outcome;
+  the golden corpus changes are listed in 17.7.
+- **Q6, the gate:** the seven criteria of 17.4, with the speed-up target of
+  criterion 4 read from 17.5.3: at 20–24 qubits on every thread the fused
+  brickwork sweep must be at least 2.0× the unfused one on both platforms
+  (the window-2 rows, which include the 1 + 1 merges the containment rule
+  refuses, gave 2.0–2.5×), measured as same-run ratios.

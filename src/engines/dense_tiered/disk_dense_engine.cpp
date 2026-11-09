@@ -14,10 +14,12 @@
 #include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/dense_engine.h"
+#include "engines/dense/fused_block.h"
 #include "engines/dense/sample.h"
 #include "engines/dense_tiered/chunked_executor.h"
 #include "engines/dense_tiered/file_backing_store.h"
 #include "engines/dense_tiered/pass_plan.h"
+#include "ir/fuse_gates.h"
 #include "ir/noise.h"
 
 namespace menos::engines::dense_tiered {
@@ -43,6 +45,7 @@ struct Shape {
     std::uint64_t budget_bytes;
     std::uint32_t seam_chunk_qubits;
     std::uint32_t seam_window_qubits;
+    bool fuse_gates;
 };
 
 Shape shape_of(const EngineEstimateRequest& request) {
@@ -57,7 +60,8 @@ Shape shape_of(const EngineEstimateRequest& request) {
                  request.observable,
                  request.budget_bytes,
                  request.tier_chunk_qubits,
-                 request.tier_window_qubits};
+                 request.tier_window_qubits,
+                 request.fuse_gates};
 }
 
 Shape shape_of(const EngineExecutionRequest& request) {
@@ -72,13 +76,17 @@ Shape shape_of(const EngineExecutionRequest& request) {
                  request.observable,
                  request.budget_bytes,
                  request.tier_chunk_qubits,
-                 request.tier_window_qubits};
+                 request.tier_window_qubits,
+                 request.fuse_gates};
 }
 
 // Everything the executor will do, and what it costs, for one shape; or why
 // it cannot run (reason non-empty).
 struct Layout {
     PassPlan plan;
+    // The fusion plan the passes run over (Phase 24 item 7), built here so
+    // that it is the same one the estimate charged; nullopt with fusion off.
+    std::optional<ir::FusionPlan> fusion;
     std::uint64_t peak_bytes = 0;
     std::uint64_t link_bytes = 0;
     // The written part of link_bytes: the initial write and one write-back
@@ -175,9 +183,29 @@ Layout lay_out(const Shape& shape) {
         // refused here, before any pass plan would shift by its global
         // qubits.
         layout.file_bytes = checked_mul(checked_pow2(n), sizeof(std::complex<double>));
-        const std::uint64_t fixed =
-            checked_add(std::max(gate_transient_bytes(shape.operations), outputs_bytes(shape)),
-                        pass_vector_bound(shape));
+        // With fusion the passes are over blocks: the plan lives through the
+        // run, one block's transient (with the executor's remapped operands)
+        // replaces one gate's, and the plan's construction is a peak of its
+        // own before the window exists.
+        std::uint64_t gate_transient = gate_transient_bytes(shape.operations);
+        std::uint64_t plan_bytes = 0;
+        std::uint64_t construction = 0;
+        if (shape.fuse_gates) {
+            layout.fusion.emplace(ir::plan_fusion(shape.operations));
+            gate_transient = checked_add(
+                dense::max_block_transient_bytes(
+                    *layout.fusion, shape.operations, common::default_thread_count()),
+                heap_block_bytes(checked_mul(kMaxUnitaryQubits, sizeof(std::uint32_t))));
+            plan_bytes = layout.fusion->heap_bytes();
+            construction =
+                ir::FusionPlan::construction_peak_bytes(shape.operations.size(),
+                                                        layout.fusion->block_count(),
+                                                        layout.fusion->block_qubits.size());
+        }
+        const ir::FusionPlan* fusion = layout.fusion.has_value() ? &*layout.fusion : nullptr;
+        const std::uint64_t fixed = checked_add(
+            checked_add(std::max(gate_transient, outputs_bytes(shape)), pass_vector_bound(shape)),
+            plan_bytes);
         std::optional<PassPlan> plan;
         if (shape.seam_chunk_qubits > 0 || shape.seam_window_qubits > 0) {
             // The internal seam (docs/adr/0027 section 9 Q10): the chunk, and
@@ -187,14 +215,16 @@ Layout lay_out(const Shape& shape) {
             std::uint32_t window_qubits = shape.seam_window_qubits;
             if (window_qubits == 0) {
                 const std::uint32_t widest =
-                    build_pass_plan(shape.operations, n, chunk_qubits, n).max_global_operands;
+                    build_pass_plan(shape.operations, n, chunk_qubits, n, fusion)
+                        .max_global_operands;
                 window_qubits =
                     std::min(n,
                              chunk_qubits +
                                  std::max(widest, needs_chunk_pair(shape, chunk_qubits) ? 1U : 0U));
             }
             window_qubits = std::clamp(window_qubits, chunk_qubits, n);
-            PassPlan fixed_plan = build_pass_plan(shape.operations, n, chunk_qubits, window_qubits);
+            PassPlan fixed_plan =
+                build_pass_plan(shape.operations, n, chunk_qubits, window_qubits, fusion);
             if (fixed_plan.window_too_small) {
                 layout.reason =
                     "the disk tier's window of 2^" + std::to_string(window_qubits) +
@@ -221,11 +251,14 @@ Layout lay_out(const Shape& shape) {
                                 std::to_string(shape.budget_bytes) + " bytes";
                 return layout;
             }
-            plan = choose_pass_plan(
-                shape.operations, n, *window_qubits, needs_chunk_pair(shape, *window_qubits));
+            plan = choose_pass_plan(shape.operations,
+                                    n,
+                                    *window_qubits,
+                                    needs_chunk_pair(shape, *window_qubits),
+                                    fusion);
             if (!plan.has_value()) {
                 const std::uint32_t widest =
-                    build_pass_plan(shape.operations, n, 0, n).max_global_operands;
+                    build_pass_plan(shape.operations, n, 0, n, fusion).max_global_operands;
                 layout.reason = "no chunk size fits every gate in the disk tier's window of 2^" +
                                 std::to_string(*window_qubits) +
                                 " amplitudes the budget allows: a gate couples 2^" +
@@ -233,7 +266,8 @@ Layout lay_out(const Shape& shape) {
                 return layout;
             }
         }
-        layout.peak_bytes = checked_add(Window::heap_bytes(plan->window_qubits), fixed);
+        layout.peak_bytes =
+            std::max(construction, checked_add(Window::heap_bytes(plan->window_qubits), fixed));
         // The link: the initial write, each pass's read and write, the
         // sampling read, and each term's read (two when its chunks pair).
         std::uint64_t file_passes = 1 + 2 * plan->pass_count();
@@ -284,18 +318,25 @@ CostEstimate DiskDenseEngine::estimate(const EngineEstimateRequest& request) con
         return CostEstimate{/*feasible=*/false, 0, 0, layout.reason, {}, {}};
     }
     try {
-        const std::uint64_t work = dense::dense_work_units(request);
-        return CostEstimate{/*feasible=*/true,
-                            layout.peak_bytes,
-                            work,
-                            /*infeasible_reason=*/"",
-                            {},
-                            TierCost{layout.plan.pass_count(),
-                                     layout.plan.chunk_qubits,
-                                     layout.plan.window_qubits,
-                                     layout.link_bytes,
-                                     layout.file_bytes,
-                                     layout.link_write_bytes}};
+        const std::uint64_t work = layout.fusion.has_value()
+                                       ? dense::dense_work_units(request, *layout.fusion)
+                                       : dense::dense_work_units(request);
+        CostEstimate estimate{/*feasible=*/true,
+                              layout.peak_bytes,
+                              work,
+                              /*infeasible_reason=*/"",
+                              {},
+                              TierCost{layout.plan.pass_count(),
+                                       layout.plan.chunk_qubits,
+                                       layout.plan.window_qubits,
+                                       layout.link_bytes,
+                                       layout.file_bytes,
+                                       layout.link_write_bytes}};
+        if (layout.fusion.has_value()) {
+            estimate.fusion =
+                FusionSummary{layout.fusion->fused_blocks, layout.fusion->gates_absorbed};
+        }
+        return estimate;
     } catch (const common::ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}, {}};
     }
@@ -313,7 +354,13 @@ EngineExecutionResult DiskDenseEngine::execute(const EngineExecutionRequest& req
         directory, checked_pow2(request.num_qubits), checked_pow2(plan.chunk_qubits));
     Window window(plan.window_qubits);
     initialize_store(store, window, request.global_phase);
-    run_passes(store, window, plan, request.operations, request.monitor, request.max_threads);
+    run_passes(store,
+               window,
+               plan,
+               request.operations,
+               request.monitor,
+               request.max_threads,
+               layout.fusion.has_value() ? &*layout.fusion : nullptr);
 
     EngineExecutionResult result;
     result.actual_bytes = window.size_bytes();

@@ -51,6 +51,11 @@ struct Fixture {
     // 9 Q10), for the "dense_disk" engine fixtures; 0 lets the engine choose.
     std::uint32_t tier_chunk_qubits = 0;
     std::uint32_t tier_window_qubits = 0;
+    // Gate fusion (Phase 24 item 7, docs/adr/0028 section 17.6 Q3). Off for
+    // every fixture of the Phase 21 table, so their outputs stay pinned to the
+    // bytes of the unfused kernels; the "_fused" copies of the dense and run
+    // fixtures run with it on, pinned to their own baseline entries.
+    bool fuse_gates = false;
 };
 
 // Every fixture this build can run: the CUDA ones only when built with CUDA.

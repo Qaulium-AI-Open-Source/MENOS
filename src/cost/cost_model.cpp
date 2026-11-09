@@ -85,6 +85,7 @@ CostEstimate estimate_direct(const Circuit& circuit,
                              const AccuracyPolicy& accuracy_policy,
                              std::uint64_t trajectories,
                              std::uint64_t shots,
+                             bool fuse_gates,
                              std::uint64_t prune_above_work_units) {
     const EngineEstimateRequest request{.num_qubits = circuit.num_qubits(),
                                         .operations = &circuit.operations(),
@@ -98,7 +99,8 @@ CostEstimate estimate_direct(const Circuit& circuit,
                                         .shots = want_counts ? shots : 0,
                                         .bitstring_width = circuit.num_clbits(),
                                         .is_sole_region = true,
-                                        .prune_above_work_units = prune_above_work_units};
+                                        .prune_above_work_units = prune_above_work_units,
+                                        .fuse_gates = fuse_gates};
     CostEstimate estimate = engine.estimate(request);
     if (!estimate.feasible) {
         return estimate;
@@ -130,7 +132,8 @@ CostEstimate estimate_factorized(const Circuit& circuit,
                                  const Observable* observable,
                                  std::uint64_t budget_bytes,
                                  const AccuracyPolicy& accuracy_policy,
-                                 std::uint64_t shots) {
+                                 std::uint64_t shots,
+                                 bool fuse_gates) {
     const std::size_t num_components = graph.components.size();
     const std::uint32_t n = circuit.num_qubits();
 
@@ -235,7 +238,8 @@ CostEstimate estimate_factorized(const Circuit& circuit,
                                                 .budget_bytes = budget_bytes,
                                                 .shots = want_counts ? shots : 0,
                                                 .bitstring_width = circuit.num_clbits(),
-                                                .is_sole_region = false};
+                                                .is_sole_region = false,
+                                                .fuse_gates = fuse_gates};
             const EngineChoice choice = pick_cheapest_engine(engines, request);
             if (!choice.estimate.feasible) {
                 return choice.estimate;
@@ -388,6 +392,7 @@ CutEstimate estimate_cut(const Circuit& circuit,
                          std::span<const SimulationEngine* const> engines,
                          std::uint64_t budget_bytes,
                          const AccuracyPolicy& accuracy_policy,
+                         bool fuse_gates,
                          std::uint64_t prune_above_work_units) {
     const auto refuse = [](std::string reason) {
         return CutEstimate{CostEstimate{/*feasible=*/false, 0, 0, std::move(reason), {}}, {}};
@@ -444,14 +449,15 @@ CutEstimate estimate_cut(const Circuit& circuit,
                 const PauliString fragment_term =
                     analysis::build_fragment_term(fragment, term, probe);
                 const Observable fragment_observable{{{fragment_term, {1.0, 0.0}}}};
-                const EngineEstimateRequest request{fragment_circuit.num_qubits(),
-                                                    &fragment_circuit.operations(),
-                                                    /*want_statevector=*/false,
-                                                    /*want_counts=*/false,
-                                                    /*want_expectation=*/true,
-                                                    &fragment_observable,
-                                                    accuracy_policy,
-                                                    budget_bytes};
+                EngineEstimateRequest request{fragment_circuit.num_qubits(),
+                                              &fragment_circuit.operations(),
+                                              /*want_statevector=*/false,
+                                              /*want_counts=*/false,
+                                              /*want_expectation=*/true,
+                                              &fragment_observable,
+                                              accuracy_policy,
+                                              budget_bytes};
+                request.fuse_gates = fuse_gates;
                 const EngineChoice choice = pick_cheapest_engine(engines, request);
                 if (!choice.estimate.feasible) {
                     return refuse("no engine can run one cut fragment: " +
@@ -525,14 +531,15 @@ CutEstimate estimate_cut(const Circuit& circuit,
                         analysis::build_fragment_term(fragment, term, assignment),
                         std::complex<double>{1.0, 0.0});
                 }
-                const EngineEstimateRequest request{fragment_circuit.num_qubits(),
-                                                    &fragment_circuit.operations(),
-                                                    /*want_statevector=*/false,
-                                                    /*want_counts=*/false,
-                                                    /*want_expectation=*/true,
-                                                    &fragment_observable,
-                                                    accuracy_policy,
-                                                    budget_bytes};
+                EngineEstimateRequest request{fragment_circuit.num_qubits(),
+                                              &fragment_circuit.operations(),
+                                              /*want_statevector=*/false,
+                                              /*want_counts=*/false,
+                                              /*want_expectation=*/true,
+                                              &fragment_observable,
+                                              accuracy_policy,
+                                              budget_bytes};
+                request.fuse_gates = fuse_gates;
                 const EngineChoice choice = pick_cheapest_engine(engines, request);
                 if (!choice.estimate.feasible) {
                     return refuse("no engine can run one cut fragment evaluation: " +

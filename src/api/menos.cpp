@@ -94,6 +94,7 @@ PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) 
         .expectation_precision = options.expectation_precision,
         .max_threads = max_threads,
         .fuse_diagonal_gates = options.fuse_diagonal_gates,
+        .fuse_gates = options.fuse_gates,
         .backend = options.backend,
         .tier = options.tier,
         .scratch_directory = scratch_directory,

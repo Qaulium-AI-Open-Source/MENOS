@@ -36,6 +36,7 @@
 #include "common/thread_count.h"
 #include "engines/dense/dense_engine.h"
 #include "engines/dense_tiered/chunked_executor.h"
+#include "ir/fuse_gates.h"
 #include "menos/circuit.h"
 #include "menos/observable.h"
 
@@ -356,6 +357,9 @@ TEST(DiskDenseEngineTest, GatesOnGlobalQubitsOnlyAndStraddlingGates) {
         .is_sole_region = true,
         .tier_chunk_qubits = 4,
         .tier_window_qubits = 6,
+        // The pass count below is the gate-by-gate plan's; the runs that
+        // follow compare the fused default.
+        .fuse_gates = false,
     };
     const CostEstimate estimate = engine.estimate(estimate_request);
     ASSERT_TRUE(estimate.feasible) << estimate.infeasible_reason;
@@ -570,10 +574,12 @@ TEST(DiskDenseEngineTest, AMonitorThatThrowsAbandonsAfterAPassAndTheFileIsGone) 
     EXPECT_THROW(
         (void)engine.execute(disk_request(circuit, targets, 100, nullptr, 0.0, 1, 4, 0, &monitor)),
         std::runtime_error);
-    // Called once per pass with the operations applied so far, increasing.
+    // Called once per pass with the blocks applied so far (Phase 24 item 7:
+    // the pass's units are the fusion plan's blocks), increasing.
+    const std::size_t blocks = ir::plan_fusion(circuit.operations()).block_count();
     ASSERT_EQ(monitor.seen().size(), 2U);
     EXPECT_LT(monitor.seen()[0], monitor.seen()[1]);
-    EXPECT_LE(monitor.seen()[1], circuit.operations().size());
+    EXPECT_LE(monitor.seen()[1], blocks);
     EXPECT_EQ(scratch_files_of_this_process(), before);
     // The next run is correct.
     expect_same_outputs(run_in_memory(circuit, 100, nullptr, 0.0, 1),
@@ -584,7 +590,7 @@ TEST(DiskDenseEngineTest, AMonitorThatThrowsAbandonsAfterAPassAndTheFileIsGone) 
     const EngineExecutionResult result =
         engine.execute(disk_request(circuit, targets, 100, nullptr, 0.0, 1, 4, 0, &patient));
     EXPECT_FALSE(patient.seen().empty());
-    EXPECT_EQ(patient.seen().back(), circuit.operations().size());
+    EXPECT_EQ(patient.seen().back(), blocks);
     EXPECT_TRUE(result.counts.has_value());
 }
 

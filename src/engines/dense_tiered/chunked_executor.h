@@ -10,6 +10,7 @@
 #include "common/memory_ledger.h"
 #include "engines/dense_tiered/file_backing_store.h"
 #include "engines/dense_tiered/pass_plan.h"
+#include "ir/fuse_gates.h"
 #include "menos/bitstring.h"
 #include "menos/circuit.h"
 #include "menos/simulation_engine.h"
@@ -53,7 +54,10 @@ private:
 // in an in-memory state.
 void initialize_store(const FileBackingStore& store, Window& window, double global_phase);
 
-// Runs every pass of `plan` over `operations`. For each pass and each group
+// Runs every pass of `plan` over `operations`, or with `fusion` over its
+// blocks (Phase 24 item 7, docs/adr/0028 section 17: a fused block's matrix
+// is engines/dense/fused_block.h's, the same bytes the in-memory engines
+// apply). For each pass and each group
 // of chunks its global set selects, the group's chunks are read into the
 // window's slots, the pass's gates are applied to the window with their
 // operands remapped (a local qubit keeps its bit; global qubit g of the set
@@ -66,7 +70,8 @@ void run_passes(const FileBackingStore& store,
                 const PassPlan& plan,
                 std::span<const Operation> operations,
                 const ExecutionMonitor* monitor,
-                std::uint32_t max_threads);
+                std::uint32_t max_threads,
+                const ir::FusionPlan* fusion = nullptr);
 
 // The counts of `shots` draws from the stored state, read chunk by chunk
 // through the window's first slot into engines::dense::sample_streamed.

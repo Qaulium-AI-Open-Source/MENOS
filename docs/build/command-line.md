@@ -15,8 +15,8 @@ build/release/cli/menos explain examples/bell.qasm
 ## Commands
 
 ```text
-menos explain <file.qasm> [--shots N] [--seed N] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
-menos run     <file.qasm> --shots N --seed N [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
+menos explain <file.qasm> [--shots N] [--seed N] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--fusion on|off] [--input NAME=VALUE]...
+menos run     <file.qasm> --shots N --seed N [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--fusion on|off] [--input NAME=VALUE]...
 ```
 
 ### `explain`
@@ -72,7 +72,7 @@ The CLI forms of `RunOptions.tier` and `RunOptions.scratch_directory` (since Pha
 
 ```text
 error: --shots is required for 'run'
-error: usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--input NAME=VALUE]...
+error: usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] [--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] [--scratch-dir PATH] [--fusion on|off] [--input NAME=VALUE]...
 ```
 
 ## OpenQASM support
@@ -102,5 +102,9 @@ error: qasm2: expected '[' after a register name at line 7
 ```
 
 ## Limits
+
+### `--fusion on|off`
+
+The CLI form of `RunOptions.fuse_gates` (since Phase 24). Gate fusion is on by default: the dense engines sweep the state once per fused block instead of once per gate, and the report's region line says what it did (`fusion=containment blocks=… absorbed=…`, printed only when a gate was absorbed). `--fusion off` applies every gate on its own; the results and the report are then byte-identical to a run from before fusion existed. Any other value is a usage error; see [Dense Engine](/engines/dense#gate-fusion).
 
 The tool has no option for a memory budget; use the [native API](/build/native-api) for that. A time budget is `--time-budget`; the disk tier is `--tier disk` with `--scratch-dir`.

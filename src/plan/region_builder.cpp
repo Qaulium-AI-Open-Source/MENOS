@@ -121,6 +121,7 @@ Region build_direct_region(const Circuit& circuit,
         .observable = observable == nullptr ? std::nullopt : std::optional(*observable),
         .estimated_state_bytes = estimate.estimated_peak_bytes,
         .estimated_work_units = estimate.estimated_work_units,
+        .fusion = estimate.fusion,
     };
 }
 
@@ -133,7 +134,8 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
                                              const Observable* observable,
                                              std::uint64_t budget_bytes,
                                              const AccuracyPolicy& accuracy_policy,
-                                             std::uint64_t shots) {
+                                             std::uint64_t shots,
+                                             bool fuse_gates) {
     const std::uint32_t n = circuit.num_qubits();
     const std::size_t num_components = graph.components.size();
 
@@ -196,7 +198,8 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
                                             .budget_bytes = budget_bytes,
                                             .shots = want_counts ? shots : 0,
                                             .bitstring_width = circuit.num_clbits(),
-                                            .is_sole_region = false};
+                                            .is_sole_region = false,
+                                            .fuse_gates = fuse_gates};
         std::vector<CostEstimate> estimates;
         const cost::EngineChoice choice = cost::pick_cheapest_engine(engines, request, &estimates);
         common::ensure(choice.estimate.feasible,
@@ -208,6 +211,7 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
             describe_engine_choice(engines, choice.engine_index, estimates);
         region.estimated_state_bytes = choice.estimate.estimated_peak_bytes;
         region.estimated_work_units = choice.estimate.estimated_work_units;
+        region.fusion = choice.estimate.fusion;
     }
 
     return regions;

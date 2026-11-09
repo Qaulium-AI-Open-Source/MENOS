@@ -13,7 +13,9 @@
 #include "common/memory_bounds.h"
 #include "common/memory_ledger.h"
 #include "engines/dense/cumulative_distribution.h"
+#include "engines/dense/fused_block.h"
 #include "engines/dense/sample.h"
+#include "ir/fuse_gates.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
 #include "kernels/cuda/device_buffer.h"
@@ -91,14 +93,29 @@ void apply_operations(kernels::DeviceState state,
 //     terms already computed;
 //   * then, for a statevector or counts, the one host copy of the state, which
 //     becomes the statevector, with the CPU sampler's outputs beside it.
-std::uint64_t host_peak_bytes(const EngineEstimateRequest& request, std::uint64_t state_bytes) {
+//   * with fusion (Phase 24 item 7), the fusion plan through the sweep and
+//     one block's build beside it, and the plan's construction before it.
+std::uint64_t host_peak_bytes(const EngineEstimateRequest& request,
+                              std::uint64_t state_bytes,
+                              const ir::FusionPlan* plan) {
     std::uint64_t gate = 0;
-    for (const Operation& op : *request.operations) {
-        if (const auto* g = std::get_if<GateOp>(&op)) {
-            gate = std::max(gate,
-                            common::heap_block_bytes(checked_mul(
-                                checked_pow2(static_cast<unsigned>(2 * g->qubits.size())),
-                                sizeof(std::complex<double>))));
+    std::uint64_t plan_bytes = 0;
+    std::uint64_t construction = 0;
+    if (plan != nullptr) {
+        // The CUDA kernels take the matrix as an argument: no host scratch,
+        // so one thread's figure is the block build alone.
+        gate = engines::dense::max_block_transient_bytes(*plan, *request.operations, 1);
+        plan_bytes = plan->heap_bytes();
+        construction = ir::FusionPlan::construction_peak_bytes(
+            request.operations->size(), plan->block_count(), plan->block_qubits.size());
+    } else {
+        for (const Operation& op : *request.operations) {
+            if (const auto* g = std::get_if<GateOp>(&op)) {
+                gate = std::max(gate,
+                                common::heap_block_bytes(checked_mul(
+                                    checked_pow2(static_cast<unsigned>(2 * g->qubits.size())),
+                                    sizeof(std::complex<double>))));
+            }
         }
     }
     std::uint64_t terms = 0;
@@ -125,7 +142,7 @@ std::uint64_t host_peak_bytes(const EngineEstimateRequest& request, std::uint64_
                                       checked_pow2(n), request.bitstring_width));
         }
     }
-    return std::max({gate, reduction, copy_back});
+    return std::max(construction, checked_add(plan_bytes, std::max({gate, reduction, copy_back})));
 }
 
 }  // namespace
@@ -172,8 +189,23 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
     }
     try {
         std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
+        // The fused sweep's blocks (Phase 24 item 7), each one launch of its
+        // operand count, or every gate on its own.
+        std::optional<ir::FusionPlan> plan;
+        std::vector<std::size_t> pass_operand_counts;
+        if (request.fuse_gates) {
+            plan.emplace(ir::plan_fusion(*request.operations));
+            pass_operand_counts.reserve(plan->block_count());
+            for (std::size_t b = 0; b < plan->block_count(); ++b) {
+                pass_operand_counts.push_back(plan->block_operands(b).size());
+            }
+        } else {
+            pass_operand_counts.reserve(request.operations->size());
+            for (const Operation& op : *request.operations) {
+                pass_operand_counts.push_back(operand_count(op));
+            }
+        }
+        for (const std::size_t k : pass_operand_counts) {
             if (k == 0) {
                 continue;  // MeasureOp
             }
@@ -207,8 +239,7 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
         // rather than estimated in the abstract.
         std::uint64_t h2d_bytes = 0;
         std::uint64_t launches = 1;  // initialize
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
+        for (const std::size_t k : pass_operand_counts) {
             if (k == 0) {
                 continue;  // MeasureOp launches nothing
             }
@@ -232,7 +263,8 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                                 {}};
         }
 
-        const std::uint64_t host_bytes = host_peak_bytes(request, state_bytes);
+        const std::uint64_t host_bytes =
+            host_peak_bytes(request, state_bytes, plan.has_value() ? &*plan : nullptr);
 
         // A statevector or counts request is what forces the big transfer back;
         // an expectation-only job returns one complex per term.
@@ -244,11 +276,15 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                                      sizeof(std::complex<double>))
                        : 0);
 
-        return CostEstimate{/*feasible=*/true,
-                            host_bytes,
-                            work,
-                            /*infeasible_reason=*/"",
-                            DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
+        CostEstimate estimate{/*feasible=*/true,
+                              host_bytes,
+                              work,
+                              /*infeasible_reason=*/"",
+                              DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
+        if (plan.has_value()) {
+            estimate.fusion = FusionSummary{plan->fused_blocks, plan->gates_absorbed};
+        }
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
@@ -266,7 +302,25 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
                                        kernels::cuda::device_available_bytes());
 
     kernels::cuda::initialize(buffer.state(), request.global_phase);
-    apply_operations(buffer.state(), request.operations, request.monitor);
+    if (request.fuse_gates) {
+        // The same plan the CPU engine and the disk tier build from the same
+        // operations, and the same host-built block matrices (Phase 24 item
+        // 7, docs/adr/0028 section 17): the device applies each with the
+        // kernel that is bitwise the CPU one's, so CPU and CUDA stay
+        // identical with fusion on. The plan is built before the device
+        // state only in the host's accounting; the device buffer above is
+        // the device's own.
+        const ir::FusionPlan plan = ir::plan_fusion(request.operations);
+        engines::dense::apply_blocks(
+            plan,
+            request.operations,
+            request.monitor,
+            [&](std::span<const std::complex<double>> matrix, std::span<const QubitId> operands) {
+                kernels::cuda::apply_matrix(buffer.state(), matrix, operands);
+            });
+    } else {
+        apply_operations(buffer.state(), request.operations, request.monitor);
+    }
 
     EngineExecutionResult result;
     result.actual_bytes = buffer.size_bytes();
