@@ -43,6 +43,7 @@ Run any of them from the repository root:
 | Example | Shows |
 |---|---|
 | [PennyLane](/examples/pennylane) | A variational energy and its gradient on the `menos.qubit` device |
+| `examples/compare_simulators.ipynb` (notebook, in the repository) | The same circuits through MENOS, Qiskit Aer and PennyLane Lightning: agreement and timing |
 
 ## Hardware and budgets
 
