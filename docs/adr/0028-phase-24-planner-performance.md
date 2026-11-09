@@ -2281,3 +2281,259 @@ on mains power, recorded in `docs/benchmarks/phase-24/fusion-step1/`.
   6. the golden corpus's changed plans are listed and none changes its
      winner without a stated reason;
   7. `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
+
+### 17.5 Step 1: the measurement — [MEASURED]
+
+`benchmarks/dense_fusion_probe.cpp` at `fcbf947`, run by
+`docs/benchmarks/phase-24/fusion-step1/scripts/step1.{sh,ps1}` on
+2026-11-09, mains power checked before and after (`load.log`), the machine
+otherwise idle (Linux load average 0.87 at the start). Raw CSVs, the
+environment lines and the commit are in
+`docs/benchmarks/phase-24/fusion-step1/{linux,windows}/`; the tables below
+are `bench/tools/fusion_table.py` over them. The same laptop as 16.10: Intel
+Core Ultra 7 155H, 22 threads; Linux is WSL Ubuntu 26.04, GCC 15.2,
+`build/bench` (Release, CPU only); Windows is MSVC 14.50,
+`build/windows-bench`. The "floor" in the pass tables is
+2 · 16 · 2^n bytes at the calibration's streaming bandwidth of the same
+process (Linux 32.4 GB/s, Windows 35.9 GB/s); a pass below 1× floor streams
+the state faster than that single-threaded copy did, which the threaded
+rows at 20–24 qubits do, so the floor is a reference, not a bound.
+
+#### 17.5.1 One pass by operand count — Linux
+
+Median µs per pass, 10 repeats; in brackets the ratio to the 1-qubit pass of
+the same size and thread count, and the ratio to the floor.
+
+**pass_dense, 1 thread** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 6 (1.0×; 0.36× floor) | 52 (8.8×; 3.20× floor) | 172 (29.4×; 10.64× floor) | 257 (43.9×; 15.88× floor) | 451 (76.8×; 27.82× floor) |
+| 16 | 23 (1.0×; 0.35× floor) | 219 (9.6×; 3.38× floor) | 690 (30.4×; 10.65× floor) | 1060 (46.6×; 16.35× floor) | 1853 (81.5×; 28.59× floor) |
+| 18 | 100 (1.0×; 0.39× floor) | 861 (8.6×; 3.32× floor) | 2715 (27.0×; 10.47× floor) | 4311 (42.9×; 16.64× floor) | 7827 (77.9×; 30.20× floor) |
+| 20 | 654 (1.0×; 0.63× floor) | 3409 (5.2×; 3.29× floor) | 11277 (17.2×; 10.88× floor) | 17623 (26.9×; 17.00× floor) | 30574 (46.8×; 29.49× floor) |
+| 22 | 3605 (1.0×; 0.87× floor) | 13632 (3.8×; 3.29× floor) | 45209 (12.5×; 10.90× floor) | 69814 (19.4×; 16.84× floor) | 125523 (34.8×; 30.27× floor) |
+| 24 | 14945 (1.0×; 0.90× floor) | 53473 (3.6×; 3.22× floor) | 185617 (12.4×; 11.19× floor) | 287888 (19.3×; 17.36× floor) | 497898 (33.3×; 30.02× floor) |
+
+**pass_dense, 22 threads** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 6 (1.0×; 0.36× floor) | 52 (8.8×; 3.20× floor) | 163 (27.7×; 10.08× floor) | 257 (43.6×; 15.88× floor) | 520 (88.1×; 32.12× floor) |
+| 16 | 24 (1.0×; 0.37× floor) | 207 (8.8×; 3.20× floor) | 668 (28.3×; 10.31× floor) | 1026 (43.4×; 15.84× floor) | 1911 (80.8×; 29.49× floor) |
+| 18 | 370 (1.0×; 1.43× floor) | 532 (1.4×; 2.05× floor) | 2765 (7.5×; 10.67× floor) | 4439 (12.0×; 17.13× floor) | 7747 (20.9×; 29.89× floor) |
+| 20 | 574 (1.0×; 0.55× floor) | 1045 (1.8×; 1.01× floor) | 2048 (3.6×; 1.98× floor) | 3174 (5.5×; 3.06× floor) | 31638 (55.1×; 30.52× floor) |
+| 22 | 1872 (1.0×; 0.45× floor) | 2662 (1.4×; 0.64× floor) | 7444 (4.0×; 1.80× floor) | 12892 (6.9×; 3.11× floor) | 19192 (10.3×; 4.63× floor) |
+| 24 | 7824 (1.0×; 0.47× floor) | 9005 (1.2×; 0.54× floor) | 27180 (3.5×; 1.64× floor) | 47299 (6.0×; 2.85× floor) | 77449 (9.9×; 4.67× floor) |
+
+**pass_diagonal, 1 thread** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 5 (1.0×; 0.29× floor) | 30 (6.5×; 1.86× floor) | 41 (8.8×; 2.54× floor) | 50 (10.8×; 3.11× floor) | 63 (13.4×; 3.88× floor) |
+| 16 | 17 (1.0×; 0.26× floor) | 116 (6.9×; 1.80× floor) | 157 (9.3×; 2.42× floor) | 200 (11.8×; 3.09× floor) | 289 (17.0×; 4.46× floor) |
+| 18 | 151 (1.0×; 0.58× floor) | 474 (3.1×; 1.83× floor) | 638 (4.2×; 2.46× floor) | 810 (5.4×; 3.13× floor) | 986 (6.5×; 3.80× floor) |
+| 20 | 627 (1.0×; 0.60× floor) | 1962 (3.1×; 1.89× floor) | 2592 (4.1×; 2.50× floor) | 3171 (5.1×; 3.06× floor) | 3838 (6.1×; 3.70× floor) |
+| 22 | 4194 (1.0×; 1.01× floor) | 12036 (2.9×; 2.90× floor) | 13549 (3.2×; 3.27× floor) | 14819 (3.5×; 3.57× floor) | 16561 (3.9×; 3.99× floor) |
+| 24 | 17219 (1.0×; 1.04× floor) | 47761 (2.8×; 2.88× floor) | 54969 (3.2×; 3.31× floor) | 60099 (3.5×; 3.62× floor) | 67545 (3.9×; 4.07× floor) |
+
+**pass_diagonal, 22 threads** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 5 (1.0×; 0.30× floor) | 31 (6.4×; 1.91× floor) | 42 (8.8×; 2.60× floor) | 50 (10.5×; 3.10× floor) | 62 (12.9×; 3.82× floor) |
+| 16 | 17 (1.0×; 0.25× floor) | 117 (7.1×; 1.80× floor) | 157 (9.5×; 2.42× floor) | 200 (12.1×; 3.09× floor) | 244 (14.8×; 3.76× floor) |
+| 18 | 282 (1.0×; 1.09× floor) | 340 (1.2×; 1.31× floor) | 635 (2.3×; 2.45× floor) | 808 (2.9×; 3.12× floor) | 981 (3.5×; 3.79× floor) |
+| 20 | 748 (1.0×; 0.72× floor) | 752 (1.0×; 0.73× floor) | 920 (1.2×; 0.89× floor) | 1031 (1.4×; 0.99× floor) | 4030 (5.4×; 3.89× floor) |
+| 22 | 1578 (1.0×; 0.38× floor) | 1898 (1.2×; 0.46× floor) | 2352 (1.5×; 0.57× floor) | 2521 (1.6×; 0.61× floor) | 2804 (1.8×; 0.68× floor) |
+| 24 | 8236 (1.0×; 0.50× floor) | 9001 (1.1×; 0.54× floor) | 9523 (1.2×; 0.57× floor) | 8963 (1.1×; 0.54× floor) | 10220 (1.2×; 0.62× floor) |
+
+#### 17.5.2 One pass by operand count — Windows
+
+**pass_dense, 1 thread** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 46 (1.0×; 3.17× floor) | 102 (2.2×; 7.01× floor) | 179 (3.9×; 12.29× floor) | 249 (5.4×; 17.08× floor) | 433 (9.3×; 29.63× floor) |
+| 16 | 80 (1.0×; 1.37× floor) | 184 (2.3×; 3.15× floor) | 674 (8.4×; 11.54× floor) | 1057 (13.2×; 18.10× floor) | 1734 (21.7×; 29.68× floor) |
+| 18 | 360 (1.0×; 1.54× floor) | 766 (2.1×; 3.28× floor) | 2665 (7.4×; 11.41× floor) | 4105 (11.4×; 17.57× floor) | 7233 (20.1×; 30.95× floor) |
+| 20 | 1421 (1.0×; 1.52× floor) | 4061 (2.9×; 4.35× floor) | 11485 (8.1×; 12.29× floor) | 17209 (12.1×; 18.41× floor) | 28074 (19.8×; 30.04× floor) |
+| 22 | 6074 (1.0×; 1.62× floor) | 19357 (3.2×; 5.18× floor) | 46556 (7.7×; 12.45× floor) | 68856 (11.3×; 18.42× floor) | 115771 (19.1×; 30.97× floor) |
+| 24 | 25278 (1.0×; 1.69× floor) | 89245 (3.5×; 5.97× floor) | 189937 (7.5×; 12.70× floor) | 278068 (11.0×; 18.60× floor) | 460843 (18.2×; 30.82× floor) |
+
+**pass_dense, 22 threads** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 20 (1.0×; 1.38× floor) | 44 (2.2×; 3.04× floor) | 173 (8.6×; 11.82× floor) | 265 (13.2×; 18.18× floor) | 431 (21.5×; 29.53× floor) |
+| 16 | 83 (1.0×; 1.41× floor) | 193 (2.3×; 3.30× floor) | 656 (8.0×; 11.24× floor) | 1008 (12.2×; 17.25× floor) | 1747 (21.2×; 29.91× floor) |
+| 18 | 159 (1.0×; 0.68× floor) | 236 (1.5×; 1.01× floor) | 2659 (16.7×; 11.38× floor) | 4140 (26.1×; 17.72× floor) | 7403 (46.6×; 31.68× floor) |
+| 20 | 504 (1.0×; 0.54× floor) | 938 (1.9×; 1.00× floor) | 2350 (4.7×; 2.51× floor) | 3116 (6.2×; 3.33× floor) | 28654 (56.8×; 30.66× floor) |
+| 22 | 1884 (1.0×; 0.50× floor) | 2852 (1.5×; 0.76× floor) | 8184 (4.3×; 2.19× floor) | 11274 (6.0×; 3.02× floor) | 17673 (9.4×; 4.73× floor) |
+| 24 | 8376 (1.0×; 0.56× floor) | 10807 (1.3×; 0.72× floor) | 29454 (3.5×; 1.97× floor) | 44076 (5.3×; 2.95× floor) | 69552 (8.3×; 4.65× floor) |
+
+**pass_diagonal, 1 thread** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 11 (1.0×; 0.74× floor) | 30 (2.8×; 2.07× floor) | 41 (3.8×; 2.80× floor) | 53 (4.8×; 3.60× floor) | 66 (6.0×; 4.49× floor) |
+| 16 | 43 (1.0×; 0.74× floor) | 122 (2.8×; 2.09× floor) | 162 (3.8×; 2.78× floor) | 208 (4.8×; 3.57× floor) | 263 (6.1×; 4.50× floor) |
+| 18 | 188 (1.0×; 0.80× floor) | 529 (2.8×; 2.26× floor) | 713 (3.8×; 3.05× floor) | 848 (4.5×; 3.63× floor) | 1051 (5.6×; 4.50× floor) |
+| 20 | 1410 (1.0×; 1.51× floor) | 2906 (2.1×; 3.11× floor) | 2988 (2.1×; 3.20× floor) | 3486 (2.5×; 3.73× floor) | 4347 (3.1×; 4.65× floor) |
+| 22 | 5292 (1.0×; 1.42× floor) | 12396 (2.3×; 3.32× floor) | 13240 (2.5×; 3.54× floor) | 15230 (2.9×; 4.07× floor) | 17567 (3.3×; 4.70× floor) |
+| 24 | 21218 (1.0×; 1.42× floor) | 51529 (2.4×; 3.45× floor) | 52683 (2.5×; 3.52× floor) | 61896 (2.9×; 4.14× floor) | 75717 (3.6×; 5.06× floor) |
+
+**pass_diagonal, 22 threads** — median µs per pass (× the k = 1 pass of the same size; × the bandwidth floor)
+
+| n | k = 1 | k = 2 | k = 3 | k = 4 | k = 5 |
+|---|---|---|---|---|---|
+| 14 | 11 (1.0×; 0.73× floor) | 30 (2.8×; 2.05× floor) | 41 (3.8×; 2.78× floor) | 52 (5.0×; 3.60× floor) | 65 (6.2×; 4.47× floor) |
+| 16 | 42 (1.0×; 0.71× floor) | 122 (2.9×; 2.09× floor) | 163 (3.9×; 2.79× floor) | 210 (5.0×; 3.59× floor) | 258 (6.2×; 4.42× floor) |
+| 18 | 114 (1.0×; 0.49× floor) | 176 (1.5×; 0.75× floor) | 679 (5.9×; 2.90× floor) | 858 (7.5×; 3.67× floor) | 1087 (9.5×; 4.65× floor) |
+| 20 | 422 (1.0×; 0.45× floor) | 663 (1.6×; 0.71× floor) | 631 (1.5×; 0.67× floor) | 731 (1.7×; 0.78× floor) | 4219 (10.0×; 4.51× floor) |
+| 22 | 1663 (1.0×; 0.44× floor) | 1872 (1.1×; 0.50× floor) | 2117 (1.3×; 0.57× floor) | 2362 (1.4×; 0.63× floor) | 2672 (1.6×; 0.71× floor) |
+| 24 | 8215 (1.0×; 0.55× floor) | 9011 (1.1×; 0.60× floor) | 9762 (1.2×; 0.65× floor) | 10554 (1.3×; 0.71× floor) | 11463 (1.4×; 0.77× floor) |
+
+#### 17.5.3 The brickwork circuit, gate by gate and in fused blocks
+
+10 layers of a U on every qubit and CX on a random perfect matching;
+window 1 is the engine's own gate-by-gate sweep, windows 2–5 are the blocks
+the 17.2 grouping rule forms with no cost rule (every gate that fits
+joins). Median of 3 timed runs after a warm-up; the single-thread rows stop
+at 20 qubits.
+
+**Linux**
+
+| n | threads | window | gates | passes | median s | min..max s | speed-up | max abs diff |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 1 | 1 | 240 | 240 | 0.021 | 0.020..0.022 | 1.00 | 0.0e+00 |
+| 16 | 1 | 2 | 240 | 83 | 0.017 | 0.017..0.017 | 1.26 | 1.8e-17 |
+| 16 | 1 | 3 | 240 | 46 | 0.027 | 0.027..0.027 | 0.78 | 1.7e-17 |
+| 16 | 1 | 4 | 240 | 40 | 0.042 | 0.041..0.043 | 0.50 | 2.1e-17 |
+| 16 | 1 | 5 | 240 | 28 | 0.050 | 0.049..0.050 | 0.43 | 2.3e-17 |
+| 16 | 22 | 1 | 240 | 240 | 0.021 | 0.021..0.021 | 1.00 | 0.0e+00 |
+| 16 | 22 | 2 | 240 | 83 | 0.017 | 0.017..0.019 | 1.19 | 1.8e-17 |
+| 16 | 22 | 3 | 240 | 46 | 0.027 | 0.027..0.028 | 0.75 | 1.7e-17 |
+| 16 | 22 | 4 | 240 | 40 | 0.042 | 0.042..0.045 | 0.49 | 2.1e-17 |
+| 16 | 22 | 5 | 240 | 28 | 0.047 | 0.047..0.052 | 0.44 | 2.3e-17 |
+| 20 | 1 | 1 | 300 | 300 | 0.512 | 0.510..0.524 | 1.00 | 0.0e+00 |
+| 20 | 1 | 2 | 300 | 107 | 0.380 | 0.371..0.382 | 1.35 | 5.9e-18 |
+| 20 | 1 | 3 | 300 | 60 | 0.602 | 0.600..0.603 | 0.85 | 6.0e-18 |
+| 20 | 1 | 4 | 300 | 48 | 0.861 | 0.844..0.863 | 0.59 | 6.1e-18 |
+| 20 | 1 | 5 | 300 | 34 | 0.994 | 0.990..1.009 | 0.52 | 6.4e-18 |
+| 20 | 22 | 1 | 300 | 300 | 0.159 | 0.156..0.165 | 1.00 | 0.0e+00 |
+| 20 | 22 | 2 | 300 | 107 | 0.078 | 0.075..0.083 | 2.03 | 5.9e-18 |
+| 20 | 22 | 3 | 300 | 60 | 0.108 | 0.105..0.109 | 1.47 | 6.0e-18 |
+| 20 | 22 | 4 | 300 | 48 | 0.149 | 0.146..0.170 | 1.07 | 6.1e-18 |
+| 20 | 22 | 5 | 300 | 34 | 0.929 | 0.888..0.929 | 0.17 | 6.4e-18 |
+| 22 | 22 | 1 | 330 | 330 | 0.680 | 0.678..0.698 | 1.00 | 0.0e+00 |
+| 22 | 22 | 2 | 330 | 117 | 0.326 | 0.312..0.338 | 2.08 | 3.3e-18 |
+| 22 | 22 | 3 | 330 | 67 | 0.454 | 0.433..0.463 | 1.50 | 3.3e-18 |
+| 22 | 22 | 4 | 330 | 53 | 0.630 | 0.615..0.634 | 1.08 | 3.5e-18 |
+| 22 | 22 | 5 | 330 | 37 | 0.731 | 0.711..0.751 | 0.93 | 3.5e-18 |
+| 24 | 22 | 1 | 360 | 360 | 3.114 | 3.108..3.128 | 1.00 | 0.0e+00 |
+| 24 | 22 | 2 | 360 | 127 | 1.274 | 1.264..1.286 | 2.44 | 1.8e-18 |
+| 24 | 22 | 3 | 360 | 75 | 1.775 | 1.770..1.784 | 1.75 | 2.2e-18 |
+| 24 | 22 | 4 | 360 | 59 | 2.901 | 2.672..2.903 | 1.07 | 1.8e-18 |
+| 24 | 22 | 5 | 360 | 42 | 3.565 | 3.559..3.710 | 0.87 | 2.0e-18 |
+
+**Windows**
+
+| n | threads | window | gates | passes | median s | min..max s | speed-up | max abs diff |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 1 | 1 | 240 | 240 | 0.029 | 0.028..0.029 | 1.00 | 0.0e+00 |
+| 16 | 1 | 2 | 240 | 88 | 0.016 | 0.016..0.016 | 1.81 | 1.8e-17 |
+| 16 | 1 | 3 | 240 | 50 | 0.028 | 0.028..0.029 | 1.03 | 1.9e-17 |
+| 16 | 1 | 4 | 240 | 39 | 0.039 | 0.038..0.039 | 0.75 | 2.2e-17 |
+| 16 | 1 | 5 | 240 | 29 | 0.049 | 0.048..0.050 | 0.59 | 2.1e-17 |
+| 16 | 22 | 1 | 240 | 240 | 0.029 | 0.028..0.029 | 1.00 | 0.0e+00 |
+| 16 | 22 | 2 | 240 | 88 | 0.016 | 0.016..0.018 | 1.84 | 1.8e-17 |
+| 16 | 22 | 3 | 240 | 50 | 0.028 | 0.028..0.029 | 1.05 | 1.9e-17 |
+| 16 | 22 | 4 | 240 | 39 | 0.040 | 0.038..0.041 | 0.73 | 2.2e-17 |
+| 16 | 22 | 5 | 240 | 29 | 0.049 | 0.048..0.049 | 0.60 | 2.1e-17 |
+| 20 | 1 | 1 | 300 | 300 | 0.646 | 0.641..0.705 | 1.00 | 0.0e+00 |
+| 20 | 1 | 2 | 300 | 106 | 0.331 | 0.329..0.334 | 1.95 | 6.4e-18 |
+| 20 | 1 | 3 | 300 | 62 | 0.581 | 0.576..0.595 | 1.11 | 5.7e-18 |
+| 20 | 1 | 4 | 300 | 49 | 0.813 | 0.809..0.825 | 0.79 | 6.2e-18 |
+| 20 | 1 | 5 | 300 | 37 | 0.971 | 0.967..0.986 | 0.67 | 7.2e-18 |
+| 20 | 22 | 1 | 300 | 300 | 0.127 | 0.125..0.128 | 1.00 | 0.0e+00 |
+| 20 | 22 | 2 | 300 | 106 | 0.072 | 0.070..0.072 | 1.78 | 6.4e-18 |
+| 20 | 22 | 3 | 300 | 62 | 0.113 | 0.110..0.119 | 1.13 | 5.7e-18 |
+| 20 | 22 | 4 | 300 | 49 | 0.154 | 0.153..0.157 | 0.82 | 6.2e-18 |
+| 20 | 22 | 5 | 300 | 37 | 0.912 | 0.910..0.920 | 0.14 | 7.2e-18 |
+| 22 | 22 | 1 | 330 | 330 | 0.677 | 0.674..0.715 | 1.00 | 0.0e+00 |
+| 22 | 22 | 2 | 330 | 115 | 0.305 | 0.295..0.308 | 2.22 | 3.1e-18 |
+| 22 | 22 | 3 | 330 | 64 | 0.476 | 0.470..0.490 | 1.42 | 3.1e-18 |
+| 22 | 22 | 4 | 330 | 51 | 0.614 | 0.601..0.628 | 1.10 | 3.3e-18 |
+| 22 | 22 | 5 | 330 | 37 | 0.693 | 0.676..0.697 | 0.98 | 3.7e-18 |
+| 24 | 22 | 1 | 360 | 360 | 3.167 | 3.161..3.188 | 1.00 | 0.0e+00 |
+| 24 | 22 | 2 | 360 | 127 | 1.272 | 1.263..1.304 | 2.49 | 1.8e-18 |
+| 24 | 22 | 3 | 360 | 75 | 1.953 | 1.852..2.075 | 1.62 | 1.8e-18 |
+| 24 | 22 | 4 | 360 | 59 | 2.816 | 2.785..2.823 | 1.12 | 1.8e-18 |
+| 24 | 22 | 5 | 360 | 43 | 3.335 | 3.332..3.423 | 0.95 | 2.0e-18 |
+
+#### 17.5.4 What the numbers say — [DERIVED]
+
+- **Passes are the bound only on every thread at 20 qubits and above, and
+  only for 1- and 2-qubit matrices.** There a 2-qubit pass costs 1.2–1.8×
+  a 1-qubit pass on Linux and 1.3–1.9× on Windows (both under the
+  single-thread copy's floor), so two passes merged into one 2-qubit pass
+  is a gain. A 3-qubit pass costs 3.5–4.7×, a 4-qubit pass 5.3–7× and a
+  5-qubit pass 8–10× on both platforms (the n = 20, k = 5 rows' 55–57× is
+  the same anomaly on both platforms, a 5-qubit gather whose operands
+  include qubit 19 and qubit 0, and is recorded as measured).
+- **On one thread the arithmetic is the bound at every size.** On Linux a
+  2-qubit pass costs 8.6–9.6× a 1-qubit pass at 14–18 qubits and 3.6–5.2×
+  at 20–24, against the 2× its arithmetic would predict; a 3-qubit pass
+  12–30×; a 5-qubit pass 33–82×. On Windows the ratios are 2.1–3.5×,
+  3.9–8.4× and 9–22×, not because its 2-qubit pass is faster (it is within
+  10% of Linux's) but because its 1-qubit pass is 2–3.5× slower: the
+  1-qubit kernel is a unit-stride loop with the complex multiply written
+  out, which GCC vectorises through its AVX2 clone and MSVC compiles
+  scalar, while the 2-qubit and generic kernels gather per group and
+  multiply through `std::complex::operator*` on both. That gap is item
+  8's, not item 7's; it is what sets the window today.
+- **Diagonal passes are cheap at every width.** On every thread at 22–24
+  qubits a 5-qubit diagonal pass costs 1.2–1.6× a 1-qubit one on both
+  platforms; on one thread 2.8–3.9× at 22–24 (Linux) and 3.3–3.6×
+  (Windows). The streaming diagonal kernel is bandwidth-bound where the
+  state is out of cache, which is what the Phase 24 diagonal fusion relies
+  on.
+- **Window 2 wins everywhere measured; window 3 wins only on every thread;
+  windows 4 and 5 lose or break even.** Window 2: 2.0–2.5× on every thread
+  at 20–24 qubits on both platforms, and on one thread 1.19–1.35× (Linux)
+  and 1.8–1.95× (Windows) at 16–20. Window 3: 1.4–1.75× on every thread at
+  22–24, 0.78–1.11× on one thread. Window 4: 1.07–1.12× on every thread,
+  0.5–0.8× on one thread. Window 5: at best 0.98×.
+- **The grouping must not depend on the thread count,** because every
+  thread count must give the same bytes (Phase 15), and the fused matrices
+  decide the rounding. The rule is therefore set by the single-thread
+  costs, the conservative side: with them a 2-qubit pass costs 2.1–9.6
+  1-qubit passes, so two 1-qubit gates on different qubits must **not** be
+  merged into a 2-qubit block (two passes of cost 1 become one of cost 2–10),
+  while a 1-qubit gate on a qubit of a 2-qubit block, or two 2-qubit gates on
+  the same pair, always should (the block's pass is paid once instead of
+  twice). The window-2 rows above include the losing 1+1 merges and still
+  gain; the rule proposed in 17.6 keeps only the winning ones.
+- **Rounding.** The fused and unfused final states differ by at most
+  2.3 × 10⁻¹⁷ in any amplitude on either platform, 5 orders of magnitude
+  inside `common::kDefaultAbsTol`.
+
+#### 17.5.5 What step 1 recommends for 17.4 — [MENOS]
+
+- **Q1, the window: 2 for dense blocks, 5 for diagonal blocks**, with the
+  containment rule: a gate joins a block only if its qubit set contains the
+  block's or is contained in it (so the fused block has the operand count
+  of the wider of the two and the pass count falls by one), and a block
+  whose gates are all diagonal may instead grow to 5 qubits as
+  `fuse_diagonal_gates` does today. No per-k cost table is needed under
+  this rule: it is the structural reading of the single-thread measurement
+  (c(2) > 2 c(1), c_d(k) ≈ c_d(1) on every thread), and it never reads the
+  machine. Item 8, which changes c(2) and c(3), re-measures and may widen
+  the window; the probe is kept for that.
+- **Q2, the default: on, at every size.** With the containment rule every
+  merge removes a pass and never adds arithmetic, so there is no size below
+  which it loses; n_f is not needed. The measured gain is 1.2–1.95× on one
+  thread and 2.0–2.5× on every thread at 20–24 qubits on this circuit
+  family, before item 8.
+- **Q3–Q6:** as proposed in 17.4.
