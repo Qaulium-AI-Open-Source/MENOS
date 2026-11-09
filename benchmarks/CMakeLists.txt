@@ -50,7 +50,7 @@ target_compile_options(menos_dense_rate_probe PRIVATE ${MENOS_WARNING_FLAGS})
 # gate by gate against fused blocks, on the unchanged kernels.
 add_executable(menos_dense_fusion_probe dense_fusion_probe.cpp)
 target_link_libraries(menos_dense_fusion_probe PRIVATE
-    menos_plan menos_engines_dense menos_ir menos_benchmark_environment
+    menos_api menos_plan menos_engines_dense menos_ir menos_benchmark_environment
 )
 target_compile_options(menos_dense_fusion_probe PRIVATE ${MENOS_WARNING_FLAGS})
 

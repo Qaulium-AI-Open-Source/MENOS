@@ -25,6 +25,12 @@
 //      block. It is a measurement device, not the design; the design is the
 //      ADR's.
 //
+//   3. (gate run, docs/adr/0028 section 17.7) The same brickwork circuits
+//      through the public menos::run with RunOptions::fuse_gates on and off:
+//      execute_seconds, their same-run ratio, the plan's fusion outcome and
+//      the largest amplitude difference between the two statevectors. Rows
+//      "run".
+//
 // Usage: menos_dense_fusion_probe [max_qubits]
 // CSV on stdout, the environment on stderr. A report, not a unit test.
 
@@ -47,6 +53,7 @@
 #include "engines/dense/state_vector.h"
 #include "ir/gate_table.h"
 #include "menos/circuit.h"
+#include "menos/menos.h"
 #include "menos_benchmark_environment.h"
 #include "plan/hardware_profile.h"
 
@@ -403,6 +410,95 @@ void measure_circuits(std::uint32_t max_qubits, std::uint64_t budget) {
     }
 }
 
+// --- 3. the engine itself, fused and unfused, through menos::run -------------
+
+menos::Circuit brickwork_circuit(std::uint32_t n, int depth, std::mt19937_64& rng) {
+    std::uniform_real_distribution<double> angle(0.0, 6.283185307179586);
+    menos::Circuit circuit(n, 0);
+    std::vector<QubitId> order(n);
+    for (std::uint32_t q = 0; q < n; ++q) {
+        order[q] = q;
+    }
+    for (int layer = 0; layer < depth; ++layer) {
+        for (QubitId q = 0; q < n; ++q) {
+            circuit.append(menos::Opcode::U, {q}, {angle(rng), angle(rng), angle(rng)});
+        }
+        std::shuffle(order.begin(), order.end(), rng);
+        for (std::uint32_t i = 0; i + 1 < n; i += 2) {
+            circuit.append(menos::Opcode::CX, {order[i], order[i + 1]});
+        }
+    }
+    return circuit;
+}
+
+struct RunTiming {
+    Spread seconds;
+    std::vector<Complex> statevector;
+    std::uint64_t blocks = 0;
+    std::uint64_t absorbed = 0;
+};
+
+RunTiming time_run(const menos::Circuit& circuit, bool fuse, std::uint32_t threads) {
+    menos::RunOptions options{.shots = 0, .want_statevector = true, .seed = 1};
+    options.max_threads = threads;
+    options.fuse_gates = fuse;
+    options.backend = menos::Backend::Cpu;
+    std::vector<double> samples;
+    RunTiming timing;
+    for (int r = -1; r < kCircuitRepetitions; ++r) {
+        menos::Result result = menos::run(circuit, options);
+        if (r >= 0) {
+            samples.push_back(result.execute_seconds());
+        }
+        if (r == kCircuitRepetitions - 1) {
+            timing.statevector = *result.statevector();
+            timing.blocks = result.plan().regions[0].fusion.fused_blocks;
+            timing.absorbed = result.plan().regions[0].fusion.gates_absorbed;
+        }
+    }
+    timing.seconds = spread(samples);
+    return timing;
+}
+
+void measure_runs(std::uint32_t max_qubits, std::uint64_t budget) {
+    const std::uint32_t all = menos::common::default_thread_count();
+    std::mt19937_64 rng(2411);
+    std::printf(
+        "kind,qubits,threads,gates,fused_blocks,gates_absorbed,unfused_median_s,unfused_min_s,"
+        "unfused_max_s,fused_median_s,fused_min_s,fused_max_s,speedup,max_abs_diff\n");
+    for (const std::uint32_t n : {16U, 20U, 22U, 24U}) {
+        if (n > max_qubits || !fits(n, budget)) {
+            break;
+        }
+        const menos::Circuit circuit = brickwork_circuit(n, kCircuitDepth, rng);
+        for (const std::uint32_t threads : {1U, all}) {
+            if (threads == 1 && n > 20) {
+                continue;
+            }
+            const RunTiming unfused = time_run(circuit, /*fuse=*/false, threads);
+            const RunTiming fused = time_run(circuit, /*fuse=*/true, threads);
+            std::printf("run,%u,%u,%zu,%llu,%llu,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.4f,%.3e\n",
+                        n,
+                        threads,
+                        circuit.operations().size(),
+                        static_cast<unsigned long long>(fused.blocks),
+                        static_cast<unsigned long long>(fused.absorbed),
+                        unfused.seconds.median,
+                        unfused.seconds.min,
+                        unfused.seconds.max,
+                        fused.seconds.median,
+                        fused.seconds.min,
+                        fused.seconds.max,
+                        unfused.seconds.median / fused.seconds.median,
+                        max_difference(unfused.statevector, fused.statevector));
+            std::fflush(stdout);
+            if (threads == all) {
+                break;
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -421,6 +517,7 @@ int main(int argc, char** argv) {
                      static_cast<unsigned long long>(budget));
         measure_passes(max_qubits, budget, profile.memory_bandwidth_bytes_per_second);
         measure_circuits(max_qubits, budget);
+        measure_runs(max_qubits, budget);
         return 0;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "dense_fusion_probe: %s\n", e.what());
