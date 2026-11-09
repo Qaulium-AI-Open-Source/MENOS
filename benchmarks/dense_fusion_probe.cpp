@@ -43,6 +43,7 @@
 #include <cstdlib>
 #include <exception>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -412,6 +413,7 @@ void measure_circuits(std::uint32_t max_qubits, std::uint64_t budget) {
 
 // --- 3. the engine itself, fused and unfused, through menos::run -------------
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n qubits, depth.
 menos::Circuit brickwork_circuit(std::uint32_t n, int depth, std::mt19937_64& rng) {
     std::uniform_real_distribution<double> angle(0.0, 6.283185307179586);
     menos::Circuit circuit(n, 0);
@@ -451,7 +453,11 @@ RunTiming time_run(const menos::Circuit& circuit, bool fuse, std::uint32_t threa
             samples.push_back(result.execute_seconds());
         }
         if (r == kCircuitRepetitions - 1) {
-            timing.statevector = *result.statevector();
+            const auto& statevector = result.statevector();
+            if (!statevector.has_value()) {
+                throw std::runtime_error("dense_fusion_probe: run returned no statevector");
+            }
+            timing.statevector = *statevector;
             timing.blocks = result.plan().regions[0].fusion.fused_blocks;
             timing.absorbed = result.plan().regions[0].fusion.gates_absorbed;
         }
