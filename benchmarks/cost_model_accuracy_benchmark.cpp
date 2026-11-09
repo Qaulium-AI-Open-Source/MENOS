@@ -203,11 +203,13 @@ Circuit ising_trotter(std::uint32_t n, std::uint32_t steps, bool measured) {
 
 // A Clifford circuit with `rotations` small-angle RZ gates sprinkled in: the
 // Pauli propagation regime (Clifford gates plus single-qubit rotations).
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n, depth, rotations, a seed.
+// n, depth, rotations and a seed, named at every call site.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 Circuit clifford_plus_rotations(std::uint32_t n,
                                 std::uint32_t depth,
                                 std::uint32_t rotations,
                                 std::uint64_t seed) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     corpus::SplitMix64 rng(seed);
     Circuit circuit = corpus::random_clifford(n, depth, seed, false);
     for (std::uint32_t i = 0; i < rotations; ++i) {
@@ -276,11 +278,13 @@ Circuit migrating_clusters(std::uint32_t per_cluster) {
 
 // A Clifford block of `clifford_n` qubits beside a brickwork block of
 // `dense_n` qubits, never interacting: a Factorized plan with two engines.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): two widths, a depth, a seed.
+// Two widths, a depth and a seed, named at every call site.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 Circuit mixed_blocks(std::uint32_t clifford_n,
                      std::uint32_t dense_n,
                      std::uint32_t depth,
                      std::uint64_t seed) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     corpus::SplitMix64 rng(seed);
     const std::uint32_t n = clifford_n + dense_n;
     Circuit circuit(n, n);
