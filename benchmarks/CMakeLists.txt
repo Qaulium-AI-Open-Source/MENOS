@@ -45,6 +45,15 @@ add_executable(menos_dense_rate_probe dense_rate_probe.cpp)
 target_link_libraries(menos_dense_rate_probe PRIVATE menos_plan menos_engines_dense)
 target_compile_options(menos_dense_rate_probe PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 24 step 1, item 7 (docs/adr/0028 section 17.3): the cost of one pass
+# over the state by operand count and size, and a brickwork circuit applied
+# gate by gate against fused blocks, on the unchanged kernels.
+add_executable(menos_dense_fusion_probe dense_fusion_probe.cpp)
+target_link_libraries(menos_dense_fusion_probe PRIVATE
+    menos_plan menos_engines_dense menos_ir menos_benchmark_environment
+)
+target_compile_options(menos_dense_fusion_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
 # Phase 24 owner question 4: does calibration noise change the chosen plan?
 add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
 target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)

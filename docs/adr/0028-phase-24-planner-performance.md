@@ -2056,3 +2056,228 @@ These moves are the size of the run-to-run variation of unchanged code between t
 **Planning cost:** see 16.10.2. Nothing in items 2, 3 or 9 runs during planning without an observation, except one clock read around the planner call.
 
 **Verification** — recorded in 16.13.
+
+## 17. Kickoff: item 7, gate fusion in the dense CPU engine — [MENOS] / [OPEN]
+
+**Started by the owner on 2026-11-09**, in the order the owner set on
+2026-11-06 (`docs/BUILD_PLAN.md`, "Order of the remaining items"): item 7
+first, then item 8 (SIMD kernels), then the time-model fixes, then item 4.
+Branch `phase-24-dense-fusion`, from `phase-24-planner-accuracy` after its
+verification record (16.13). The process is the usual one: this section's
+questions (17.4) are answered by the owner after step 1 (17.5) has measured,
+a plan is then approved, and nothing is built before that. Section 17.5 is
+the only part of this section with numbers in it.
+
+### 17.1 What the code does today — [MENOS], read from the source
+
+- **One pass per operation.** `apply_operations`
+  (`src/engines/dense/dense_engine.cpp`) walks the region's operations in
+  order and calls `apply_matrix` once per `GateOp` or `UnitaryOp`, generating
+  a `GateOp`'s matrix with `ir::generate_matrix` on every call. The gap
+  between two operations is the Phase 11 safe boundary; `completed` counts
+  operations.
+- **The kernels** (`src/kernels/cpu/dense_kernels.cpp`):
+  - k = 1: `pair_run`, unit-stride over runs of 2^q pairs, with an AVX2
+    `target_clones` on GCC (MSVC compiles the plain loop);
+  - k = 2: a gather of four amplitudes per group, not vectorised;
+  - a diagonal matrix of any k: one streamed multiply per amplitude;
+  - k ≥ 3: `apply_matrix_generic`, a per-group gather of 2^k amplitudes and
+    indices into per-chunk scratch, the matrix applied, a scatter back.
+  - Every call first checks `is_diagonal` over the whole matrix (4^k reads).
+  - The team is one thread below 2^16 groups and every thread from there.
+- **Diagonal fusion exists, opt-in.** `ir::fuse_diagonal_gates`
+  (`src/ir/fuse_diagonal.{h,cpp}`, `RunOptions::fuse_diagonal_gates`,
+  default off) groups each run of consecutive diagonal gates into blocks of
+  at most `kMaxUnitaryQubits` = 5 qubits and replaces a block of two or more
+  gates by one diagonal `UnitaryOp`. It is applied in
+  `DenseEngine::execute` only: the CUDA engine and the disk tier apply the
+  original operations, `DenseEngine::estimate` charges the unfused circuit,
+  and with it on `completed` already counts blocks. The documentation says
+  the fused run is exact within rounding and not bitwise the unfused one.
+- **Cost model.** A gate on k qubits of an n-qubit region costs 2^(n+k)
+  work units (`dense_work_units`); the calibration converts work units to
+  seconds from a 13-qubit, 2-layer H/CX circuit run through the engine
+  itself (`hardware_profile.cpp`), so whatever the engine does to a circuit
+  before sweeping it is inside the measured rate.
+- **What is pinned bitwise today, and by what:**
+  - every thread count gives the same bytes (Phase 15,
+    `tests/engines/dense/threaded_kernels_test.cpp`);
+  - the specialised and diagonal kernels equal the generic kernel
+    (`specialised_kernels_test.cpp`);
+  - CPU and CUDA statevectors and counts are identical
+    (`docs/adr/0014` section 10, `tests/api/cpu_cuda_differential_test.cpp`);
+  - the disk tier's counts and expectation values are the in-memory
+    engine's (Phase 23, `tests/engines/dense_tiered`);
+  - the memory-accounting fixtures' outputs equal the Phase 21 baseline
+    (`tests/memory/data/baseline_{linux,windows}.json`), with
+    `fuse_diagonal_gates` off.
+- **Where MENOS stands** (`docs/benchmarks/cross-simulator-2026-11-05`,
+  Linux, every simulator at its defaults, best of 3):
+  - dense random circuits: at 20 qubits MENOS 0.29 s against Aer 1.58 s;
+    at 22 qubits 1.54 s against 1.57 s; at 24 qubits (counts) 9.7 s
+    against 12.9 s; **at 26 qubits 49 s against 16 s**;
+  - **Grover, 16 qubits, 122k gates: 35 s against Aer's 9 s** (288 µs per
+    gate on a 1 MiB state);
+  - qsim, which fuses and vectorises, runs every dense case in 0.1–0.4×
+    MENOS's time.
+  - On Windows (`docs/BUILD_PLAN.md`, "Measured on 2026-11-02") MENOS was
+    1.5–2× slower than Aer at 20–24 qubits on every thread and 6× slower on
+    one thread.
+
+  Aer's fusion is on by default from 14 qubits (`fusion_threshold`), with a
+  5-qubit window and per-size cost factors; qsim fuses to 6 qubits. Neither
+  is a MENOS invariant; they are what the comparison is against.
+
+### 17.2 Design proposed — [MENOS]
+
+- **A fusion pass, `ir::fuse_gates`** (`src/ir/fuse_gates.{h,cpp}`, beside
+  `fuse_diagonal`): it turns a region's operation list into a list of
+  blocks, each of at most `window` qubits, and replaces every block of two
+  or more gates by one `UnitaryOp`; a block of one gate is left exactly as
+  it was, so a gate that fuses with nothing is applied bitwise as today.
+  `MeasureOp` is carried through unchanged; a `ChannelOp` never reaches a
+  dense engine.
+- **Grouping rule.** Program order with the one reordering that is free of
+  any commutation analysis: a gate may join an open block only if every
+  block opened after that one is on qubits disjoint from the gate's (so the
+  gate commutes back past them), and among those it joins the oldest block
+  it fits in under the cost rule below; otherwise it opens a new block.
+  Blocks are emitted in the order they opened. The soundness argument is
+  three lines and is written in the header; a test applies the fused and
+  unfused lists to random states.
+- **Cost rule, structural and machine-independent.** A gate joins a block
+  only if the fused block is predicted to cost no more than its parts:
+  c(k_fused) ≤ c(k_block) + c(k_gate), with c(k) the cost of one k-qubit
+  pass relative to a 1-qubit pass, a fixed table derived from step 1 (17.5)
+  and recorded here, never calibrated at run time. The rule must not read
+  the machine: CLAUDE.md requires the same circuit, options and seed to
+  give the same counts on every platform, and the grouping decides the
+  rounding of the result, so a grouping that depended on a measured rate
+  would make results differ between machines. A diagonal block (every gate
+  diagonal) has its own, much lower, c_d(k) from the same measurement, so
+  the pass subsumes what `fuse_diagonal_gates` does today.
+- **Below a size the engine is unchanged.** Step 1 says from which n a pass
+  is bandwidth-bound; below that size (n_f) fusion would trade passes for
+  arithmetic on a cache-resident state, and the pass is not applied, so a
+  small job's results and report stay byte-identical to today.
+- **The fused matrix is computed by the kernels themselves.** A block's
+  matrix is the generic kernel's action on each basis vector of the block's
+  2^k-dimensional space, applying the block's gates in order
+  (`kernels::cpu::apply_matrix_generic` on 2^k amplitudes). That keeps the
+  product inside the no-contraction, bitwise-reproducible arithmetic every
+  kernel already obeys, so a fused matrix is the same bytes on Linux,
+  Windows and both backends, and the fused run's results are bitwise
+  identical across thread counts, CPU/CUDA and the disk tier exactly as the
+  unfused run's are.
+- **Which engines apply the pass.** The three consumers of the dense
+  operation stream: `DenseEngine` (CPU), `CudaDenseEngine` and the disk
+  tier's chunked executor, each calling the same pass with the same window,
+  so the three bitwise identities above survive with fusion on. The
+  density-matrix and trajectory engines are not touched (they share the
+  kernel, not the operation loop; item 7 is the dense engine).
+- **Cost model.** `DenseEngine::estimate` (and the CUDA and disk-tier
+  estimates) charge the fused circuit: the pass runs inside the estimate
+  (it is O(gates · 4^window) and the blocks' matrices are not built there,
+  only their qubit sets), work units are summed over blocks, and the
+  per-gate transient in `peak_bytes_of` becomes the largest block's matrix
+  plus the generic kernel's scratch. The planner therefore prices the
+  passes it will really make. Every dense candidate's `work_units` changes,
+  so the golden planner corpus changes where a dense candidate's figure is
+  printed; the changed goldens are listed in the ADR and regenerated with
+  `MENOS_UPDATE_GOLDEN=1`, and no plan may change its winner except where
+  the ADR says why.
+- **Monitoring.** The Phase 11 safe boundary becomes the gap between two
+  blocks; `completed` counts blocks, as it already does for diagonal
+  fusion. `ReplanEvent::boundaries_crossed` keeps its meaning (boundaries,
+  not gates).
+- **`explain()`.** Each dense region's line gains, only when fusion
+  absorbed at least one gate, ` fusion=window:K blocks=B absorbed=G`,
+  computed at plan time by the estimate (so `preview()` reports it too). A
+  region with nothing fused, and every non-dense region, prints exactly as
+  today.
+- **API.** `RunOptions::fuse_gates` (C++), `fuse_gates` (Python
+  `RunOptions`, `menos.run`), CLI `--fusion on|off`. The window is not a
+  public option: it is the constant the owner sets from step 1. The
+  existing `fuse_diagonal_gates` is kept with its meaning (diagonal-only
+  fusion when `fuse_gates` is off); with `fuse_gates` on it is implied.
+  The default is Q2.
+- **Tests.** The fused list equals the unfused list within
+  `common::kDefaultAbsTol` on random states (`tests/ir/fuse_gates_test.cpp`,
+  the oracle of `fuse_diagonal_test.cpp`); the grouping rule's soundness on
+  circuits with known dependencies; a fused run bitwise identical on 1, 2,
+  3 and every thread; CPU/CUDA and disk-tier differential tests run with
+  fusion on; a job below n_f and a job with `fuse_gates=false` give
+  byte-identical results and `explain()` to the run before this item (the
+  Phase 21 baseline pins the former); the cost estimate equals the sum over
+  blocks; `explain()` goldens; the monitor's `completed` equals the block
+  count on an injected clock.
+
+### 17.3 Step 1: the measurement before any fusion code — [MENOS]
+
+`benchmarks/dense_fusion_probe.cpp`, on the unchanged kernels through
+`engines::dense::apply_matrix`, no library change:
+
+1. **One pass by k and n.** For n = 14, 16, …, 24 and k = 1..5, dense
+   (random, every entry non-zero) and diagonal matrices on operands spread
+   across the register, on one thread and on every hardware thread: median,
+   min and max of 10 timed calls after a warm-up; the bytes the pass streams
+   (2 · 16 · 2^n) over the median against the calibration's streaming
+   bandwidth. It answers: from which n is a pass bandwidth-bound (the time
+   stops depending on k and approaches the bandwidth floor), and what each
+   k costs relative to k = 1 where it is not — the c(k) and c_d(k) tables
+   and n_f of 17.2.
+2. **A circuit, gate by gate and in blocks.** The random brickwork family
+   of the cross-simulator comparison (a U on every qubit, then CX on a
+   random perfect matching, 10 layers) at n = 16, 20, 22, 24, applied as the
+   engine applies it and as blocks fused in the program for windows 2..5 by
+   the 17.2 grouping rule with no cost rule (every gate that fits joins):
+   the pass count, the median of 3 timed runs, the speed-up, and the
+   largest amplitude difference between the two final states. It answers:
+   does cutting passes cut time (the BUILD_PLAN's precondition for building
+   any fusion), by how much per window, and how large the rounding is.
+
+Both on the gate machine (Core Ultra 7 155H), Linux (WSL, GCC 15.2) in
+`build/cuda12-release` and Windows (MSVC 14.50) in `build/windows-bench`,
+on mains power, recorded in `docs/benchmarks/phase-24/fusion-step1/`.
+
+### 17.4 Owner questions — [OPEN]
+
+- **Q1, the window.** Proposed: the largest k for which step 1's circuit
+  measurement still gains at 22–24 qubits, at most 5 (`kMaxUnitaryQubits`,
+  the generic kernel's ceiling). Expected 3–5; the number is 17.5's.
+- **Q2, default.** Proposed: **on by default** from n_f qubits,
+  `RunOptions::fuse_gates = false` to turn it off. The alternative, opt-in
+  like `fuse_diagonal_gates`, leaves the measured gap in place for every
+  user who does not read the options; Aer and qsim fuse by default. Under
+  "on by default" the Phase 21 bitwise baseline is Q3.
+- **Q3, the Phase 21 baseline.** Proposed: keep `baseline_{linux,windows}.json`
+  as they are and run the fixtures with `fuse_gates=false` against them
+  (so the kernels stay pinned to the bytes of `1f89192`), and add the same
+  fixtures with fusion on against a new `baseline_fused_*.json` generated
+  once, so the fused path is pinned bitwise too, on both platforms. The
+  alternative, regenerating the existing files, loses the pin on the
+  unfused path.
+- **Q4, which engines.** Proposed: the CPU dense engine, the CUDA dense
+  engine and the disk tier, all through the one pass, so CPU/CUDA and
+  in-memory/disk stay bitwise identical with fusion on. The alternative,
+  CPU only (as `fuse_diagonal_gates` is), breaks both identities whenever
+  fusion is on, which under Q2 is by default.
+- **Q5, the cost model.** Proposed: charge the fused circuit (17.2), list
+  the golden-corpus changes. The alternative, charging the unfused circuit
+  and letting calibration absorb the difference, misprices every dense
+  candidate against the other engines by the pass ratio.
+- **Q6, the gate.** Proposed criteria:
+  1. fused results within `common::kDefaultAbsTol` of the unfused run on
+     the accuracy benchmark's dense workloads and on the Phase 21 fixtures;
+  2. the fused run bitwise identical on every thread count, between CPU and
+     CUDA, and between the in-memory engine and the disk tier;
+  3. a job with fusion off, or below n_f, byte-identical in results and
+     `explain()` to today;
+  4. a dense speed-up target per size, set by the owner from 17.5 as
+     same-run ratios fused/unfused (as Phase 16 set its targets), on the
+     brickwork family and the cross-simulator dense cases at 20–26 qubits;
+  5. `explain()` reports the fusion outcome and the cost estimate charges
+     the blocks (a test equates them);
+  6. the golden corpus's changed plans are listed and none changes its
+     winner without a stated reason;
+  7. `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0.
