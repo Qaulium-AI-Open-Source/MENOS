@@ -142,7 +142,12 @@ public:
                 bits_left = 64;
             }
             if ((word & std::uint64_t{1}) != 0) {
-                outcome |= generator;
+                // XOR, never OR: a generator flips the base outcome's bits,
+                // so a base bit that is 1 becomes 0. OR left it at 1, which
+                // made a qubit whose base bit was set come out 1 in every
+                // shot that selected a generator flipping it (the Phase 24
+                // stabilizer sampler bug, docs/adr/0028 section 18).
+                outcome ^= generator;
             }
             word >>= 1;
             --bits_left;

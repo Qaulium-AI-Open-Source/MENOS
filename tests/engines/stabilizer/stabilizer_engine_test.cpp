@@ -250,6 +250,118 @@ std::uint32_t random_below(std::mt19937_64& rng, std::uint32_t bound) {
     return static_cast<std::uint32_t>(rng() % bound);
 }
 
+// The counts sampler flips a generator INTO the base outcome: XOR, never OR.
+// X(0), H(1), CX(1, 0) leaves (q0, q1) in {(1, 0), (0, 1)}: the base outcome
+// has q0 = 1 and the one generator flips both qubits, so an OR could never
+// clear q0 and would report the impossible (1, 1) half the time (the Phase
+// 24 stabilizer sampler bug, docs/adr/0028 section 18).
+TEST(StabilizerEngineTest, AnAntiCorrelatedPairSamplesOnlyItsTwoOutcomes) {
+    const std::vector<Operation> ops{
+        GateOp{Opcode::X, {0}, {}},
+        GateOp{Opcode::H, {1}, {}},
+        GateOp{Opcode::CX, {1, 0}, {}},
+    };
+    const std::vector<MeasureTarget> targets{{0, 0}, {1, 1}};
+    const StabilizerEngine engine;
+    const EngineExecutionRequest request{
+        .num_qubits = 2,
+        .operations = ops,
+        .want_statevector = false,
+        .want_counts = true,
+        .want_expectation = false,
+        .shots = 1000,
+        .measure_targets = targets,
+        .bitstring_width = 2,
+        .seed = 42,
+        .global_phase = 0.0,
+        .budget_bytes = 1'000'000,
+        .is_sole_region = true,
+        .observable = nullptr,
+    };
+    const EngineExecutionResult result = engine.execute(request);
+    ASSERT_TRUE(result.counts.has_value());
+    std::uint64_t total = 0;
+    std::uint64_t q0_set = 0;
+    for (const auto& [key, count] : *result.counts) {  // NOLINT(bugprone-unchecked-optional-access)
+        EXPECT_NE(key.test(0), key.test(1)) << key.to_hex_string();
+        total += count;
+        if (key.test(0)) {
+            q0_set += count;
+        }
+    }
+    EXPECT_EQ(total, 1000U);
+    // Both outcomes appear: q0 is 1 in about half the shots, not all of them.
+    EXPECT_GT(q0_set, 400U);
+    EXPECT_LT(q0_set, 600U);
+}
+
+// The owner's 50-qubit reproducer (docs/benchmarks/cross-simulator-2026-11-05/
+// harness/stabilizer_repro.{py,json}, 2026-11-05): after these 54 gates
+// qubits 48 and 49 are perfectly anticorrelated, and MENOS reported qubit 48
+// as 1 in every shot.
+TEST(StabilizerEngineTest, TheOwnersFiftyQubitReproducerSamplesOnlyAnticorrelatedOutcomes) {
+    struct Gate {
+        Opcode opcode;
+        std::vector<QubitId> qubits;
+    };
+    const std::vector<Gate> gates{
+        {Opcode::CX, {35, 36}}, {Opcode::CZ, {37, 38}}, {Opcode::CZ, {39, 40}},
+        {Opcode::CZ, {41, 42}}, {Opcode::CZ, {43, 44}}, {Opcode::CZ, {45, 46}},
+        {Opcode::CZ, {47, 48}}, {Opcode::H, {48}},      {Opcode::H, {49}},
+        {Opcode::CZ, {0, 1}},   {Opcode::CX, {2, 3}},   {Opcode::CX, {4, 5}},
+        {Opcode::CX, {6, 7}},   {Opcode::CX, {8, 9}},   {Opcode::CZ, {10, 11}},
+        {Opcode::CZ, {12, 13}}, {Opcode::CZ, {14, 15}}, {Opcode::CX, {16, 17}},
+        {Opcode::CZ, {18, 19}}, {Opcode::CX, {20, 21}}, {Opcode::CX, {22, 23}},
+        {Opcode::CZ, {24, 25}}, {Opcode::CZ, {26, 27}}, {Opcode::CX, {28, 29}},
+        {Opcode::CX, {30, 31}}, {Opcode::CX, {32, 33}}, {Opcode::CX, {34, 35}},
+        {Opcode::CX, {36, 37}}, {Opcode::CX, {38, 39}}, {Opcode::CX, {40, 41}},
+        {Opcode::CZ, {42, 43}}, {Opcode::CX, {44, 45}}, {Opcode::CX, {46, 47}},
+        {Opcode::CZ, {48, 49}}, {Opcode::H, {48}},      {Opcode::X, {49}},
+        {Opcode::CX, {1, 2}},   {Opcode::CZ, {3, 4}},   {Opcode::CZ, {5, 6}},
+        {Opcode::CX, {7, 8}},   {Opcode::CX, {9, 10}},  {Opcode::CX, {11, 12}},
+        {Opcode::CX, {13, 14}}, {Opcode::CZ, {15, 16}}, {Opcode::CX, {17, 18}},
+        {Opcode::CZ, {19, 20}}, {Opcode::CX, {21, 22}}, {Opcode::CZ, {23, 24}},
+        {Opcode::CX, {25, 26}}, {Opcode::CZ, {27, 28}}, {Opcode::CZ, {29, 30}},
+        {Opcode::CX, {31, 32}}, {Opcode::CX, {33, 34}}, {Opcode::CX, {37, 38}},
+    };
+    std::vector<Operation> ops;
+    ops.reserve(gates.size());
+    for (const Gate& gate : gates) {
+        ops.emplace_back(GateOp{gate.opcode, gate.qubits, {}});
+    }
+    const std::vector<MeasureTarget> targets{{48, 0}, {49, 1}};
+    const StabilizerEngine engine;
+    const EngineExecutionRequest request{
+        .num_qubits = 50,
+        .operations = ops,
+        .want_statevector = false,
+        .want_counts = true,
+        .want_expectation = false,
+        .shots = 1024,
+        .measure_targets = targets,
+        .bitstring_width = 2,
+        .seed = 1,
+        .global_phase = 0.0,
+        .budget_bytes = 1'000'000,
+        .is_sole_region = true,
+        .observable = nullptr,
+    };
+    const EngineExecutionResult result = engine.execute(request);
+    ASSERT_TRUE(result.counts.has_value());
+    std::uint64_t total = 0;
+    std::uint64_t q48_set = 0;
+    for (const auto& [key, count] : *result.counts) {  // NOLINT(bugprone-unchecked-optional-access)
+        EXPECT_NE(key.test(0), key.test(1)) << key.to_hex_string();
+        total += count;
+        if (key.test(0)) {
+            q48_set += count;
+        }
+    }
+    EXPECT_EQ(total, 1024U);
+    EXPECT_GT(q48_set, 400U);
+    EXPECT_LT(q48_set, 624U);
+}
+
 // A random Clifford circuit over the full Clifford set (docs/BUILD_PLAN.md
 // Phase 4: "the full Clifford set"), with a subset of active qubits
 // (leaving the rest genuinely idle) and a subset of measured qubits
@@ -393,6 +505,34 @@ TEST(StabilizerEngineDifferentialTest, MatchesDenseOracleAcrossRandomCliffordCir
             EXPECT_EQ(dense_nonzero, reachable)
                 << "seed=" << circuit_seed << " n=" << n
                 << ": stabilizer's reachable outcome set must equal dense's nonzero outcome set";
+
+            // The engine's own sampler, not only reduce(): every sampled outcome
+            // must be one dense gives a nonzero probability (the sampler's OR
+            // bug produced outcomes outside the set, docs/adr/0028 section 18).
+            const EngineExecutionRequest request{
+                .num_qubits = n,
+                .operations = circuit.operations(),
+                .want_statevector = false,
+                .want_counts = true,
+                .want_expectation = false,
+                .shots = 256,
+                .measure_targets = targets,
+                .bitstring_width = n,
+                .seed = circuit_seed,
+                .global_phase = 0.0,
+                .budget_bytes = 1'000'000,
+                .is_sole_region = true,
+                .observable = nullptr,
+            };
+            const EngineExecutionResult sampled = stabilizer.execute(request);
+            ASSERT_TRUE(sampled.counts.has_value());
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            for (const auto& [outcome, count] : *sampled.counts) {
+                static_cast<void>(count);
+                EXPECT_TRUE(dense_nonzero.contains(outcome))
+                    << "seed=" << circuit_seed << " n=" << n << ": the sampler drew "
+                    << outcome.to_hex_string() << ", which dense gives probability 0";
+            }
 
             const double expected_p = std::pow(2.0, -r_observed);
             for (const BitString& outcome : reachable) {

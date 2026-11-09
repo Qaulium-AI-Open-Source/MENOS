@@ -103,7 +103,7 @@
   },
   "stabilizer_counts": {
     "strategy": "stabilizer",
-    "counts": "1df8588d28fcdb82",
+    "counts": "5ae6b76eb83ede7f",
     "statevector": "-",
     "expectation": "-"
   },
@@ -115,7 +115,7 @@
   },
   "stabilizer_region_counts": {
     "strategy": "stabilizer",
-    "counts": "6082b83bf9901fa7",
+    "counts": "9d44002984b827c1",
     "statevector": "-",
     "expectation": "-"
   },

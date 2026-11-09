@@ -2652,3 +2652,58 @@ The raw records are `docs/benchmarks/phase-24/fusion-gate/{linux,windows}/`, the
 **Criterion 6:** the one changed winner is listed above with its reason.
 
 **Criterion 7:** recorded in 17.8.
+
+## 18. Stabilizer sampler fix (owner addition, 2026-11-09) — [MEASURED]
+
+**The symptom.** On some Clifford circuits the stabilizer engine's counts
+contained outcomes of probability zero: a qubit whose exact marginal is
+0.5 came out 1 in every shot. The owner's harness found it on 2026-11-05
+at 40–100 qubits (`docs/benchmarks/cross-simulator-2026-11-05/harness/
+stabilizer_repro.{py,json}`: a 50-qubit, 54-gate circuit leaving qubits 48
+and 49 perfectly anticorrelated, MENOS reporting qubit 48 as 1 always), and
+`examples/compare_simulators.ipynb` showed it from 8 qubits up on
+2026-11-07. Measuring one qubit alone was right, and so was every
+expectation value, so the tableau was right. The owner placed the fix in
+this phase on 2026-11-09.
+
+**The cause.** `StabilizerCountsSampler::sample_one`
+(`src/engines/stabilizer/stabilizer_engine.cpp`) builds each shot as the
+affine subspace's base outcome combined with a random subset of its
+generators. The combination was `outcome |= generator`, an OR: a base bit
+that is 1 could never be flipped to 0 by a generator, so every outcome in
+which such a flip should have happened came out with the bit still set.
+The algorithm of `docs/adr/0006` says XOR. `BitString` had only
+`operator|=`, written for the factorized-counts combination of disjoint
+bit ranges, where OR and XOR coincide.
+
+**Why the tests missed it.** `StabilizerEngineDifferentialTest` enumerated
+the reachable outcomes from `Tableau::reduce()` with its own XOR and
+compared that set with the dense oracle; it never drew from the engine's
+sampler. Small circuits rarely have a base bit set where a generator also
+has one, so the Bell and random-Clifford tests saw nothing.
+
+**The fix** (`phase-24-dense-fusion`): `BitString::operator^=`
+(`include/menos/bitstring.h`, `src/common/bitstring.cpp`), and the sampler
+flipping with it. No other code changes.
+
+**Tests.** `BitStringTest.XorFlipsBitsInBothDirections` (across a word
+boundary, an involution) and the mismatched-width refusal;
+`StabilizerEngineTest.AnAntiCorrelatedPairSamplesOnlyItsTwoOutcomes`
+(X(0), H(1), CX(1,0): base bit 1 on qubit 0, one generator flipping both,
+the minimal case); `TheOwnersFiftyQubitReproducerSamplesOnlyAnticorrelated
+Outcomes` (the 54 gates of the reproducer, measuring 48 and 49: only `01`
+and `10`, both appearing); and the differential test now also draws 256
+shots from the engine's sampler per circuit and requires every drawn
+outcome to have a nonzero dense probability.
+
+**What changes for users.** Counts from `direct_stabilizer` plans change
+wherever the bug fired; nothing else does. The two Phase 21 stabilizer
+counts fixtures (`stabilizer_counts`, `stabilizer_region_counts`, 14-qubit
+random Clifford circuits) were among them: their baseline entries had
+pinned the buggy sampler's outcomes (`1df8588d28fcdb82`,
+`6082b83bf9901fa7`, the same on both platforms) and are regenerated
+(`5ae6b76eb83ede7f`, `9d44002984b827c1`, again the same on both platforms,
+the sampler being integer arithmetic over the same seed; the Windows probe
+generated them and the Linux verification of the fusion head confirms
+them). The stabilizer expectation fixture and every other baseline entry
+are unchanged, and so are the planner, the estimates and `explain()`.
