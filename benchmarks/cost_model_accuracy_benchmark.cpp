@@ -163,6 +163,7 @@ Circuit ghz(std::uint32_t n) {
 }
 
 // H on every qubit, then CZ on `edges` random edges.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n qubits, edges, a seed.
 Circuit graph_state(std::uint32_t n, std::uint32_t edges, std::uint64_t seed) {
     corpus::SplitMix64 rng(seed);
     Circuit circuit(n, n);
@@ -183,6 +184,7 @@ Circuit graph_state(std::uint32_t n, std::uint32_t edges, std::uint64_t seed) {
 
 // First-order Trotter steps of the transverse-field Ising chain: RZZ on every
 // edge, RX on every qubit. Small angles keep entanglement low (the MPS regime).
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n qubits, steps.
 Circuit ising_trotter(std::uint32_t n, std::uint32_t steps, bool measured) {
     Circuit circuit(n, measured ? n : 0);
     for (std::uint32_t s = 0; s < steps; ++s) {
@@ -201,6 +203,7 @@ Circuit ising_trotter(std::uint32_t n, std::uint32_t steps, bool measured) {
 
 // A Clifford circuit with `rotations` small-angle RZ gates sprinkled in: the
 // Pauli propagation regime (Clifford gates plus single-qubit rotations).
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): n, depth, rotations, a seed.
 Circuit clifford_plus_rotations(std::uint32_t n,
                                 std::uint32_t depth,
                                 std::uint32_t rotations,
@@ -218,6 +221,7 @@ Circuit clifford_plus_rotations(std::uint32_t n,
 // Two blocks of `width` qubits, each scrambled by random long-range pairs (hard
 // for MPS), joined by one CX in the middle; 2 * width qubits are beyond the
 // dense state, so a one-wire cut is the plan that fits.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): width, depth, a seed.
 Circuit cut_scrambled(std::uint32_t width, std::uint32_t depth, std::uint64_t seed) {
     corpus::SplitMix64 rng(seed);
     const std::uint32_t n = 2 * width;
@@ -272,6 +276,7 @@ Circuit migrating_clusters(std::uint32_t per_cluster) {
 
 // A Clifford block of `clifford_n` qubits beside a brickwork block of
 // `dense_n` qubits, never interacting: a Factorized plan with two engines.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): two widths, a depth, a seed.
 Circuit mixed_blocks(std::uint32_t clifford_n,
                      std::uint32_t dense_n,
                      std::uint32_t depth,
@@ -569,8 +574,8 @@ void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
         to_run.regions.clear();
         const Observable* observable =
             w.spec.expectation.has_value() ? &*w.spec.expectation : nullptr;
-        to_run.regions.push_back(
-            plan::build_direct_region(circuit, *engine_id, Backend::Cpu, estimate, observable));
+        to_run.regions.push_back(plan::build_direct_region(
+            circuit, engine->engine_id(), Backend::Cpu, estimate, observable));
         to_run.estimated_state_bytes = estimate.estimated_peak_bytes;
         to_run.estimated_work_units = estimate.estimated_work_units;
         to_run.cut_summary.reset();
