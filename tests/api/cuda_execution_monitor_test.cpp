@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "common/error.h"
 #include "engines/dense/dense_engine.h"
 #include "engines/dense_cuda/cuda_dense_engine.h"
+#include "ir/fuse_gates.h"
 #include "kernels/cuda/device_buffer.h"
 #include "kernels/cuda/device_info.h"
 #include "menos/circuit.h"
@@ -138,14 +140,28 @@ protected:
     }
 };
 
-// The seam is called once per operation, on the device path too.
-TEST_F(CudaExecutionMonitorTest, TheCudaEngineCallsTheMonitorOncePerOperation) {
+// The seam is called at the same boundaries as on the CPU: once per fused
+// block with gate fusion (the default since Phase 24 item 7, docs/adr/0028
+// section 17), once per operation with fusion off.
+TEST_F(CudaExecutionMonitorTest, TheCudaEngineCallsTheMonitorOncePerBlockOrOncePerOperation) {
     const CudaDenseEngine engine;
     const Circuit circuit = layered({.num_qubits = 8, .layers = 3});
-    const CountingMonitor monitor;
-    static_cast<void>(engine.execute(make_request(circuit, false, &monitor)));
-    EXPECT_EQ(monitor.calls(), circuit.operations().size());
-    EXPECT_EQ(monitor.last(), circuit.operations().size());
+    const std::size_t blocks = ir::plan_fusion(circuit.operations()).block_count();
+    ASSERT_LT(blocks, circuit.operations().size()) << "the circuit must fuse something";
+    {
+        const CountingMonitor monitor;
+        static_cast<void>(engine.execute(make_request(circuit, false, &monitor)));
+        EXPECT_EQ(monitor.calls(), blocks);
+        EXPECT_EQ(monitor.last(), blocks);
+    }
+    {
+        const CountingMonitor monitor;
+        EngineExecutionRequest request = make_request(circuit, false, &monitor);
+        request.fuse_gates = false;
+        static_cast<void>(engine.execute(request));
+        EXPECT_EQ(monitor.calls(), circuit.operations().size());
+        EXPECT_EQ(monitor.last(), circuit.operations().size());
+    }
 }
 
 // A monitor that never abandons must not perturb a single bit of the result.
