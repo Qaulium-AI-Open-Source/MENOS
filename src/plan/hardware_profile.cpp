@@ -162,6 +162,8 @@ Circuit make_calibration_circuit(std::uint32_t num_qubits) {
 // At kThroughputQubits the kernels run on one thread whatever max_threads is
 // (2^12 groups, below kParallelMinGroups); at kThreadedThroughputQubits they
 // use every thread given (docs/adr/0028 section 16.10.3).
+// A qubit count and a thread cap: distinct roles, named at both call sites.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 double measure_work_units_per_second(std::uint32_t num_qubits, std::uint32_t max_threads) {
     const Circuit circuit = make_calibration_circuit(num_qubits);
     const engines::dense::DenseEngine engine;
