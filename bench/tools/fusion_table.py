@@ -9,7 +9,10 @@ Prints, as Markdown:
      median over the bandwidth floor (2 * 16 * 2^n bytes at the calibrated
      streaming bandwidth), for dense and diagonal matrices;
   2. the circuit rows: passes, speed-up over the unfused run and the largest
-     amplitude difference, by size, window and thread count.
+     amplitude difference, by size, window and thread count;
+  3. the run rows (the gate evidence): the engine through menos::run with
+     fuse_gates off and on, their same-run speed-up and the largest
+     amplitude difference.
 """
 
 import csv
@@ -18,7 +21,7 @@ from collections import defaultdict
 
 
 def load(path):
-    passes, circuits = [], []
+    passes, circuits, runs = [], [], []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.reader(f):
             if not row or row[0] == "kind":
@@ -27,7 +30,22 @@ def load(path):
                 passes.append(row)
             elif row[0] == "circuit":
                 circuits.append(row)
-    return passes, circuits
+            elif row[0] == "run":
+                runs.append(row)
+    return passes, circuits, runs
+
+
+def run_table(runs):
+    # kind, qubits, threads, gates, fused_blocks, gates_absorbed, unfused_median_s, unfused_min_s,
+    # unfused_max_s, fused_median_s, fused_min_s, fused_max_s, speedup, max_abs_diff
+    if not runs:
+        return
+    print("\n**menos::run, fuse_gates off and on (same run)**\n")
+    print("| n | threads | gates | fused blocks | absorbed | unfused s (min..max) | fused s (min..max) | speed-up | max abs diff |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    for _k, n, threads, gates, blocks, absorbed, um, umn, umx, fm, fmn, fmx, speedup, diff in runs:
+        print(f"| {n} | {threads} | {gates} | {blocks} | {absorbed} | {float(um):.3f} ({float(umn):.3f}..{float(umx):.3f}) | "
+              f"{float(fm):.3f} ({float(fmn):.3f}..{float(fmx):.3f}) | {float(speedup):.2f} | {float(diff):.1e} |")
 
 
 def pass_tables(passes):
@@ -69,9 +87,10 @@ def main():
     if len(sys.argv) != 2:
         print(__doc__)
         return 2
-    passes, circuits = load(sys.argv[1])
+    passes, circuits, runs = load(sys.argv[1])
     pass_tables(passes)
     circuit_table(circuits)
+    run_table(runs)
     return 0
 
 

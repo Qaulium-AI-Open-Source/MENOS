@@ -2587,3 +2587,68 @@ while implementing, are:
   brickwork sweep must be at least 2.0× the unfused one on both platforms
   (the window-2 rows, which include the 1 + 1 merges the containment rule
   refuses, gave 2.0–2.5×), measured as same-run ratios.
+
+### 17.7 Implementation and gate evidence — [MEASURED]
+
+**Code** (`0a26af3` on `phase-24-dense-fusion`, after the kickoff `fcbf947`
+and the step-1 record `6d7dd65`):
+
+| Where | What |
+|---|---|
+| `src/ir/fuse_gates.{h,cpp}` | `ir::plan_fusion`: the containment rule over a 64-bit qubit mask per open block, with the newest block per qubit tracked in a 64-entry table so the plan is O(gates); the plan is four exactly-sized vectors (`order`, `block_begin`, `block_qubits`, `qubits_begin`) with `heap_bytes()` and `construction_peak_bytes()` for the estimates |
+| `src/engines/dense/fused_block.{h,cpp}` | `fused_block_matrix` (the generic kernel on the block's basis vectors, one thread, transposed in place), `block_transient_bytes`, `max_block_transient_bytes`, and the `apply_blocks` template the three dense engines sweep with |
+| `src/engines/dense/dense_engine.cpp` | the plan built before the state, the sweep over blocks, `dense_work_units(request, plan)`, the peak as `max(construction, state + plan + max(block transient, outputs))`; with the opt-in `fuse_diagonal_gates` the plan is built over the diagonal-fused list inside `execute()`, which the estimate does not charge, as before this item |
+| `src/engines/dense_cuda/cuda_dense_engine.cpp` | the same plan and host-built matrices applied with the CUDA kernel; launches and the host peak count blocks |
+| `src/engines/dense_tiered/{pass_plan,chunked_executor,disk_dense_engine}` | the pass plan over the plan's blocks, each pass applying blocks through the window; the layout carries the plan through the run |
+| `include/menos/{menos,plan,simulation_engine}.h`, `src/plan/job_spec.h` | `RunOptions::fuse_gates`, `FusionSummary` on `CostEstimate` and `Region`, `fuse_gates` on both engine requests (default on), `JobSpec::fuse_gates` |
+| `src/plan/{planner,region_builder,plan_cache,plan_impl}.cpp`, `src/cost/cost_model.{h,cpp}` | the flag threaded to every dense estimate, the summary copied into regions, the plan-cache key, the region line `fusion=containment blocks= absorbed=` printed only when a gate was absorbed |
+| `src/api/menos.cpp`, `src/runtime/runtime.cpp`, `src/python/bindings.cpp`, `cli/cli_impl.cpp` | the option carried to the planner and the engines, `RunOptions.fuse_gates`, `--fusion on\|off` |
+
+**Tests added or changed.**
+- `tests/ir/fuse_gates_test.cpp`: the rule block by block on hand-built circuits (containment, the diagonal refusals, a diagonal `UnitaryOp`, the barrier, the empty list, the 64-qubit refusal); on random circuits of 1–3-qubit gates, diagonal gates and 2-qubit unitaries, the plan is a permutation into blocks whose operands are their gates' union, operations keep program order within a block, and applying the blocks in plan order equals program order within 1e-12 (the oracle of `fuse_diagonal_test.cpp`).
+- `tests/engines/dense/fused_block_test.cpp`: a block's matrix is the product of its gates (oracle, 1e-12); the block sweep equals the gate sweep within 1e-12; the fused sweep is **bitwise identical on 1, 2, 3 and every hardware thread** at 19 qubits; a singleton block is applied with the gate's own matrix and operand order (`cx 3,1`), bitwise the direct call; the monitor sees one boundary per block; the transient bound covers every block.
+- `tests/engines/dense/dense_engine_test.cpp`: the fused Bell is one pass (work 4 + 16 + 4) and its peak is the state, the plan and the block's transient; fusion off charges exactly the per-gate formula and reports no fusion.
+- `tests/plan/region_builder_test.cpp`: with fusion, three gates on one qubit are one dense pass (work 8) and dense wins over MPS (14); the per-gate case keeps its MPS routing with fusion off.
+- `tests/api/execution_monitor_test.cpp`: once per block with fusion, once per operation without.
+- `tests/engines/dense_tiered/disk_dense_engine_test.cpp`: the bitwise comparison of the disk tier with the in-memory engine runs with fusion on (the default) at every chunk size, gate shape and thread count, and the structural tests pin the gate-by-gate pass plan with fusion off.
+- `tests/memory`: every dense, CUDA, disk-tier and whole-job fixture has a `_fused` copy (12 on a CPU build, 16 with CUDA); the Windows baseline regenerated keeps all 37 existing entries byte for byte and adds the 12; the fused disk-tier fixtures' counts and expectation digests equal the fused in-memory fixtures' (`9babf4d634cd516f`, `3de7c9f686df57fd`), and the fused statevector digest differs from the unfused one, as rounding says it must.
+- The CLI and `explain()` goldens that print the Bell's dense candidate now say `work_units=24` (one fused pass) instead of 32; the tests tuned to the per-gate figures (`cost_model_test`, `planner_test`, the 17 000-byte budget cases) set fusion off and say so.
+- The planner corpus: 35 of 45 golden plans change on Windows (every dense candidate's `work_units` and `peak_bytes`, the region line's fusion field). **One winner changes:** `counts_factorized.small`, `direct_mps` → `factorized`, because its dense regions, fused, are now cheaper than the MPS candidate; every other job keeps its strategy, regions and refusals.
+
+**Linux.** The planner corpus regenerated in the WSL clone changes the same 35 of 45 plans, with the same one winner change (`counts_factorized.small`, `direct_mps` → `factorized`). The Linux baseline regenerated from the CPU release build keeps all 37 CPU entries byte for byte and adds the 12 fused ones; the cuda12 release build, on the GPU, keeps the 6 CUDA entries and adds the 5 CUDA fused ones. **With fusion on, the CUDA engine's statevector digest equals the CPU engine's (`17358dda1e64619a`) and so do the counts (`9babf4d634cd516f`)**, and the disk tier's fused counts and expectation digests equal the in-memory engine's (`9babf4d634cd516f`, `624344e0d00db372`): the three identities of 17.2 hold on the fused path, as the tests require. The fused statevector differs from the unfused one (`fdd860ae09c0ae37`), the rounding of 17.5.
+
+**Criterion 4, the speed-up** (the probe's `run` rows: the brickwork family through `menos::run`, `execute_seconds` with `fuse_gates` on and off, median of 3 after a warm-up, same run):
+
+**Linux (WSL, GCC 15.2, `build/bench`, `8715d5d`, 2026-11-09 11:19–11:21 UTC, mains power, load average 1.29 at the start)**
+
+| n | threads | gates | fused blocks | absorbed | unfused s (min..max) | fused s (min..max) | speed-up | max abs diff |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 1 | 240 | 66 | 158 | 0.023 (0.023..0.023) | 0.016 (0.016..0.017) | 1.43 | 2.2e-17 |
+| 16 | 22 | 240 | 66 | 158 | 0.021 (0.020..0.021) | 0.015 (0.015..0.015) | 1.33 | 2.2e-17 |
+| 20 | 1 | 300 | 86 | 194 | 0.510 (0.498..0.511) | 0.351 (0.350..0.360) | 1.45 | 5.8e-18 |
+| 20 | 22 | 300 | 86 | 194 | 0.159 (0.158..0.165) | 0.074 (0.072..0.082) | 2.14 | 5.8e-18 |
+| 22 | 22 | 330 | 93 | 215 | 0.710 (0.692..0.711) | 0.335 (0.316..0.337) | 2.12 | 3.4e-18 |
+| 24 | 22 | 360 | 104 | 234 | 3.206 (3.187..3.293) | 1.296 (1.281..1.300) | 2.47 | 1.8e-18 |
+
+**Windows (MSVC 14.50, `build/windows-bench`, `8715d5d`, 10:49–10:54 UTC, mains power)**
+
+| n | threads | gates | fused blocks | absorbed | unfused s (min..max) | fused s (min..max) | speed-up | max abs diff |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 1 | 240 | 68 | 156 | 0.127 (0.123..0.135) | 0.062 (0.056..0.068) | 2.06 | 2.0e-17 |
+| 16 | 22 | 240 | 68 | 156 | 0.133 (0.128..0.139) | 0.063 (0.044..0.080) | 2.13 | 2.0e-17 |
+| 20 | 1 | 300 | 84 | 196 | 2.402 (2.288..2.502) | 1.194 (1.095..1.195) | 2.01 | 7.0e-18 |
+| 20 | 22 | 300 | 84 | 196 | 0.357 (0.320..0.367) | 0.159 (0.157..0.164) | 2.25 | 7.0e-18 |
+| 22 | 22 | 330 | 96 | 212 | 1.112 (1.070..1.114) | 0.505 (0.504..0.553) | 2.20 | 3.2e-18 |
+| 24 | 22 | 360 | 104 | 232 | 4.577 (4.504..4.661) | 2.053 (1.979..2.079) | 2.23 | 1.7e-18 |
+
+The raw records are `docs/benchmarks/phase-24/fusion-gate/{linux,windows}/`, the full probe (the step-1 sections re-run on the same build, then the `run` rows). On every thread at 20–24 qubits the fused engine is **2.12–2.47× (Linux) and 2.20–2.25× (Windows)** the unfused one, above the 2.0× the owner set from 17.5; on one thread it is 1.43–1.45× on Linux (whose 1-qubit kernel is vectorised, so a merged 1-qubit pass saved less) and 2.01–2.06× on Windows. The brickwork circuits fuse to about 29% of their gate count (for example 360 gates into 104 fused blocks and 22 singleton passes at 24 qubits).
+
+**Criterion 1, the rounding:** the largest amplitude difference between the fused and unfused statevectors in those runs is 2.2 × 10⁻¹⁷, inside `common::kDefaultAbsTol` by five orders of magnitude; the accuracy benchmark's dense workloads and the Phase 21 fixtures agree with the unfused run within tolerance by the tests above.
+
+**Criterion 3, fusion off:** `BackendRequestTest.AnUnsetBackendLeavesTheReportByteIdentical` and the golden tests with `fuse_gates=false` print the report of before this item; the Phase 21 fixtures with fusion off keep their bytes.
+
+**Criterion 5:** `explain()` prints the outcome on the region line (tests above) and `DenseEngineTest.FusedBellIsOnePassAndChargesThePlanAndTheBlock` equates the estimate with the plan's sum.
+
+**Criterion 6:** the one changed winner is listed above with its reason.
+
+**Criterion 7:** recorded in 17.8.

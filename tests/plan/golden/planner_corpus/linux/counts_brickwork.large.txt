@@ -1,12 +1,12 @@
 MENOS EXECUTION REPORT
 circuit    qubits=24 clbits=24 operations=1444 depth=81 global_phase=0
 light_cone qubits 24->24 operations 1444->1444
-candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=268687592 work_units=63115886592
+candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=268701392 work_units=31306285056
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
 candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=2733821840 work_units=33260242468888
 strategy   direct_dense (exact)
-region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23] engine=dense backend=cpu
-estimated  state_bytes=268687592 work_units=63115886592
+region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23] engine=dense backend=cpu fusion=containment blocks=449 absorbed=948
+estimated  state_bytes=268701392 work_units=31306285056
 --- plan fields not printed by explain() ---
-region 0: operations=1444 observable_terms=0 state_bytes=268687592 work_units=63115886592 global_to_local_size=24
+region 0: operations=1444 observable_terms=0 state_bytes=268701392 work_units=31306285056 global_to_local_size=24
 reduced_circuit: qubits=24 operations=1444

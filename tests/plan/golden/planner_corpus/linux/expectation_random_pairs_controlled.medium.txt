@@ -1,7 +1,7 @@
 MENOS EXECUTION REPORT
 circuit    qubits=32 clbits=0 operations=960 depth=77 global_phase=0
 light_cone qubits 32->32 operations 960->960
-candidate 0strategy=direct_dense feasible=false winner=false reason="direct dense simulation requires 68719478024 bytes, budget is 8589934592 bytes; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read"
+candidate 0strategy=direct_dense feasible=false winner=false reason="direct dense simulation requires 68719489504 bytes, budget is 8589934592 bytes; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read"
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (rx) is not a Clifford gate"
 candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
 candidate 3strategy=direct_mps feasible=true winner=true peak_bytes=5089884 work_units=1882751008

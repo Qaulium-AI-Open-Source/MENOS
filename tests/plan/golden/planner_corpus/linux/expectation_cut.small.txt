@@ -1,7 +1,7 @@
 MENOS EXECUTION REPORT
 circuit    qubits=8 clbits=0 operations=67 depth=12 global_phase=0
 light_cone qubits 8->8 operations 67->67
-candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=4632 work_units=44544
+candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=6004 work_units=22016
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
 candidate 2strategy=direct_pauli feasible=false winner=false reason="direct pauli simulation requires 200410183417989096 bytes, budget is 8589934592 bytes"
 candidate 3strategy=direct_mps feasible=true winner=true peak_bytes=24048 work_units=11784

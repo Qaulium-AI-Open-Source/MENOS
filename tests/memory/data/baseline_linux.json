@@ -256,5 +256,107 @@
     "counts": "b022f01c32d9fafe",
     "statevector": "-",
     "expectation": "ffea56f4226a2691"
+  },
+  "dense_statevector_fused": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "17358dda1e64619a",
+    "expectation": "-"
+  },
+  "dense_counts_fused": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_expectation_fused": {
+    "strategy": "dense",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "624344e0d00db372"
+  },
+  "dense_all_fused": {
+    "strategy": "dense",
+    "counts": "9babf4d634cd516f",
+    "statevector": "17358dda1e64619a",
+    "expectation": "624344e0d00db372"
+  },
+  "dense_region_counts_fused": {
+    "strategy": "dense",
+    "counts": "2b3789cb8ffddf17",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_disk_counts_fused": {
+    "strategy": "dense_disk",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_disk_expectation_fused": {
+    "strategy": "dense_disk",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "624344e0d00db372"
+  },
+  "run_dense_statevector_fused": {
+    "strategy": "DirectDense",
+    "counts": "-",
+    "statevector": "17358dda1e64619a",
+    "expectation": "-"
+  },
+  "run_factorized_statevector_fused": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "809b5581c7df1b8c",
+    "expectation": "-"
+  },
+  "run_factorized_counts_fused": {
+    "strategy": "Factorized",
+    "counts": "02cc67efd428ef7a",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "run_factorized_expectation_fused": {
+    "strategy": "Factorized",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "383e40d3e06b04e6"
+  },
+  "run_cut_expectation_fused": {
+    "strategy": "CutAndRecombine",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "259e9c8c628fb287"
+  },
+  "dense_cuda_statevector_fused": {
+    "strategy": "dense_cuda",
+    "counts": "-",
+    "statevector": "17358dda1e64619a",
+    "expectation": "-"
+  },
+  "dense_cuda_counts_fused": {
+    "strategy": "dense_cuda",
+    "counts": "9babf4d634cd516f",
+    "statevector": "-",
+    "expectation": "-"
+  },
+  "dense_cuda_expectation_fused": {
+    "strategy": "dense_cuda",
+    "counts": "-",
+    "statevector": "-",
+    "expectation": "26d215f01a591bb9"
+  },
+  "dense_cuda_all_fused": {
+    "strategy": "dense_cuda",
+    "counts": "9babf4d634cd516f",
+    "statevector": "17358dda1e64619a",
+    "expectation": "26d215f01a591bb9"
+  },
+  "dense_cuda_region_counts_fused": {
+    "strategy": "dense_cuda",
+    "counts": "2b3789cb8ffddf17",
+    "statevector": "-",
+    "expectation": "-"
   }
 }
