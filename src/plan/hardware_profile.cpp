@@ -34,6 +34,7 @@
 #include "engines/dense_tiered/file_backing_store.h"
 #include "menos/circuit.h"
 #include "menos/simulation_engine.h"
+#include "plan/time_model.h"
 
 #ifdef MENOS_ENABLE_CUDA
 #include "kernels/cuda/device_info.h"
@@ -253,6 +254,9 @@ HardwareProfile calibrate_hardware() {
     profile.memory_bandwidth_bytes_per_second = measure_memory_bandwidth();
     profile.work_units_per_second =
         measure_work_units_per_second(kThroughputQubits, common::default_thread_count());
+    // Every CPU engine timed in its own unit (Phase 24, docs/adr/0028
+    // section 20).
+    profile.seconds_per_time_count = calibrate_time_model();
 #ifdef MENOS_ENABLE_CUDA
     // Only measured when the build has CUDA support AND a device answers. A
     // CUDA-enabled binary on a machine without a GPU leaves every field zero

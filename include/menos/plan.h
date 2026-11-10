@@ -290,6 +290,10 @@ struct Region {
     // (Phase 24, docs/adr/0028 section 16.4), so a replan can report each
     // region's prediction beside its observation. -1 otherwise.
     double estimated_seconds = -1.0;
+    // The region's time terms, from its engine's estimate (Phase 24,
+    // docs/adr/0028 section 20), which estimated_seconds is computed from
+    // under a calibrated time model.
+    TimeTerms time = {};
 };
 
 // What a CutAndRecombine plan did, for explain() (docs/adr/0013 Phase 9).

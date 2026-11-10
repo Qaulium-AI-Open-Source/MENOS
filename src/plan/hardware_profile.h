@@ -1,7 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
+
+#include "menos/plan.h"
 
 namespace menos::plan {
 
@@ -99,6 +102,17 @@ struct HardwareProfile {
     // when a job could reach the disk tier. Zero means unmeasured, and the
     // planner then uses work_units_per_second.
     double dense_threaded_work_units_per_second = 0.0;
+
+    // The calibrated time model (Phase 24, docs/adr/0028 section 20): for
+    // each CPU engine, the seconds each count of its time components costs on
+    // this machine, measured by calibrate_time_model() (plan/time_model.h)
+    // running that engine on small fixed circuits. A candidate's CPU runtime
+    // is the sum of its TimeTerms counts times these figures, floored by the
+    // bandwidth term above. An engine whose figures are all zero is
+    // uncalibrated: a candidate using it is priced at work_units_per_second,
+    // as is every candidate of a profile with no time model at all -- a
+    // hand-built profile in a test plans and reports exactly as before.
+    std::array<std::array<double, kTimeComponents>, kTimeEngineCount> seconds_per_time_count{};
 };
 
 // The space the disk tier leaves untouched on its volume (docs/adr/0027

@@ -283,6 +283,12 @@ Plan plan_job(const JobSpec& job_spec,
     const double work_units_per_second = hardware_profile.work_units_per_second;
     const double bandwidth_bytes_per_second = hardware_profile.memory_bandwidth_bytes_per_second;
     const bool calibrated = work_units_per_second > 0.0 && bandwidth_bytes_per_second > 0.0;
+    // The ranking rule (Phase 24 item 4, owner decision (b), docs/adr/0028
+    // section 21): a job with a time budget, which is planned against the
+    // calibrated profile, chooses the feasible candidate with the fewest
+    // predicted seconds; every other job chooses by work units, as before, so
+    // its plan never depends on a calibration that varies between processes.
+    const bool rank_by_seconds = job_spec.time_budget_seconds.has_value() && calibrated;
     common::ensure(calibrated || !job_spec.time_budget_seconds.has_value(),
                    "plan_job: a time_budget_seconds was given but this HardwareProfile carries "
                    "no calibrated throughput or bandwidth, so no candidate's runtime can be "
@@ -304,11 +310,41 @@ Plan plan_job(const JobSpec& job_spec,
     // written once -- deliberately the weakest claim that is unconditionally
     // true for every engine, rather than an engine-specific traffic model this
     // phase has no measurement to justify (docs/adr/0014).
-    const auto cpu_seconds = [&](std::uint64_t work_units, std::uint64_t peak_bytes) {
-        const double work_seconds = static_cast<double>(work_units) / work_units_per_second;
-        const double traffic_seconds = static_cast<double>(peak_bytes) / bandwidth_bytes_per_second;
-        return std::max(work_seconds, traffic_seconds);
-    };
+    //
+    // Under a calibrated time model (Phase 24, docs/adr/0028 section 20) the
+    // work term is the candidate's own TimeTerms priced at its engines'
+    // measured figures instead of work units at the dense rate: every engine
+    // is then timed in its own unit, so a faster dense kernel can no longer
+    // make another engine look slower or faster than it is. A candidate that
+    // uses an engine the model has no figures for keeps the work-unit term.
+    const auto cpu_seconds =
+        [&](std::uint64_t work_units, std::uint64_t peak_bytes, const TimeTerms& time) {
+            const double traffic_seconds =
+                static_cast<double>(peak_bytes) / bandwidth_bytes_per_second;
+            bool any_term = false;
+            bool covered = true;
+            double modelled = 0.0;
+            for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
+                const auto& counts = time.counts[e];
+                if (counts[0] == 0.0 && counts[1] == 0.0 && counts[2] == 0.0) {
+                    continue;
+                }
+                any_term = true;
+                const auto& rates = hardware_profile.seconds_per_time_count[e];
+                if (rates[0] == 0.0 && rates[1] == 0.0 && rates[2] == 0.0) {
+                    covered = false;
+                    break;
+                }
+                for (std::size_t c = 0; c < kTimeComponents; ++c) {
+                    modelled += counts[c] * rates[c];
+                }
+            }
+            if (any_term && covered) {
+                return std::max(modelled, traffic_seconds);
+            }
+            const double work_seconds = static_cast<double>(work_units) / work_units_per_second;
+            return std::max(work_seconds, traffic_seconds);
+        };
 
     // Wall-clock seconds for running a candidate on the CUDA device, end to
     // end. Every term is a separately measured rate, and the launch term is
@@ -422,7 +458,9 @@ Plan plan_job(const JobSpec& job_spec,
             double seconds =
                 candidate.backend == Backend::Cuda
                     ? cuda_seconds(candidate.estimated_work_units, candidate.device)
-                    : cpu_seconds(candidate.estimated_work_units, candidate.estimated_peak_bytes);
+                    : cpu_seconds(candidate.estimated_work_units,
+                                  candidate.estimated_peak_bytes,
+                                  candidate.time);
             if (candidate.strategy == Strategy::Factorized &&
                 factorized_mixed_seconds.has_value()) {
                 seconds = *factorized_mixed_seconds;
@@ -599,9 +637,13 @@ Plan plan_job(const JobSpec& job_spec,
     // A forced disk tier (Phase 23) is the other later step: it refuses every
     // candidate but the dense one after enumeration, each with the reason
     // explain() prints, so under it every candidate is costed in full too.
+    //
+    // A job ranked by seconds (item 4, below) is costed in full too: the bound
+    // is a work-unit figure, and under that rule a candidate above it in work
+    // units can still be the fastest.
     const bool branch_and_bound =
         job_spec.backend != Backend::Cuda && !disk_forced &&
-        !(job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated);
+        !(job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated) && !rank_by_seconds;
     const auto incumbent_work_units = [&]() {
         std::uint64_t bound = std::numeric_limits<std::uint64_t>::max();
         if (branch_and_bound) {
@@ -1066,7 +1108,8 @@ Plan plan_job(const JobSpec& job_spec,
                                             Backend::Cpu,
                                             Tier::InMemory,
                                             cpu_seconds(dense_candidate.estimated_work_units,
-                                                        dense_candidate.estimated_peak_bytes))
+                                                        dense_candidate.estimated_peak_bytes,
+                                                        dense_candidate.time))
                         .seconds;
                 const double on_cuda =
                     raise_to_observed_floor(
@@ -1130,7 +1173,8 @@ Plan plan_job(const JobSpec& job_spec,
                 RegionKey cpu_key = region_key(region);
                 cpu_key.backend = Backend::Cpu;
                 const double on_cpu = std::max(
-                    timed ? cpu_seconds(region.estimated_work_units, region.estimated_state_bytes)
+                    timed ? cpu_seconds(
+                              region.estimated_work_units, region.estimated_state_bytes, region.time)
                           : 0.0,
                     observations.region_floor_for(cpu_key).value_or(0.0));
                 if (region.engine != Engine::Dense) {
@@ -1211,15 +1255,20 @@ Plan plan_job(const JobSpec& job_spec,
         apply_time_budget(candidate);
     }
 
-    // Selection: reject infeasible candidates; among feasible ones pick
-    // lowest work units; ties go to the earlier-enumerated candidate.
+    // Selection: reject infeasible candidates; among feasible ones pick the
+    // fewest predicted seconds when the job is ranked by seconds (item 4),
+    // otherwise the lowest work units; ties go to the earlier-enumerated
+    // candidate.
+    const auto cheaper = [&](const CandidateSummary& a, const CandidateSummary& b) {
+        return rank_by_seconds ? a.estimated_seconds < b.estimated_seconds
+                               : a.estimated_work_units < b.estimated_work_units;
+    };
     std::optional<std::size_t> winner;
     for (std::size_t i = 0; i < candidates.size(); ++i) {
         if (!candidates[i].feasible) {
             continue;
         }
-        if (!winner.has_value() ||
-            candidates[i].estimated_work_units < candidates[*winner].estimated_work_units) {
+        if (!winner.has_value() || cheaper(candidates[i], candidates[*winner])) {
             winner = i;
         }
     }
@@ -1468,7 +1517,9 @@ Plan plan_job(const JobSpec& job_spec,
                         cuda_seconds(on_device.estimated_work_units, on_device.device);
                 } else {
                     region.estimated_seconds =
-                        cpu_seconds(region.estimated_work_units, region.estimated_state_bytes);
+                        cpu_seconds(region.estimated_work_units,
+                                    region.estimated_state_bytes,
+                                    region.time);
                 }
             }
         }

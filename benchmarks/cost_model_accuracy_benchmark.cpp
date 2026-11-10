@@ -24,6 +24,7 @@
 // A report, not a unit test (CLAUDE.md: benchmarks are not tests).
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -656,7 +657,19 @@ void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
 int main(int argc, char** argv) {
     const std::string only = argc > 1 ? std::string(argv[1]) : std::string();
     std::cerr << menos_benchmark::describe_environment() << "\n";
+    const auto calibration_start = std::chrono::steady_clock::now();
     const plan::HardwareProfile& profile = plan::calibrated_hardware_profile();
+    const double calibration_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - calibration_start)
+            .count();
+    std::cerr << "calibration_seconds=" << calibration_seconds << "\n";
+    for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
+        std::cerr << "time_model engine=" << e;
+        for (const double v : profile.seconds_per_time_count[e]) {
+            std::cerr << ' ' << v;
+        }
+        std::cerr << "\n";
+    }
     std::cerr << "calibrated: work_units_per_second=" << profile.work_units_per_second
               << " memory_bandwidth_bytes_per_second=" << profile.memory_bandwidth_bytes_per_second
               << " cuda_device_work_units_per_second=" << profile.cuda_device_work_units_per_second

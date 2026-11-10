@@ -122,6 +122,7 @@ Region build_direct_region(const Circuit& circuit,
         .estimated_state_bytes = estimate.estimated_peak_bytes,
         .estimated_work_units = estimate.estimated_work_units,
         .fusion = estimate.fusion,
+        .time = estimate.time,
     };
 }
 
@@ -212,6 +213,7 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
         region.estimated_state_bytes = choice.estimate.estimated_peak_bytes;
         region.estimated_work_units = choice.estimate.estimated_work_units;
         region.fusion = choice.estimate.fusion;
+        region.time = choice.estimate.time;
     }
 
     return regions;
