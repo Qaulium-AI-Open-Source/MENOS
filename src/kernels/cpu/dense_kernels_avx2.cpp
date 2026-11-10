@@ -36,7 +36,7 @@ namespace {
 
 // [x0, x1] two complex values; m broadcast as (mr, mi). Per lane cmul(m, x).
 inline __m256d cmul2(__m256d mr, __m256d mi, __m256d x) {
-    const __m256d t1 = _mm256_mul_pd(mr, x);                         // mr*xr, mr*xi
+    const __m256d t1 = _mm256_mul_pd(mr, x);                          // mr*xr, mr*xi
     const __m256d t2 = _mm256_mul_pd(mi, _mm256_permute_pd(x, 0x5));  // mi*xi, mi*xr
     return _mm256_addsub_pd(t1, t2);  // mr*xr - mi*xi, mr*xi + mi*xr
 }
@@ -103,8 +103,10 @@ inline Gate1 gate1(const double* m) {
 // (l, h) <- m * (a0, a1) for the two pairs in a0 = [lo values], a1 = [hi values].
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): inputs, then the two outputs.
 inline void pair2(const Gate1& g, __m256d a0, __m256d a1, __m256d& l, __m256d& h) {
-    l = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m00.r, g.m00.i, a0)), cmul2(g.m01.r, g.m01.i, a1));
-    h = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m10.r, g.m10.i, a0)), cmul2(g.m11.r, g.m11.i, a1));
+    l = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m00.r, g.m00.i, a0)),
+                      cmul2(g.m01.r, g.m01.i, a1));
+    h = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m10.r, g.m10.i, a0)),
+                      cmul2(g.m11.r, g.m11.i, a1));
 }
 
 // One pair, 128-bit: a run's odd last pair.
@@ -194,7 +196,11 @@ void avx2_pair_blocks(double* amps, std::size_t total, std::uint32_t q, const do
             for (std::size_t base = 0; base < total; base += 4) {
                 __m256d l;
                 __m256d h;
-                pair2(g, _mm256_loadu_pd(amps + 2 * base), _mm256_loadu_pd(amps + 2 * base + 4), l, h);
+                pair2(g,
+                      _mm256_loadu_pd(amps + 2 * base),
+                      _mm256_loadu_pd(amps + 2 * base + 4),
+                      l,
+                      h);
                 _mm256_storeu_pd(amps + 2 * base, l);
                 _mm256_storeu_pd(amps + 2 * base + 4, h);
             }
@@ -275,8 +281,8 @@ void avx2_scale_elements(double* amps,
             const std::size_t l1 = high | low_table[(i + 1) & 7];
             const __m256d e = _mm256_insertf128_pd(
                 _mm256_castpd128_pd256(_mm_loadu_pd(d + 2 * l0)), _mm_loadu_pd(d + 2 * l1), 1);
-            const __m256d er = _mm256_movedup_pd(e);           // d0.r, d0.r, d1.r, d1.r
-            const __m256d ei = _mm256_permute_pd(e, 0xF);      // d0.i, d0.i, d1.i, d1.i
+            const __m256d er = _mm256_movedup_pd(e);       // d0.r, d0.r, d1.r, d1.r
+            const __m256d ei = _mm256_permute_pd(e, 0xF);  // d0.i, d0.i, d1.i, d1.i
             const __m256d x = _mm256_loadu_pd(amps + 2 * i);
             _mm256_storeu_pd(amps + 2 * i, _mm256_add_pd(zero, cmul2(er, ei, x)));
         }
@@ -295,10 +301,7 @@ inline std::size_t insert_zero_bit(std::size_t i, std::uint32_t pos) {
 }
 
 // One 2-qubit group at base, 128-bit: the tail and odd-start case.
-inline void two_qubit_one(double* amps,
-                          std::size_t base,
-                          const std::size_t* off,
-                          const double* m) {
+inline void two_qubit_one(double* amps, std::size_t base, const std::size_t* off, const double* m) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     __m128d a[4];
     for (std::size_t in = 0; in < 4; ++in) {
