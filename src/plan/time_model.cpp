@@ -66,6 +66,32 @@ Observable mixed_terms(std::uint32_t n, std::uint32_t t) {
     return o;
 }
 
+// SplitMix64: a reproducible bit stream, the same on every platform.
+std::uint64_t mix(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+// t Pauli strings with independent random X and Z bits on every qubit: the
+// dense supports of a generic observable.
+Observable random_terms(std::uint32_t n, std::uint32_t t) {
+    const std::size_t words = (static_cast<std::size_t>(n) + 63) / 64;
+    Observable o;
+    for (std::uint32_t i = 0; i < t; ++i) {
+        PauliString p{n, std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0)};
+        for (std::size_t w = 0; w < words; ++w) {
+            const std::uint32_t bits = std::min<std::uint32_t>(64, n - static_cast<std::uint32_t>(64 * w));
+            const std::uint64_t mask = bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
+            p.x_words[w] = mix((2 * i * words) + w) & mask;
+            p.z_words[w] = mix(((2 * i + 1) * words) + w) & mask;
+        }
+        o.terms.emplace_back(std::move(p), std::complex<double>{1.0, 0.0});
+    }
+    return o;
+}
+
 Observable all_z(std::uint32_t n) {
     Observable o;
     for (std::uint32_t q = 0; q < n; ++q) {
@@ -135,6 +161,23 @@ Circuit paired_gates(std::uint32_t n, std::uint32_t gates) {
         const std::uint32_t q = 2 * ((g * 3) % (n / 2));
         c.append(Opcode::RY, {q}, {0.2 + (0.01 * static_cast<double>(g % 50))});
         c.append(Opcode::CX, {q, q + 1});
+    }
+    return c;
+}
+
+// Trotter steps of a transverse-field Ising chain: RZZ on the even then the
+// odd bonds, then RX on every qubit -- the shape of a physics workload.
+Circuit ising_trotter(std::uint32_t n, std::uint32_t steps) {
+    Circuit c(n, n);
+    for (std::uint32_t s = 0; s < steps; ++s) {
+        for (std::uint32_t parity = 0; parity < 2; ++parity) {
+            for (std::uint32_t q = parity; q + 1 < n; q += 2) {
+                c.append(Opcode::RZZ, {q, q + 1}, {0.2});
+            }
+        }
+        for (std::uint32_t q = 0; q < n; ++q) {
+            c.append(Opcode::RX, {q}, {0.3});
+        }
     }
     return c;
 }
@@ -214,9 +257,9 @@ std::vector<Case> cases_for(Engine engine) {
             // requires (a Clifford one goes to the stabilizer engine); placed
             // first, on |0>-side terms it splits nothing.
             cases.push_back(expectation_case(with_rz(clifford(8, 30000)), z_on(8, 0)));
-            cases.push_back(expectation_case(with_rz(clifford(40, 300)), mixed_terms(40, 300)));
+            cases.push_back(expectation_case(with_rz(clifford(40, 300)), random_terms(40, 300)));
             cases.push_back(
-                expectation_case(with_rz(clifford(256, 300)), mixed_terms(256, 300)));
+                expectation_case(with_rz(clifford(256, 300)), random_terms(256, 300)));
             break;
         case Engine::MPS:
             // Bonds at most 2: the per-update cost. Bonds up to 64: chi^3.
@@ -224,6 +267,7 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(paired_gates(16, 2000), 1));
             cases.push_back(counts_case(ry_cx_layers(12, 6), 1));
             cases.push_back(counts_case(then_one_qubit_gates(ry_cx_layers(10, 4), 3000), 1));
+            cases.push_back(counts_case(ising_trotter(24, 4), 1));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));
