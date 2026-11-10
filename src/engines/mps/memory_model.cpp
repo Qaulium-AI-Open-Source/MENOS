@@ -249,12 +249,9 @@ public:
     [[nodiscard]] double elements() const {
         return elements_;
     }
-    // An expectation term's or a shot's work, counted by model_execution.
+    // An expectation term's work, counted by model_execution.
     void add_flops(double f) {
         flops_ += f;
-    }
-    void add_elements(double e) {
-        elements_ += e;
     }
     std::uint64_t splits_ = 0;
 };
@@ -407,7 +404,7 @@ MemoryModel model_execution(const EngineEstimateRequest& request) {
                 per_shot += 2.0 * static_cast<double>(replay.left(i)) *
                             static_cast<double>(replay.right(i));
             }
-            replay.add_elements(static_cast<double>(request.shots) * per_shot);
+            model.sampled_elements = static_cast<double>(request.shots) * per_shot;
             // Per shot: the running left vector (with its old buffer while it
             // grows), each site's two candidate vectors, the outcome bits and
             // the drawn BitString.

@@ -511,7 +511,7 @@ std::string format_time_terms(const TimeTerms& terms) {
     std::string out;
     for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
         const auto& c = terms.counts[e];
-        if (c[0] == 0.0 && c[1] == 0.0 && c[2] == 0.0) {
+        if (std::all_of(c.begin(), c.end(), [](double v) { return v == 0.0; })) {
             continue;
         }
         if (!out.empty()) {

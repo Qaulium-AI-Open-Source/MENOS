@@ -37,11 +37,12 @@ struct MemoryModel {
     // calibrated time model (Phase 24, docs/adr/0028 section 20): the SVDs
     // (splits and centre shifts); their flops, m * n * min(m, n) for an
     // m x n matrix, plus each expectation term's environment contractions;
-    // and the tensor elements built or touched (theta, new sites, 1-qubit
-    // gates, each shot's per-site vectors).
+    // the tensor elements built or touched (theta, new sites, 1-qubit gates);
+    // and the elements each shot's per-site vectors touch, over all shots.
     double svd_count = 0.0;
     double linalg_flops = 0.0;
     double elements = 0.0;
+    double sampled_elements = 0.0;
 };
 
 // Throws common::ResourceExceeded when a figure overflows 64 bits.

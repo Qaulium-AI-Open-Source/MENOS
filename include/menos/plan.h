@@ -148,7 +148,7 @@ struct DeviceCost {
 // never compared exactly. All zero for a candidate on a device or a tier
 // other than InMemory, which are priced by their own measured rates.
 inline constexpr std::size_t kTimeEngineCount = 7;  // the values of Engine
-inline constexpr std::size_t kTimeComponents = 3;
+inline constexpr std::size_t kTimeComponents = 4;
 struct TimeTerms {
     std::array<std::array<double, kTimeComponents>, kTimeEngineCount> counts{};
     // The bytes the run is certain to write, for the planner's bandwidth

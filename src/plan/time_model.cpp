@@ -268,6 +268,7 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(ry_cx_layers(12, 6), 1));
             cases.push_back(counts_case(then_one_qubit_gates(ry_cx_layers(10, 4), 3000), 1));
             cases.push_back(counts_case(ising_trotter(12, 3), 1));
+            cases.push_back(counts_case(ry_cx_layers(10, 3), 20000));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));
@@ -415,7 +416,7 @@ std::array<double, kTimeComponents> fit_seconds_per_count(const std::vector<Coun
     }
     // Non-negative least squares by enumerating the column subsets: the
     // best fit with every coefficient non-negative is the least-squares fit
-    // on one of them. Three columns at most, so seven subsets.
+    // on one of them. kTimeComponents columns at most, so at most 15 subsets.
     std::array<double, kTimeComponents> best{};
     double best_residual = -1.0;
     for (std::size_t mask = 1; mask < (std::size_t{1} << live.size()); ++mask) {

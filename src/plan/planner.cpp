@@ -325,12 +325,12 @@ Plan plan_job(const JobSpec& job_spec,
             double modelled = 0.0;
             for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
                 const auto& counts = time.counts[e];
-                if (counts[0] == 0.0 && counts[1] == 0.0 && counts[2] == 0.0) {
+                if (std::all_of(counts.begin(), counts.end(), [](double v) { return v == 0.0; })) {
                     continue;
                 }
                 any_term = true;
                 const auto& rates = hardware_profile.seconds_per_time_count[e];
-                if (rates[0] == 0.0 && rates[1] == 0.0 && rates[2] == 0.0) {
+                if (std::all_of(rates.begin(), rates.end(), [](double v) { return v == 0.0; })) {
                     covered = false;
                     break;
                 }
