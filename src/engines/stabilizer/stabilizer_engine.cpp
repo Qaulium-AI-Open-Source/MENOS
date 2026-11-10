@@ -267,8 +267,28 @@ CostEstimate StabilizerEngine::estimate(const EngineEstimateRequest& request) co
                 static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, elimination));
         }
-        return CostEstimate{
+        CostEstimate estimate{
             /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the gates,
+        // each with a fixed dispatch cost; component 1 the tableau updates,
+        // n rows per gate; component 2 the word operations of the
+        // eliminations and of sampling, n words per shot.
+        const double n = static_cast<double>(num_qubits);
+        const double w = static_cast<double>(words);
+        const double gates = static_cast<double>(num_gates);
+        double word_ops = 0.0;
+        const double one_elimination = 2.0 * n * n * w;
+        if (request.want_counts) {
+            word_ops += one_elimination + (static_cast<double>(request.shots) * n * w);
+        }
+        if (request.want_expectation) {
+            word_ops += static_cast<double>(request.observable->terms.size()) * one_elimination;
+        }
+        auto& stabilizer = estimate.time.counts[static_cast<std::size_t>(Engine::Stabilizer)];
+        stabilizer[0] = gates;
+        stabilizer[1] = gates * n;
+        stabilizer[2] = word_ops;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

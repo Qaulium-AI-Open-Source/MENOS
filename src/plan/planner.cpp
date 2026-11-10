@@ -531,6 +531,7 @@ Plan plan_job(const JobSpec& job_spec,
         .estimated_peak_bytes = direct_dense_estimate.estimated_peak_bytes,
         .estimated_work_units = direct_dense_estimate.estimated_work_units,
         .is_winner = false,
+        .time = direct_dense_estimate.time,
     });
 
     // The disk tier (Phase 23, docs/adr/0027 section 3.5, owner Q5): reach
@@ -639,6 +640,7 @@ Plan plan_job(const JobSpec& job_spec,
         .estimated_peak_bytes = direct_stabilizer_estimate.estimated_peak_bytes,
         .estimated_work_units = direct_stabilizer_estimate.estimated_work_units,
         .is_winner = false,
+        .time = direct_stabilizer_estimate.time,
     });
 
     // Candidate: DirectPauli, only enumerated for an expectation request
@@ -669,6 +671,7 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_peak_bytes = direct_pauli_estimate->estimated_peak_bytes,
             .estimated_work_units = direct_pauli_estimate->estimated_work_units,
             .is_winner = false,
+            .time = direct_pauli_estimate->time,
         });
     }
 
@@ -696,6 +699,7 @@ Plan plan_job(const JobSpec& job_spec,
         .estimated_peak_bytes = direct_mps_estimate.estimated_peak_bytes,
         .estimated_work_units = direct_mps_estimate.estimated_work_units,
         .is_winner = false,
+        .time = direct_mps_estimate.time,
     });
 
     // Candidate: DirectDensityMatrix, only for a noisy job (Phase 12,
@@ -724,6 +728,7 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_peak_bytes = direct_density_matrix_estimate->estimated_peak_bytes,
             .estimated_work_units = direct_density_matrix_estimate->estimated_work_units,
             .is_winner = false,
+            .time = direct_density_matrix_estimate->time,
         });
     }
 
@@ -782,6 +787,7 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_peak_bytes = direct_trajectory_estimate->estimated_peak_bytes,
             .estimated_work_units = direct_trajectory_estimate->estimated_work_units,
             .is_winner = false,
+            .time = direct_trajectory_estimate->time,
         });
     }
 
@@ -810,6 +816,7 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_peak_bytes = factorized_estimate->estimated_peak_bytes,
             .estimated_work_units = factorized_estimate->estimated_work_units,
             .is_winner = false,
+            .time = factorized_estimate->time,
         });
         // Only a replan has observations, so a job planned once never builds
         // these regions twice (docs/adr/0028 section 16.4).
@@ -872,6 +879,7 @@ Plan plan_job(const JobSpec& job_spec,
             .estimated_peak_bytes = direct_tensor_network_estimate->estimated_peak_bytes,
             .estimated_work_units = direct_tensor_network_estimate->estimated_work_units,
             .is_winner = false,
+            .time = direct_tensor_network_estimate->time,
         });
     }
 
@@ -908,6 +916,7 @@ Plan plan_job(const JobSpec& job_spec,
                 .estimated_peak_bytes = cut_estimate->estimated_peak_bytes,
                 .estimated_work_units = cut_estimate->estimated_work_units,
                 .is_winner = false,
+                .time = cut_estimate->time,
             });
         }
     }

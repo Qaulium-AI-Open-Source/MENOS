@@ -369,11 +369,13 @@ CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) co
         const std::uint32_t n = request.num_qubits;
         const std::uint64_t states = checked_pow2(n);
         std::uint64_t per_trajectory = states;  // reset
+        double passes_per_trajectory = 1.0;     // for the time model
         for (const Operation& op : *request.operations) {
             const std::size_t k = operand_count(op);
             if (k == 0) {
                 continue;  // MeasureOp
             }
+            passes_per_trajectory += std::holds_alternative<ChannelOp>(op) ? 2.0 : 1.0;
             const std::uint64_t pass = checked_pow2(n + static_cast<std::uint32_t>(k));
             per_trajectory = checked_add(per_trajectory, pass);
             if (std::holds_alternative<ChannelOp>(op)) {
@@ -389,8 +391,17 @@ CostEstimate TrajectoryEngine::estimate(const EngineEstimateRequest& request) co
             // One cumulative pass per shot-producing trajectory; shots <= N.
             work = checked_add(work, checked_mul(request.trajectories, states));
         }
-        return CostEstimate{
+        CostEstimate estimate{
             /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the
+        // passes of every trajectory, each with a fixed cost (a channel's
+        // draw and its pass); component 1 the work above; component 2 the
+        // trajectories, each with its own state set-up.
+        auto& trajectory = estimate.time.counts[static_cast<std::size_t>(Engine::Trajectory)];
+        trajectory[0] = static_cast<double>(request.trajectories) * passes_per_trajectory;
+        trajectory[1] = static_cast<double>(work);
+        trajectory[2] = static_cast<double>(request.trajectories);
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

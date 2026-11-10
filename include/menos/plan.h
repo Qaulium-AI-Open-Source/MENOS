@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -130,6 +132,27 @@ struct DeviceCost {
     std::uint64_t kernel_launches = 0;
 };
 
+// What a candidate's runtime is made of, for the calibrated time model
+// (Phase 24, docs/adr/0028 section 20). For each engine the candidate runs,
+// up to kTimeComponents structural counts -- such as gates, gate updates or
+// amplitude passes -- each one priced at its own rate, which
+// plan::calibrated_hardware_profile measures on this machine by running that
+// engine. Each engine's estimate() documents what its components count. A
+// composite candidate (Factorized, CutAndRecombine) adds the terms of the
+// regions and fragments it runs, each multiplied by how many times it runs.
+//
+// Kept apart from estimated_work_units, which stays the ranking unit for a
+// job with no time budget, so that recalibrating time never changes such a
+// job's plan (owner decision, docs/adr/0028 section 20). Doubles, because a
+// component is a count multiplied by a run count and is only ever priced,
+// never compared exactly. All zero for a candidate on a device or a tier
+// other than InMemory, which are priced by their own measured rates.
+inline constexpr std::size_t kTimeEngineCount = 7;  // the values of Engine
+inline constexpr std::size_t kTimeComponents = 3;
+struct TimeTerms {
+    std::array<std::array<double, kTimeComponents>, kTimeEngineCount> counts{};
+};
+
 // A candidate's estimated resource requirements, or why it can't be
 // costed (docs/BUILD_PLAN.md Phase 3, 3.5). estimated_peak_bytes and
 // estimated_work_units are meaningful only when feasible is true;
@@ -192,6 +215,10 @@ struct CostEstimate {
     // The fusion outcome this estimate charged (Phase 24 item 7). All zero
     // for every engine but the dense ones.
     FusionSummary fusion = {};
+    // What the runtime is made of, for the calibrated time model (Phase 24,
+    // docs/adr/0028 section 20). All zero when an engine does not report it,
+    // in which case the planner prices estimated_work_units as before.
+    TimeTerms time = {};
 };
 
 // A region is a contiguous local-index sub-circuit assigned an engine and
@@ -345,6 +372,10 @@ struct CandidateSummary {
     // carrying a time budget against such a profile is refused rather than
     // silently admitted. Meaningful only when feasible is true.
     double estimated_seconds = -1.0;
+    // The estimate's time terms (Phase 24, docs/adr/0028 section 20), which
+    // estimated_seconds is computed from when the profile carries a calibrated
+    // time model.
+    TimeTerms time = {};
 };
 
 // The light-cone reduction pass's own report (docs/BUILD_PLAN.md Phase

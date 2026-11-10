@@ -116,6 +116,9 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
         const std::uint64_t chi3 =
             checked_mul(checked_mul(estimated_bond, estimated_bond), estimated_bond);
         std::uint64_t work = request.num_qubits;
+        // Local updates for the time model: every 1-qubit gate, and every
+        // SWAP and split of a multi-qubit gate.
+        double updates = 0.0;
         for (const Operation& op : *request.operations) {
             const std::vector<QubitId>* qubits = operand_qubits(op);
             if (qubits == nullptr || qubits->empty()) {
@@ -124,6 +127,7 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
             const std::size_t k = qubits->size();
             if (k == 1) {
                 work = checked_add(work, checked_mul(estimated_bond, 4));
+                updates += 1.0;
                 continue;
             }
             const QubitId min_q = *std::min_element(qubits->begin(), qubits->end());
@@ -134,6 +138,7 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
                 checked_add(checked_mul(2, span - static_cast<std::uint64_t>(k)),
                             static_cast<std::uint64_t>(k) - 1);
             work = checked_add(work, checked_mul(local_updates, chi3));
+            updates += static_cast<double>(local_updates);
         }
         if (request.want_counts) {
             work = checked_add(work, checked_mul(request.num_qubits, chi3));
@@ -146,7 +151,23 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
             work = checked_add(work, checked_mul(num_terms, per_term));
         }
 
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the local
+        // updates, each a small SVD and its allocations whose fixed cost the
+        // chi^3 term does not see (the low-entanglement Trotter rows ran
+        // 40-57x their chi^3 prediction, section 16.10.1); component 1 the
+        // chi^3 work above; component 2 the sites swept for counts and for
+        // each expectation term.
+        double sweeps = request.want_counts ? static_cast<double>(request.num_qubits) : 0.0;
+        if (request.want_expectation) {
+            sweeps += static_cast<double>(request.observable->terms.size()) *
+                      static_cast<double>(request.num_qubits);
+        }
+        auto& mps = estimate.time.counts[static_cast<std::size_t>(Engine::MPS)];
+        mps[0] = updates;
+        mps[1] = static_cast<double>(work);
+        mps[2] = sweeps;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

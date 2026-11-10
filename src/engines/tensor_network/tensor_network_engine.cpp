@@ -211,6 +211,7 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
         std::uint64_t peak_bytes = 0;
         std::uint64_t work = 0;
         std::size_t costed_terms = 0;
+        double elimination_steps = 0.0;  // for the time model
         const bool bounded = request.prune_above_work_units != kNoPruneBound;
         // remaining_floor[t]: a lower bound on the work of terms t+1 .. end,
         // from each term's line-graph size (work_lower_bound). The running
@@ -302,6 +303,7 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
             peak_bytes =
                 std::max(peak_bytes, term_peak_bytes(request, pauli, timelines, line_graph, order));
             work = checked_add(work, work_units_for_order(order));
+            elimination_steps += static_cast<double>(order.per_step_degree.size());
             // Every later term only adds work, so once the running total is
             // strictly above the caller's bound this candidate cannot win.
             if (bounded && saturating_add(work, remaining_floor[costed_terms + 1]) >
@@ -318,7 +320,17 @@ CostEstimate TensorNetworkEngine::estimate(const EngineEstimateRequest& request)
             peak_bytes,
             common::heap_block_bytes(checked_mul(
                 static_cast<std::uint64_t>(request.observable->terms.size()), sizeof(Complex))));
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the
+        // elimination steps over every term, each a tensor merge with its own
+        // allocation; component 1 the multiply-adds above; component 2 the
+        // operations placed in each term's network.
+        auto& network = estimate.time.counts[static_cast<std::size_t>(Engine::TensorNetwork)];
+        network[0] = elimination_steps;
+        network[1] = static_cast<double>(work);
+        network[2] = static_cast<double>(request.operations->size()) *
+                     static_cast<double>(request.observable->terms.size());
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

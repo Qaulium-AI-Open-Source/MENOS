@@ -309,6 +309,7 @@ CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request)
         const std::uint64_t n = request.num_qubits;
         const std::uint64_t entries = pow2(2 * n);
         std::uint64_t work = entries;
+        double passes = 1.0;  // for the time model: initialisation, then one per pass below
         for (const Operation& op : *request.operations) {
             std::visit(
                 [&](const auto& o) {
@@ -316,9 +317,11 @@ CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request)
                     if constexpr (std::is_same_v<T, GateOp> || std::is_same_v<T, UnitaryOp>) {
                         const std::uint64_t k = o.qubits.size();
                         work = checked_add(work, checked_mul(std::uint64_t{2}, pow2(2 * n + k)));
+                        passes += 2.0;
                     } else if constexpr (std::is_same_v<T, ChannelOp>) {
                         const std::uint64_t k = o.qubits.size();
                         work = checked_add(work, pow2(2 * n + 2 * k));
+                        passes += 1.0;
                     } else {
                         static_assert(std::is_same_v<T, MeasureOp>);
                     }
@@ -332,8 +335,16 @@ CostEstimate DensityMatrixEngine::estimate(const EngineEstimateRequest& request)
             const auto num_terms = static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, pow2(n)));
         }
-        return CostEstimate{
+        CostEstimate estimate{
             /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the
+        // passes, each with a fixed cost; component 1 the work above;
+        // component 2 the shots sampled.
+        auto& density = estimate.time.counts[static_cast<std::size_t>(Engine::DensityMatrix)];
+        density[0] = passes;
+        density[1] = static_cast<double>(work);
+        density[2] = request.want_counts ? static_cast<double>(request.shots) : 0.0;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }

@@ -30,7 +30,9 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <iomanip>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -502,7 +504,30 @@ double median(std::vector<double> v) {
     return v.size() % 2 == 1 ? v[m] : 0.5 * (v[m - 1] + v[m]);
 }
 
+// The time terms (docs/adr/0028 section 20) as "engine:c0:c1:c2" for each
+// engine with a non-zero component, separated by '|'.
+std::string format_time_terms(const TimeTerms& terms) {
+    std::string out;
+    for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
+        const auto& c = terms.counts[e];
+        if (c[0] == 0.0 && c[1] == 0.0 && c[2] == 0.0) {
+            continue;
+        }
+        if (!out.empty()) {
+            out += '|';
+        }
+        out += std::to_string(e);
+        for (const double v : c) {
+            std::ostringstream value;
+            value << std::setprecision(17) << v;
+            out += ':' + value.str();
+        }
+    }
+    return out;
+}
+
 void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
+    TimeTerms terms;
     const auto row = [&](const std::string& status,
                          const Prediction& p,
                          const std::string& won,
@@ -513,7 +538,7 @@ void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
                   << (w.backend == Backend::Cuda ? "cuda" : "cpu") << ',' << status << ',' << won
                   << ',' << p.source << ',' << p.seconds << ',' << med << ',' << lo << ',' << hi
                   << ',' << (p.seconds > 0.0 && med > 0.0 ? med / p.seconds : -1.0) << ',' << '"'
-                  << p.note << '"' << '\n';
+                  << p.note << '"' << ',' << format_time_terms(terms) << '\n';
     };
 
     Plan planned;
@@ -538,6 +563,9 @@ void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
     if (won) {
         prediction = Prediction{.seconds = candidate != nullptr ? candidate->estimated_seconds : -1,
                                 .source = "planner"};
+        if (candidate != nullptr) {
+            terms = candidate->time;
+        }
         to_run = planned;
     } else {
         const std::optional<Engine> engine_id = direct_engine(w.target);
@@ -564,6 +592,7 @@ void run_workload(const Workload& w, const plan::HardwareProfile& profile) {
             row("infeasible", Prediction{.note = estimate.infeasible_reason}, "no", -1, -1, -1);
             return;
         }
+        terms = estimate.time;
         if (candidate != nullptr && candidate->feasible && candidate->estimated_seconds > 0.0) {
             prediction = Prediction{.seconds = candidate->estimated_seconds, .source = "planner"};
         } else {
@@ -634,7 +663,7 @@ int main(int argc, char** argv) {
               << " threads=" << common::default_thread_count() << "\n";
     std::cout
         << "engine,workload,target,backend,status,won,pred_source,predicted_s,actual_median_s,"
-           "actual_min_s,actual_max_s,ratio,note\n";
+           "actual_min_s,actual_max_s,ratio,note,time_terms\n";
     for (const Workload& w : workloads()) {
         if (!only.empty() && w.engine_label != only) {
             continue;

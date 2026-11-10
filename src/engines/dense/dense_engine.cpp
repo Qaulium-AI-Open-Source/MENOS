@@ -204,6 +204,54 @@ EngineCapabilities DenseEngine::capabilities() const {
 // [num_terms * 2^m if want_expectation, one pass per term]
 // (docs/BUILD_PLAN.md Phase 3, 3.5 / Phase 5's expectation extension).
 // Peak bytes: peak_bytes_of above.
+namespace {
+
+// The sweeps over the state that apply gates: one per operation with fusion
+// off, one per non-barrier block with it on.
+std::uint64_t gate_passes(const std::vector<Operation>& operations) {
+    std::uint64_t passes = 0;
+    for (const Operation& op : operations) {
+        if (operand_count(op) != 0) {
+            ++passes;
+        }
+    }
+    return passes;
+}
+
+std::uint64_t gate_passes(const ir::FusionPlan& plan) {
+    std::uint64_t passes = 0;
+    for (std::size_t b = 0; b < plan.block_count(); ++b) {
+        if (!plan.block_operands(b).empty()) {
+            ++passes;
+        }
+    }
+    return passes;
+}
+
+// The dense time terms (docs/adr/0028 section 20): component 0 counts the
+// passes over the state (initialisation, the gate passes and the output
+// passes), each with a fixed cost the work term does not see on a small
+// state; component 1 the work units, amplitude updates weighted by 2^k;
+// component 2 the shots sampled.
+TimeTerms dense_time_terms(const EngineEstimateRequest& request,
+                           std::uint64_t gate_pass_count,
+                           std::uint64_t work) {
+    double passes = 1.0 + static_cast<double>(gate_pass_count);
+    passes += request.want_statevector ? 1.0 : 0.0;
+    passes += request.want_counts ? 1.0 : 0.0;
+    if (request.want_expectation) {
+        passes += static_cast<double>(request.observable->terms.size());
+    }
+    TimeTerms terms;
+    auto& dense = terms.counts[static_cast<std::size_t>(Engine::Dense)];
+    dense[0] = passes;
+    dense[1] = static_cast<double>(work);
+    dense[2] = request.want_counts ? static_cast<double>(request.shots) : 0.0;
+    return terms;
+}
+
+}  // namespace
+
 CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
     if (const std::optional<std::string> reason = ir::first_noise_reason(*request.operations);
         reason.has_value()) {
@@ -212,11 +260,13 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
     try {
         if (!request.fuse_gates) {
             const std::uint64_t work = dense_work_units(request);
-            return CostEstimate{/*feasible=*/true,
-                                peak_bytes_of(request, nullptr),
-                                work,
-                                /*infeasible_reason=*/"",
-                                {}};
+            CostEstimate estimate{/*feasible=*/true,
+                                  peak_bytes_of(request, nullptr),
+                                  work,
+                                  /*infeasible_reason=*/"",
+                                  {}};
+            estimate.time = dense_time_terms(request, gate_passes(*request.operations), work);
+            return estimate;
         }
         // The state's size first: a qubit count beyond the dense ceiling is
         // refused before the plan, whose operands must be below 64.
@@ -226,6 +276,7 @@ CostEstimate DenseEngine::estimate(const EngineEstimateRequest& request) const {
         CostEstimate estimate{
             /*feasible=*/true, peak_bytes_of(request, &plan), work, /*infeasible_reason=*/"", {}};
         estimate.fusion = FusionSummary{plan.fused_blocks, plan.gates_absorbed};
+        estimate.time = dense_time_terms(request, gate_passes(plan), work);
         return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};

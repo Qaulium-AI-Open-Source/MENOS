@@ -23,6 +23,19 @@ using common::checked_mul;
 using common::checked_pow2;
 using common::ResourceExceeded;
 
+namespace {
+
+// into += times * add, component by component (docs/adr/0028 section 20).
+void add_time_terms(TimeTerms& into, const TimeTerms& add, double times) {
+    for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
+        for (std::size_t c = 0; c < kTimeComponents; ++c) {
+            into.counts[e][c] += times * add.counts[e][c];
+        }
+    }
+}
+
+}  // namespace
+
 std::uint64_t measurement_bookkeeping_bytes(const Circuit& circuit) {
     const std::uint64_t clbits = circuit.num_clbits();
     const std::uint64_t node = common::tree_node_bytes(sizeof(std::pair<const ClbitId, QubitId>));
@@ -206,6 +219,7 @@ CostEstimate estimate_factorized(const Circuit& circuit,
     try {
         std::uint64_t peak_bytes = 0;
         std::uint64_t total_work = 0;
+        TimeTerms time;  // the regions' terms, summed: they run one after another
         std::uint64_t active_regions = 0;
         for (std::size_t c = 0; c < num_components; ++c) {
             // An idle component (no GateOp/UnitaryOp ever touches it) is
@@ -250,6 +264,7 @@ CostEstimate estimate_factorized(const Circuit& circuit,
             // region has run, and a region's peak covers its outputs.
             peak_bytes = checked_add(peak_bytes, choice.estimate.estimated_peak_bytes);
             total_work = checked_add(total_work, choice.estimate.estimated_work_units);
+            add_time_terms(time, choice.estimate.time, 1.0);
             ++active_regions;
         }
 
@@ -300,6 +315,9 @@ CostEstimate estimate_factorized(const Circuit& circuit,
             const std::uint64_t recombination_work =
                 checked_mul(checked_pow2(n), static_cast<std::uint64_t>(num_components));
             total_work = checked_add(total_work, recombination_work);
+            auto& dense = time.counts[static_cast<std::size_t>(Engine::Dense)];
+            dense[0] += static_cast<double>(num_components);
+            dense[1] += static_cast<double>(recombination_work);
         }
 
         if (peak_bytes > budget_bytes) {
@@ -310,8 +328,10 @@ CostEstimate estimate_factorized(const Circuit& circuit,
                                     " bytes, budget is " + std::to_string(budget_bytes) + " bytes",
                                 {}};
         }
-        return CostEstimate{
+        CostEstimate estimate{
             /*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}};
+        estimate.time = time;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
@@ -512,6 +532,9 @@ CutEstimate estimate_cut(const Circuit& circuit,
                                         sizeof(std::vector<std::vector<std::complex<double>>>))));
         std::uint64_t peak_bytes = analysis::find_cut_plan_peak_bytes(circuit);
         std::uint64_t evaluation_count = 0;
+        // The time terms of what execute_cut runs: every evaluation once,
+        // with all the terms (docs/adr/0028 section 20).
+        TimeTerms time;
         std::vector<std::vector<CutEvaluation>> chosen;
         chosen.reserve(cut_plan.fragments.size());
         for (const analysis::CutFragment& fragment : cut_plan.fragments) {
@@ -547,6 +570,7 @@ CutEstimate estimate_cut(const Circuit& circuit,
                 }
                 fragment_choices.push_back(CutEvaluation{engines[choice.engine_index]->engine_id(),
                                                          choice.estimate.estimated_peak_bytes});
+                add_time_terms(time, choice.estimate.time, 1.0);
                 const std::uint64_t evaluating =
                     checked_add(checked_add(built_circuit_bytes(fragment_circuit),
                                             observable_bytes(fragment_observable)),
@@ -579,9 +603,9 @@ CutEstimate estimate_cut(const Circuit& circuit,
             return refuse("cut fragments require " + std::to_string(peak_bytes) +
                           " bytes, budget is " + std::to_string(budget_bytes) + " bytes");
         }
-        return CutEstimate{
-            CostEstimate{/*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}},
-            std::move(chosen)};
+        CostEstimate estimate{/*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}};
+        estimate.time = time;
+        return CutEstimate{std::move(estimate), std::move(chosen)};
     } catch (const ResourceExceeded& e) {
         return refuse(e.what());
     }

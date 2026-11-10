@@ -605,7 +605,22 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
 
         const std::uint64_t peak_bytes = peak_bytes_of(max_terms, request.num_qubits, t0);
         const std::uint64_t work = checked_mul(max_terms, num_gates);
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20). The worst-case branching
+        // above is the right bound for memory and the wrong figure for time:
+        // a term splits only when a rotation anticommutes with it, and on the
+        // measured workloads the runtime stayed flat while the bound grew 4x
+        // per rotation (section 16.10.1). The time model therefore charges
+        // the observable's own terms through every gate -- component 0 the
+        // gates, component 1 the term updates, t0 terms of n/64 words per
+        // gate -- the cost of a run in which no term branches. It is a lower
+        // bound on a run that branches heavily; such a run overruns its
+        // prediction and is caught by the Phase 11 monitor like any other.
+        const double words = static_cast<double>((std::uint64_t{request.num_qubits} + 63) / 64);
+        auto& pauli = estimate.time.counts[static_cast<std::size_t>(Engine::Pauli)];
+        pauli[0] = static_cast<double>(num_gates);
+        pauli[1] = static_cast<double>(t0) * static_cast<double>(num_gates) * words;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
