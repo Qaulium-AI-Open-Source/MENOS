@@ -90,6 +90,7 @@ public:
 
     // apply_single_qubit_gate: a new site beside the old one, then moved in.
     void single(std::size_t q, std::uint64_t held) {
+        elements_ += 2.0 * static_cast<double>(left(q)) * static_cast<double>(right(q));
         const std::uint64_t site = site_bytes(left(q), right(q));
         note(checked_add(held, heap_block_bytes(site)));
         replace_site(q, site);
@@ -103,8 +104,12 @@ public:
         // beside the previous one.
         std::uint64_t theta =
             heap_block_bytes(checked_mul(checked_mul(chi_left, 2 * right(s)), kComplex));
+        elements_ += 2.0 * static_cast<double>(chi_left) * static_cast<double>(right(s));
         note(checked_add(held, theta));
         for (std::size_t step = 1; step < k; ++step) {
+            elements_ += static_cast<double>(chi_left) *
+                         static_cast<double>(checked_pow2(static_cast<unsigned>(step + 1))) *
+                         static_cast<double>(right(s + step));
             const std::uint64_t grown = heap_block_bytes(
                 checked_mul(checked_mul(chi_left, checked_pow2(static_cast<unsigned>(step + 1))),
                             checked_mul(right(s + step), kComplex)));
@@ -128,6 +133,7 @@ public:
             const std::uint64_t cols = checked_mul(
                 checked_pow2(static_cast<unsigned>(remaining_bits - 1)), chi_right_last);
             const std::uint64_t kept = kept_count(std::min(m, cols));
+            count_svd(m, cols, kept);
             const std::uint64_t live = checked_add(base_held, remainder);
             note(checked_add(live, common::svd_peak_bytes(m, cols)));
             const std::uint64_t result = common::svd_result_bytes(m, cols);
@@ -175,6 +181,16 @@ private:
         max_bond_ = std::max(max_bond_, bond);
     }
 
+    // One SVD of an m x cols matrix keeping `kept` values: its flops and the
+    // elements of the two factors it produces.
+    void count_svd(std::uint64_t m, std::uint64_t cols, std::uint64_t kept) {
+        const double md = static_cast<double>(m);
+        const double cd = static_cast<double>(cols);
+        svd_count_ += 1.0;
+        flops_ += md * cd * std::min(md, cd);
+        elements_ += (md + cd) * static_cast<double>(kept);
+    }
+
     // shift_center_right(p): SVD of site p as (2 chi_left) x chi_right. U is
     // copy-assigned into site p's own buffer, which is never smaller, so its
     // capacity is unchanged; S * Vt is contracted into a new site p + 1 built
@@ -183,6 +199,7 @@ private:
         const std::uint64_t m = 2 * left(p);
         const std::uint64_t cols = right(p);
         const std::uint64_t k = std::min(m, cols);
+        count_svd(m, cols, k);
         const std::uint64_t new_next = site_bytes(k, right(p + 1));
         note(checked_add(
             held,
@@ -199,6 +216,7 @@ private:
         const std::uint64_t m = left(p);
         const std::uint64_t cols = 2 * right(p);
         const std::uint64_t k = std::min(m, cols);
+        count_svd(m, cols, k);
         const std::uint64_t new_prev = site_bytes(left(p - 1), k);
         note(checked_add(
             held,
@@ -217,6 +235,27 @@ private:
     std::size_t center_ = 0;
     std::uint64_t peak_ = 0;
     std::uint64_t max_bond_ = 1;
+    double svd_count_ = 0.0;
+    double flops_ = 0.0;
+    double elements_ = 0.0;
+
+public:
+    [[nodiscard]] double svd_count() const {
+        return svd_count_;
+    }
+    [[nodiscard]] double flops() const {
+        return flops_;
+    }
+    [[nodiscard]] double elements() const {
+        return elements_;
+    }
+    // An expectation term's or a shot's work, counted by model_execution.
+    void add_flops(double f) {
+        flops_ += f;
+    }
+    void add_elements(double e) {
+        elements_ += e;
+    }
     std::uint64_t splits_ = 0;
 };
 
@@ -334,9 +373,14 @@ MemoryModel model_execution(const EngineEstimateRequest& request) {
             heap_block_bytes(checked_mul(
                 static_cast<std::uint64_t>(request.observable->terms.size()), kComplex)));
         std::uint64_t environment = 0;
+        const double terms = static_cast<double>(request.observable->terms.size());
         for (std::size_t i = 0; i < n; ++i) {
             const std::uint64_t l = replay.left(i);
             const std::uint64_t r = replay.right(i);
+            // Each term's environment step at site i: E' = A^dagger E A.
+            const double ld = static_cast<double>(l);
+            const double rd = static_cast<double>(r);
+            replay.add_flops(terms * 2.0 * 2.0 * ((ld * ld * rd) + (ld * rd * rd)));
             environment = std::max(environment,
                                    checked_add(heap_block_bytes(checked_mul(l * l, kComplex)),
                                                heap_block_bytes(checked_mul(r * r, kComplex))));
@@ -357,9 +401,13 @@ MemoryModel model_execution(const EngineEstimateRequest& request) {
         replay.move_center_to(0, held);
         if (request.is_sole_region) {
             std::uint64_t widest = 1;
+            double per_shot = 0.0;
             for (std::size_t i = 0; i < n; ++i) {
                 widest = std::max(widest, replay.right(i));
+                per_shot += 2.0 * static_cast<double>(replay.left(i)) *
+                            static_cast<double>(replay.right(i));
             }
+            replay.add_elements(static_cast<double>(request.shots) * per_shot);
             // Per shot: the running left vector (with its old buffer while it
             // grows), each site's two candidate vectors, the outcome bits and
             // the drawn BitString.
@@ -376,6 +424,9 @@ MemoryModel model_execution(const EngineEstimateRequest& request) {
 
     model.peak_bytes = replay.peak();
     model.max_bond = replay.max_bond();
+    model.svd_count = replay.svd_count();
+    model.linalg_flops = replay.flops();
+    model.elements = replay.elements();
     return model;
 }
 

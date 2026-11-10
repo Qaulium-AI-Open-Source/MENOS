@@ -116,11 +116,6 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
         const std::uint64_t chi3 =
             checked_mul(checked_mul(estimated_bond, estimated_bond), estimated_bond);
         std::uint64_t work = request.num_qubits;
-        // For the time model: the two-site updates (every SWAP and split of a
-        // multi-qubit gate, each an SVD) and the one-site operations (every
-        // 1-qubit gate).
-        double updates = 0.0;
-        double one_site = 0.0;
         for (const Operation& op : *request.operations) {
             const std::vector<QubitId>* qubits = operand_qubits(op);
             if (qubits == nullptr || qubits->empty()) {
@@ -129,7 +124,6 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
             const std::size_t k = qubits->size();
             if (k == 1) {
                 work = checked_add(work, checked_mul(estimated_bond, 4));
-                one_site += 1.0;
                 continue;
             }
             const QubitId min_q = *std::min_element(qubits->begin(), qubits->end());
@@ -140,7 +134,6 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
                 checked_add(checked_mul(2, span - static_cast<std::uint64_t>(k)),
                             static_cast<std::uint64_t>(k) - 1);
             work = checked_add(work, checked_mul(local_updates, chi3));
-            updates += static_cast<double>(local_updates);
         }
         if (request.want_counts) {
             work = checked_add(work, checked_mul(request.num_qubits, chi3));
@@ -154,25 +147,18 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
         }
 
         CostEstimate estimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
-        // Time terms (docs/adr/0028 section 20): component 0 counts the
-        // two-site updates, each an SVD with allocations whose fixed cost the
-        // chi^3 term does not see (the low-entanglement Trotter rows ran
-        // 40-57x their chi^3 prediction, section 16.10.1); component 1 the
-        // chi^3 work above; component 2 the chi^2 work: every operation at a
-        // bond moves its tensors -- each two-site update's contraction and
-        // copies, each 1-qubit gate, and each site swept for counts and for
-        // each expectation term -- which at small and medium bonds costs more
-        // than the chi^3 rate measured at a large one implies.
-        double sweeps = request.want_counts ? static_cast<double>(request.num_qubits) : 0.0;
-        if (request.want_expectation) {
-            sweeps += static_cast<double>(request.observable->terms.size()) *
-                      static_cast<double>(request.num_qubits);
-        }
-        const double chi = static_cast<double>(estimated_bond);
+        // Time terms (docs/adr/0028 section 20), counted by the replay at
+        // every operation's own bonds rather than at the peak bond the work
+        // units above use (which charged every gate of a circuit as its
+        // widest one): component 0 the SVDs, each with a fixed cost of its
+        // own (the low-entanglement Trotter rows ran 40-57x their chi^3
+        // prediction, section 16.10.1); component 1 their flops and the
+        // expectation contractions; component 2 the tensor elements built or
+        // touched.
         auto& mps = estimate.time.counts[static_cast<std::size_t>(Engine::MPS)];
-        mps[0] = updates;
-        mps[1] = static_cast<double>(work);
-        mps[2] = (updates + one_site + sweeps) * chi * chi;
+        mps[0] = model.svd_count;
+        mps[1] = model.linalg_flops;
+        mps[2] = model.elements;
         return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};

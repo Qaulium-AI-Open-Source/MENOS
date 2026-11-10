@@ -33,6 +33,15 @@ struct MemoryModel {
     // Bond i (between sites i and i + 1) after the last operation, before
     // sampling moves the center; empty for one qubit.
     std::vector<std::uint64_t> final_bonds;
+    // What execute() computes, counted at each operation's own bonds, for the
+    // calibrated time model (Phase 24, docs/adr/0028 section 20): the SVDs
+    // (splits and centre shifts); their flops, m * n * min(m, n) for an
+    // m x n matrix, plus each expectation term's environment contractions;
+    // and the tensor elements built or touched (theta, new sites, 1-qubit
+    // gates, each shot's per-site vectors).
+    double svd_count = 0.0;
+    double linalg_flops = 0.0;
+    double elements = 0.0;
 };
 
 // Throws common::ResourceExceeded when a figure overflows 64 bits.
