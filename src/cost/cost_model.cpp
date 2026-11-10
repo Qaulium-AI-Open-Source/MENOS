@@ -603,7 +603,8 @@ CutEstimate estimate_cut(const Circuit& circuit,
             return refuse("cut fragments require " + std::to_string(peak_bytes) +
                           " bytes, budget is " + std::to_string(budget_bytes) + " bytes");
         }
-        CostEstimate estimate{/*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{
+            /*feasible=*/true, peak_bytes, total_work, /*infeasible_reason=*/"", {}};
         estimate.time = time;
         return CutEstimate{std::move(estimate), std::move(chosen)};
     } catch (const ResourceExceeded& e) {

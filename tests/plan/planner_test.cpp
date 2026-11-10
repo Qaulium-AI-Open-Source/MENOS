@@ -571,8 +571,7 @@ TEST(PlanJobExpectationTest, WithATimeBudgetEveryCandidateIsCostedInFullAndTheFa
 
     const CandidateSummary* winner = nullptr;
     for (const CandidateSummary& c : plan.candidates) {
-        EXPECT_FALSE(c.infeasible_reason.starts_with(kPrunedReasonPrefix))
-            << c.infeasible_reason;
+        EXPECT_FALSE(c.infeasible_reason.starts_with(kPrunedReasonPrefix)) << c.infeasible_reason;
         if (c.is_winner) {
             winner = &c;
         }

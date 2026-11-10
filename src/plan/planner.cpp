@@ -459,12 +459,11 @@ Plan plan_job(const JobSpec& job_spec,
         }
         bool from_observation = false;
         if (calibrated) {
-            double seconds =
-                candidate.backend == Backend::Cuda
-                    ? cuda_seconds(candidate.estimated_work_units, candidate.device)
-                    : cpu_seconds(candidate.estimated_work_units,
-                                  candidate.estimated_peak_bytes,
-                                  candidate.time);
+            double seconds = candidate.backend == Backend::Cuda
+                                 ? cuda_seconds(candidate.estimated_work_units, candidate.device)
+                                 : cpu_seconds(candidate.estimated_work_units,
+                                               candidate.estimated_peak_bytes,
+                                               candidate.time);
             if (candidate.strategy == Strategy::Factorized &&
                 factorized_mixed_seconds.has_value()) {
                 seconds = *factorized_mixed_seconds;
@@ -1176,11 +1175,12 @@ Plan plan_job(const JobSpec& job_spec,
                 // figure only (docs/adr/0028 section 16.4).
                 RegionKey cpu_key = region_key(region);
                 cpu_key.backend = Backend::Cpu;
-                const double on_cpu = std::max(
-                    timed ? cpu_seconds(
-                              region.estimated_work_units, region.estimated_state_bytes, region.time)
-                          : 0.0,
-                    observations.region_floor_for(cpu_key).value_or(0.0));
+                const double on_cpu =
+                    std::max(timed ? cpu_seconds(region.estimated_work_units,
+                                                 region.estimated_state_bytes,
+                                                 region.time)
+                                   : 0.0,
+                             observations.region_floor_for(cpu_key).value_or(0.0));
                 if (region.engine != Engine::Dense) {
                     if (forced_cuda) {
                         refusal = "region " + std::to_string(i) + " runs on " +
@@ -1520,10 +1520,8 @@ Plan plan_job(const JobSpec& job_spec,
                     region.estimated_seconds =
                         cuda_seconds(on_device.estimated_work_units, on_device.device);
                 } else {
-                    region.estimated_seconds =
-                        cpu_seconds(region.estimated_work_units,
-                                    region.estimated_state_bytes,
-                                    region.time);
+                    region.estimated_seconds = cpu_seconds(
+                        region.estimated_work_units, region.estimated_state_bytes, region.time);
                 }
             }
         }

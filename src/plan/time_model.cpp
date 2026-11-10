@@ -83,10 +83,13 @@ Observable random_terms(std::uint32_t n, std::uint32_t t) {
     const std::size_t words = (static_cast<std::size_t>(n) + 63) / 64;
     Observable o;
     for (std::uint32_t i = 0; i < t; ++i) {
-        PauliString p{n, std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0)};
+        PauliString p{
+            n, std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0)};
         for (std::size_t w = 0; w < words; ++w) {
-            const std::uint32_t bits = std::min<std::uint32_t>(64, n - static_cast<std::uint32_t>(64 * w));
-            const std::uint64_t mask = bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
+            const std::uint32_t bits =
+                std::min<std::uint32_t>(64, n - static_cast<std::uint32_t>(64 * w));
+            const std::uint64_t mask =
+                bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
             const std::uint64_t row = 2 * static_cast<std::uint64_t>(i);
             p.x_words[w] = mix((row * words) + w) & mask;
             p.z_words[w] = mix(((row + 1) * words) + w) & mask;
@@ -199,8 +202,7 @@ Circuit then_one_qubit_gates(Circuit c, std::uint32_t gates) {
 void bit_flip(Circuit& c, std::uint32_t q, double p) {
     const std::complex<double> a{std::sqrt(1.0 - p), 0.0};
     const std::complex<double> b{std::sqrt(p), 0.0};
-    c.append_channel({q},
-                     {{a, {0.0, 0.0}, {0.0, 0.0}, a}, {{0.0, 0.0}, b, b, {0.0, 0.0}}});
+    c.append_channel({q}, {{a, {0.0, 0.0}, {0.0, 0.0}, a}, {{0.0, 0.0}, b, b, {0.0, 0.0}}});
 }
 
 // h_cx_layers with a bit flip after every layer on every qubit.
@@ -264,8 +266,7 @@ std::vector<Case> cases_for(Engine engine) {
             // first, on |0>-side terms it splits nothing.
             cases.push_back(expectation_case(with_rz(clifford(8, 30000)), z_on(8, 0)));
             cases.push_back(expectation_case(with_rz(clifford(40, 300)), random_terms(40, 300)));
-            cases.push_back(
-                expectation_case(with_rz(clifford(256, 300)), random_terms(256, 300)));
+            cases.push_back(expectation_case(with_rz(clifford(256, 300)), random_terms(256, 300)));
             break;
         case Engine::MPS:
             // Bonds at most 2: the per-update cost. Bonds up to 64: chi^3.
@@ -310,8 +311,7 @@ const SimulationEngine* cpu_engine(Engine id) {
 
 // One measurement: the case's time terms for `engine` and its measured time,
 // or nullopt when the engine cannot run it.
-std::optional<std::pair<Counts, double>> measure(const SimulationEngine& engine,
-                                                 const Case& c) {
+std::optional<std::pair<Counts, double>> measure(const SimulationEngine& engine, const Case& c) {
     const std::uint32_t n = c.circuit.num_qubits();
     const Observable* observable = c.observable.has_value() ? &*c.observable : nullptr;
     const CostEstimate estimate = engine.estimate(EngineEstimateRequest{
@@ -444,8 +444,7 @@ std::array<double, kTimeComponents> fit_seconds_per_count(const std::vector<Coun
             }
         }
         const std::optional<std::vector<double>> x = solve(normal, rhs);
-        if (!x.has_value() ||
-            std::any_of(x->begin(), x->end(), [](double v) { return v < 0.0; })) {
+        if (!x.has_value() || std::any_of(x->begin(), x->end(), [](double v) { return v < 0.0; })) {
             continue;
         }
         std::array<double, kTimeComponents> candidate{};

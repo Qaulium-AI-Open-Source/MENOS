@@ -29,9 +29,9 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
-#include <iomanip>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -660,8 +660,7 @@ int main(int argc, char** argv) {
     const auto calibration_start = std::chrono::steady_clock::now();
     const plan::HardwareProfile& profile = plan::calibrated_hardware_profile();
     const double calibration_seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - calibration_start)
-            .count();
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - calibration_start).count();
     std::cerr << "calibration_seconds=" << calibration_seconds << "\n";
     for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
         std::cerr << "time_model engine=" << e;

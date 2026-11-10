@@ -134,8 +134,8 @@ TEST(TimeTermsTest, EveryCpuEngineReportsItsOwnTermsAndNoOtherEngines) {
             .shots = c.counts ? std::uint64_t{100} : std::uint64_t{0},
             .bitstring_width = c.counts ? c.circuit.num_qubits() : 0,
         });
-        ASSERT_TRUE(estimate.feasible) << static_cast<int>(c.engine) << ": "
-                                       << estimate.infeasible_reason;
+        ASSERT_TRUE(estimate.feasible)
+            << static_cast<int>(c.engine) << ": " << estimate.infeasible_reason;
         for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
             double sum = 0.0;
             for (const double v : estimate.time.counts[e]) {
