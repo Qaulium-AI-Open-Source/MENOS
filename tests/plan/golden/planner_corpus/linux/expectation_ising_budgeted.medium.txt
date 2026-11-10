@@ -6,8 +6,8 @@ candidate 0strategy=direct_dense feasible=true winner=true peak_bytes=1054240 wo
 candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
 candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
 candidate 3strategy=direct_mps feasible=true winner=false peak_bytes=10960304 work_units=2549415952 est_seconds=2.54942
-candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in observable term 1 of 31, at 57647656 work units (including a lower bound for the remaining terms), already more than the 42467328 of a cheaper feasible alternative"
-candidate 5strategy=cut_and_recombine feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in fragment 1 of 2, at 243007488 work units, already more than the 42467328 of a cheaper feasible alternative"
+candidate 4strategy=direct_tensor_network feasible=true winner=false peak_bytes=6484632 work_units=163070519598 est_seconds=163.071
+candidate 5strategy=cut_and_recombine feasible=true winner=false peak_bytes=1329594 work_units=7533232624 est_seconds=7.53323
 strategy   direct_dense (exact)
 region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] engine=dense backend=cpu fusion=containment blocks=143 absorbed=312
 estimated  state_bytes=1054240 work_units=42467328

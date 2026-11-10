@@ -7,6 +7,7 @@ add_executable(menos_plan_tests
     planner_golden_test.cpp
     execution_engines_test.cpp
     disk_tier_selection_test.cpp
+    time_model_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)
