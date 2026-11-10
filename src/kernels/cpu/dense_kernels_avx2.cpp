@@ -48,6 +48,25 @@ inline __m128d cmul1(__m128d mr, __m128d mi, __m128d x) {
     return _mm_addsub_pd(t1, t2);
 }
 
+// +0.0 read through a volatile, once per kernel call. Every output starts as
+// (+0) + first product, which turns a -0.0 product into +0.0 exactly as the
+// scalar kernels and the generic sum do; that add is not an identity, but
+// MSVC 14.50 /arch:AVX2 folds _mm256_add_pd(_mm256_setzero_pd(), p) to p
+// anyway (seen in item 8 step 2: SimdKernelsTest.SignedZeros* failed, and
+// the disassembly had no add). A zero the optimiser cannot see keeps the add.
+double opaque_zero() {
+    static volatile double zero = 0.0;
+    return zero;
+}
+
+inline __m256d zero4() {
+    return _mm256_set1_pd(opaque_zero());
+}
+
+inline __m128d zero2() {
+    return _mm_set1_pd(opaque_zero());
+}
+
 struct Bcast2 {
     __m256d r;
     __m256d i;
@@ -66,91 +85,137 @@ inline Bcast1 bcast1(const double* c) {
     return {_mm_set1_pd(c[0]), _mm_set1_pd(c[1])};
 }
 
-// lo, hi <- m * (lo, hi) for n pairs, two pairs per iteration.
+// A 2x2 gate's entries broadcast once per call: the state pointers may alias
+// the matrix pointer as far as the compiler knows, so a broadcast inside a
+// loop that stores to the state would be re-read every iteration.
+struct Gate1 {
+    Bcast2 m00;
+    Bcast2 m01;
+    Bcast2 m10;
+    Bcast2 m11;
+    __m256d zero;
+};
+
+inline Gate1 gate1(const double* m) {
+    return {bcast2(m), bcast2(m + 2), bcast2(m + 4), bcast2(m + 6), zero4()};
+}
+
+// (l, h) <- m * (a0, a1) for the two pairs in a0 = [lo values], a1 = [hi values].
+inline void pair2(const Gate1& g, __m256d a0, __m256d a1, __m256d& l, __m256d& h) {
+    l = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m00.r, g.m00.i, a0)), cmul2(g.m01.r, g.m01.i, a1));
+    h = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m10.r, g.m10.i, a0)), cmul2(g.m11.r, g.m11.i, a1));
+}
+
+// One pair, 128-bit: a run's odd last pair.
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-inline void pair_run_body(double* lo, double* hi, std::size_t n, const double* m) {
+inline void pair1(double* lo, double* hi, const double* m) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    const Bcast2 m00 = bcast2(m);
-    const Bcast2 m01 = bcast2(m + 2);
-    const Bcast2 m10 = bcast2(m + 4);
-    const Bcast2 m11 = bcast2(m + 6);
-    const __m256d zero = _mm256_setzero_pd();
+    const Bcast1 s00 = bcast1(m);
+    const Bcast1 s01 = bcast1(m + 2);
+    const Bcast1 s10 = bcast1(m + 4);
+    const Bcast1 s11 = bcast1(m + 6);
+    const __m128d z = zero2();
+    const __m128d a0 = _mm_loadu_pd(lo);
+    const __m128d a1 = _mm_loadu_pd(hi);
+    _mm_storeu_pd(lo, _mm_add_pd(_mm_add_pd(z, cmul1(s00.r, s00.i, a0)), cmul1(s01.r, s01.i, a1)));
+    _mm_storeu_pd(hi, _mm_add_pd(_mm_add_pd(z, cmul1(s10.r, s10.i, a0)), cmul1(s11.r, s11.i, a1)));
+}
+
+// lo, hi <- m * (lo, hi) for n pairs: four pairs per iteration (two
+// independent vectors, for the in-cache case), then two, then one.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+inline void pair_run_body(double* lo, double* hi, std::size_t n, const Gate1& g, const double* m) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     std::size_t i = 0;
-    for (; i + 2 <= n; i += 2) {
+    for (; i + 4 <= n; i += 4) {
         const __m256d a0 = _mm256_loadu_pd(lo + 2 * i);
         const __m256d a1 = _mm256_loadu_pd(hi + 2 * i);
-        const __m256d l = _mm256_add_pd(_mm256_add_pd(zero, cmul2(m00.r, m00.i, a0)),
-                                        cmul2(m01.r, m01.i, a1));
-        const __m256d h = _mm256_add_pd(_mm256_add_pd(zero, cmul2(m10.r, m10.i, a0)),
-                                        cmul2(m11.r, m11.i, a1));
+        const __m256d b0 = _mm256_loadu_pd(lo + 2 * i + 4);
+        const __m256d b1 = _mm256_loadu_pd(hi + 2 * i + 4);
+        __m256d la;
+        __m256d ha;
+        __m256d lb;
+        __m256d hb;
+        pair2(g, a0, a1, la, ha);
+        pair2(g, b0, b1, lb, hb);
+        _mm256_storeu_pd(lo + 2 * i, la);
+        _mm256_storeu_pd(hi + 2 * i, ha);
+        _mm256_storeu_pd(lo + 2 * i + 4, lb);
+        _mm256_storeu_pd(hi + 2 * i + 4, hb);
+    }
+    for (; i + 2 <= n; i += 2) {
+        __m256d l;
+        __m256d h;
+        pair2(g, _mm256_loadu_pd(lo + 2 * i), _mm256_loadu_pd(hi + 2 * i), l, h);
         _mm256_storeu_pd(lo + 2 * i, l);
         _mm256_storeu_pd(hi + 2 * i, h);
     }
     if (i < n) {
-        const Bcast1 s00 = bcast1(m);
-        const Bcast1 s01 = bcast1(m + 2);
-        const Bcast1 s10 = bcast1(m + 4);
-        const Bcast1 s11 = bcast1(m + 6);
-        const __m128d z = _mm_setzero_pd();
-        const __m128d a0 = _mm_loadu_pd(lo + 2 * i);
-        const __m128d a1 = _mm_loadu_pd(hi + 2 * i);
-        _mm_storeu_pd(lo + 2 * i,
-                      _mm_add_pd(_mm_add_pd(z, cmul1(s00.r, s00.i, a0)), cmul1(s01.r, s01.i, a1)));
-        _mm_storeu_pd(hi + 2 * i,
-                      _mm_add_pd(_mm_add_pd(z, cmul1(s10.r, s10.i, a0)), cmul1(s11.r, s11.i, a1)));
+        pair1(lo + 2 * i, hi + 2 * i, m);
     }
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 void avx2_pair_run(double* lo, double* hi, std::size_t n, const double* m) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    pair_run_body(lo, hi, n, m);
+    pair_run_body(lo, hi, n, gate1(m), m);
 }
 
-// Operand 0: each pair is two adjacent amplitudes. Two pairs per iteration:
+// Operand 0: each pair is two adjacent amplitudes. Two pairs per step:
 // X = [p.a0, p.a1], Y = [q.a0, q.a1] regrouped into A0 = [p.a0, q.a0] and
 // A1 = [p.a1, q.a1], computed, and regrouped back.
 void pair_blocks_q0(double* amps, std::size_t total, const double* m) {
-    const Bcast2 m00 = bcast2(m);
-    const Bcast2 m01 = bcast2(m + 2);
-    const Bcast2 m10 = bcast2(m + 4);
-    const Bcast2 m11 = bcast2(m + 6);
-    const __m256d zero = _mm256_setzero_pd();
+    const Gate1 g = gate1(m);
     std::size_t base = 0;
     for (; base + 4 <= total; base += 4) {
         const __m256d x = _mm256_loadu_pd(amps + 2 * base);
         const __m256d y = _mm256_loadu_pd(amps + 2 * base + 4);
-        const __m256d a0 = _mm256_permute2f128_pd(x, y, 0x20);
-        const __m256d a1 = _mm256_permute2f128_pd(x, y, 0x31);
-        const __m256d l = _mm256_add_pd(_mm256_add_pd(zero, cmul2(m00.r, m00.i, a0)),
-                                        cmul2(m01.r, m01.i, a1));
-        const __m256d h = _mm256_add_pd(_mm256_add_pd(zero, cmul2(m10.r, m10.i, a0)),
-                                        cmul2(m11.r, m11.i, a1));
+        __m256d l;
+        __m256d h;
+        pair2(g, _mm256_permute2f128_pd(x, y, 0x20), _mm256_permute2f128_pd(x, y, 0x31), l, h);
         _mm256_storeu_pd(amps + 2 * base, _mm256_permute2f128_pd(l, h, 0x20));
         _mm256_storeu_pd(amps + 2 * base + 4, _mm256_permute2f128_pd(l, h, 0x31));
     }
     if (base < total) {  // a single pair: total == 2
-        pair_run_body(amps + 2 * base, amps + 2 * base + 2, 1, m);
+        pair1(amps + 2 * base, amps + 2 * base + 2, m);
     }
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 void avx2_pair_blocks(double* amps, std::size_t total, std::uint32_t q, const double* m) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    if (q == 0) {
-        pair_blocks_q0(amps, total, m);
-        return;
-    }
-    const std::size_t half = std::size_t{1} << q;
-    for (std::size_t base = 0; base < total; base += 2 * half) {
-        pair_run_body(amps + 2 * base, amps + 2 * (base + half), half, m);
+    const Gate1 g = gate1(m);
+    switch (q) {
+        case 0:
+            pair_blocks_q0(amps, total, m);
+            return;
+        case 1:  // blocks of 4: lo = 2 amplitudes, hi = the next 2
+            for (std::size_t base = 0; base < total; base += 4) {
+                __m256d l;
+                __m256d h;
+                pair2(g, _mm256_loadu_pd(amps + 2 * base), _mm256_loadu_pd(amps + 2 * base + 4), l, h);
+                _mm256_storeu_pd(amps + 2 * base, l);
+                _mm256_storeu_pd(amps + 2 * base + 4, h);
+            }
+            return;
+        default:  // q == 2, blocks of 8: lo = 4 amplitudes, hi = the next 4
+            for (std::size_t base = 0; base < total; base += 8) {
+                pair_run_body(amps + 2 * base, amps + 2 * base + 8, 4, g, m);
+            }
+            return;
     }
 }
 
 void avx2_scale_run(double* a, std::size_t n, const double* s) {
     const Bcast2 v = bcast2(s);
-    const __m256d zero = _mm256_setzero_pd();
+    const __m256d zero = zero4();
     std::size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+        const __m256d x = _mm256_loadu_pd(a + 2 * i);
+        const __m256d y = _mm256_loadu_pd(a + 2 * i + 4);
+        _mm256_storeu_pd(a + 2 * i, _mm256_add_pd(zero, cmul2(v.r, v.i, x)));
+        _mm256_storeu_pd(a + 2 * i + 4, _mm256_add_pd(zero, cmul2(v.r, v.i, y)));
+    }
     for (; i + 2 <= n; i += 2) {
         const __m256d x = _mm256_loadu_pd(a + 2 * i);
         _mm256_storeu_pd(a + 2 * i, _mm256_add_pd(zero, cmul2(v.r, v.i, x)));
@@ -158,7 +223,7 @@ void avx2_scale_run(double* a, std::size_t n, const double* s) {
     if (i < n) {
         const Bcast1 w = bcast1(s);
         const __m128d x = _mm_loadu_pd(a + 2 * i);
-        _mm_storeu_pd(a + 2 * i, _mm_add_pd(_mm_setzero_pd(), cmul1(w.r, w.i, x)));
+        _mm_storeu_pd(a + 2 * i, _mm_add_pd(zero2(), cmul1(w.r, w.i, x)));
     }
 }
 
@@ -166,7 +231,7 @@ void avx2_scale_run(double* a, std::size_t n, const double* s) {
 inline void scale_one(double* amps, std::size_t i, const double* d, std::size_t local) {
     const Bcast1 w = bcast1(d + 2 * local);
     const __m128d x = _mm_loadu_pd(amps + 2 * i);
-    _mm_storeu_pd(amps + 2 * i, _mm_add_pd(_mm_setzero_pd(), cmul1(w.r, w.i, x)));
+    _mm_storeu_pd(amps + 2 * i, _mm_add_pd(zero2(), cmul1(w.r, w.i, x)));
 }
 
 // The low-operand diagonal kernel. local(i) is assembled from the operands
@@ -188,7 +253,7 @@ void avx2_scale_elements(double* amps,
             }
         }
     }
-    const __m256d zero = _mm256_setzero_pd();
+    const __m256d zero = zero4();
     std::size_t i = begin;
     while (i < end) {
         const std::size_t block = i & ~std::size_t{7};
@@ -238,7 +303,7 @@ inline void two_qubit_one(double* amps,
     }
     for (std::size_t out = 0; out < 4; ++out) {
         const Bcast1 c0 = bcast1(m + 2 * (out * 4 + 0));
-        __m128d sum = _mm_add_pd(_mm_setzero_pd(), cmul1(c0.r, c0.i, a[0]));
+        __m128d sum = _mm_add_pd(zero2(), cmul1(c0.r, c0.i, a[0]));
         for (std::size_t in = 1; in < 4; ++in) {
             const Bcast1 c = bcast1(m + 2 * (out * 4 + in));
             sum = _mm_add_pd(sum, cmul1(c.r, c.i, a[in]));
@@ -267,7 +332,7 @@ void avx2_two_qubit(double* amps,
     for (std::size_t e = 0; e < 16; ++e) {
         c[e] = bcast2(m + 2 * e);
     }
-    const __m256d zero = _mm256_setzero_pd();
+    const __m256d zero = zero4();
     std::size_t i = begin;
     if (lo >= 1) {
         if (i < end && (i & 1) != 0) {

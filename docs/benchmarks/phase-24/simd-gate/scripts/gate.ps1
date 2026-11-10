@@ -37,10 +37,13 @@ $VsCMake = Join-Path $VsPath "Common7\IDE\CommonExtensions\Microsoft\CMake"
 if (Test-Path $VsCMake) { $env:PATH = "$VsCMake\CMake\bin;$VsCMake\Ninja;$env:PATH" }
 Set-Location $RepoRoot
 $env:MENOS_OPENBLAS_ROOT = & (Join-Path $RepoRoot "scripts\fetch-openblas-windows.ps1")
+$Cache = Join-Path $RepoRoot "build\_deps-cache"
 $Deps = Join-Path $RepoRoot "build\windows-bench\_deps"
+# A wrong dependency path, once cached, breaks every later configure.
+if (Test-Path "$Old\build\windows-bench\CMakeCache.txt") { Remove-Item -Force "$Old\build\windows-bench\CMakeCache.txt" }
 if (-not (Test-Path $Old)) { cmd /c "git worktree add --detach `"$Old`" $Ref 2>&1" | Out-Null }
 cmd /c "git -C `"$Old`" checkout -q --detach $Ref 2>&1" | Out-Null
-cmd /c "cmake -S `"$Old`" -B `"$Old\build\windows-bench`" -G Ninja -DCMAKE_BUILD_TYPE=Release -DMENOS_BUILD_BENCHMARKS=ON -DMENOS_BUILD_PYTHON_BINDINGS=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=`"$Deps\googletest-src`" -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=`"$Deps\nlohmann_json-src`" -DFETCHCONTENT_SOURCE_DIR_GOOGLE_BENCHMARK=`"$Deps\google_benchmark-src`" > `"$Out\ref-configure.log`" 2>&1"
+cmd /c "cmake -S `"$Old`" -B `"$Old\build\windows-bench`" -G Ninja -DCMAKE_BUILD_TYPE=Release -DMENOS_BUILD_BENCHMARKS=ON -DMENOS_BUILD_PYTHON_BINDINGS=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=`"$Cache\googletest-src`" -DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=`"$Cache\nlohmann_json-src`" -DFETCHCONTENT_SOURCE_DIR_GOOGLE_BENCHMARK=`"$Deps\google_benchmark-src`" > `"$Out\ref-configure.log`" 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Output "reference configure failed"; exit 1 }
 foreach ($dir in @("$Old\build\windows-bench", "build\windows-bench")) {
     cmd /c "cmake --build `"$dir`" --target menos_dense_simd_probe menos_dense_fusion_probe > `"$Out\build.log`" 2>&1"
