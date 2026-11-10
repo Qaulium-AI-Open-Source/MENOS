@@ -52,7 +52,8 @@ std::size_t insert_zero_bit(std::size_t i, std::uint32_t pos) {
 // ---------------------------------------------------------------------------
 
 std::complex<double>* as_complex(double* p) {
-    return reinterpret_cast<std::complex<double>*>(p);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<std::complex<double>*>(p);
 }
 
 std::complex<double> load_complex(const double* p) {
@@ -202,11 +203,13 @@ const DenseKernelTable* detected_table() {
 }
 
 const double* as_doubles(const std::complex<double>* p) {
-    return reinterpret_cast<const double*>(p);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const double*>(p);
 }
 
 double* as_doubles(std::complex<double>* p) {
-    return reinterpret_cast<double*>(p);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<double*>(p);
 }
 
 // Runs shorter than 2^kRunKernelMinQubit are not worth a call each.
