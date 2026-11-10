@@ -267,7 +267,7 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(paired_gates(16, 2000), 1));
             cases.push_back(counts_case(ry_cx_layers(12, 6), 1));
             cases.push_back(counts_case(then_one_qubit_gates(ry_cx_layers(10, 4), 3000), 1));
-            cases.push_back(counts_case(ising_trotter(24, 4), 1));
+            cases.push_back(counts_case(ising_trotter(12, 3), 1));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));
