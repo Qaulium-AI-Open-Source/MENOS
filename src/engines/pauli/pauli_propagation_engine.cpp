@@ -619,7 +619,8 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         // by the Phase 11 monitor like any other. For the same reason the
         // bandwidth floor is taken from the term list a run allocates when
         // nothing branches, not from the worst-case peak above.
-        const double words = static_cast<double>((std::uint64_t{request.num_qubits} + 63) / 64);
+        const std::uint64_t word_count = (std::uint64_t{request.num_qubits} + 63) / 64;
+        const double words = static_cast<double>(word_count);
         const double term_updates = static_cast<double>(t0) * static_cast<double>(num_gates);
         auto& pauli = estimate.time.counts[static_cast<std::size_t>(Engine::Pauli)];
         pauli[0] = static_cast<double>(num_gates);

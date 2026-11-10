@@ -42,6 +42,9 @@ struct Case {
     std::uint64_t trajectories = 0;
 };
 
+// The circuit and observable builders below take a register size beside a
+// qubit, gate, layer or term count; each is named at its one call site.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 PauliString pauli_z(std::uint32_t n, std::uint32_t qubit) {
     const std::size_t words = (static_cast<std::size_t>(n) + 63) / 64;
     PauliString p{n, std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0)};
@@ -84,8 +87,9 @@ Observable random_terms(std::uint32_t n, std::uint32_t t) {
         for (std::size_t w = 0; w < words; ++w) {
             const std::uint32_t bits = std::min<std::uint32_t>(64, n - static_cast<std::uint32_t>(64 * w));
             const std::uint64_t mask = bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
-            p.x_words[w] = mix((2 * i * words) + w) & mask;
-            p.z_words[w] = mix(((2 * i + 1) * words) + w) & mask;
+            const std::uint64_t row = 2 * static_cast<std::uint64_t>(i);
+            p.x_words[w] = mix((row * words) + w) & mask;
+            p.z_words[w] = mix(((row + 1) * words) + w) & mask;
         }
         o.terms.emplace_back(std::move(p), std::complex<double>{1.0, 0.0});
     }
@@ -226,6 +230,8 @@ Circuit with_rz(const Circuit& circuit) {
     }
     return c;
 }
+
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 Case counts_case(Circuit circuit, std::uint64_t shots) {
     return Case{.circuit = std::move(circuit), .want_counts = true, .shots = shots};

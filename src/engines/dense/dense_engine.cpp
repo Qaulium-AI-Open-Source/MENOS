@@ -233,6 +233,8 @@ std::uint64_t gate_passes(const ir::FusionPlan& plan) {
 // passes), each with a fixed cost the work term does not see on a small
 // state; component 1 the work units, amplitude updates weighted by 2^k;
 // component 2 the shots sampled.
+// A pass count and a work figure: distinct roles, named at both call sites.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 TimeTerms dense_time_terms(const EngineEstimateRequest& request,
                            std::uint64_t gate_pass_count,
                            std::uint64_t work) {
