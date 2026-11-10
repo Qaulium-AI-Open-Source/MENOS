@@ -14,6 +14,11 @@ MENOS was built in phases, each passing an acceptance gate before the next began
 - **A Factorized plan that overruns its time budget replans** with per-region observations instead of being refused; a cut plan's overrun is still refused.
 - **The disk tier is priced at the dense rate measured on every thread**, with reads and writes at their own bandwidths: measured over predicted 0.81 on Linux and 1.17 on Windows on the Phase 23 gate circuits.
 - **The cost model's accuracy is measured per engine** (`docs/planning/cost-model`), replacing the Phase 11 table.
+- **Every CPU engine has its own calibrated time model.** Each engine's estimate reports what its runtime is made of: passes, gates, tableau updates, SVDs, term updates, shots. Calibration measures what each of those costs on this machine, engine by engine.
+  - **Before:** every engine's work was priced at the dense engine's rate, so a faster dense kernel made every other engine look faster.
+  - **Measured on the development machine** (`docs/adr/0028` section 20.5): the typical error on Linux fell from 28× to 1.55× for MPS, from 18× to 1.70× for stabilizer, from 11× to 1.10× for tensor network and from 7.2× to 1.64× for Pauli propagation. Every engine is now within 2.3× typically and 4× at the 90th percentile, on Linux and Windows.
+  - **Calibration now costs about 1–2.5 s** the first time a process needs it. Unbudgeted CPU-only jobs still never run it.
+- **A job with a time budget picks the plan predicted to be fastest.** Every other job still picks the fewest work units, so unbudgeted plans and their `explain()` output are unchanged. For a budgeted job, every candidate is costed in full; none is reported as pruned (`docs/adr/0028` section 21).
 
 ## Phase 23: tiered memory across VRAM, RAM and disk
 

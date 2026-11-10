@@ -20,9 +20,10 @@ Stabilizer  n  +  gates·n  +  2·n²·⌈n/64⌉  (+ sampling)       (polynomia
 
 Pauli propagation, MPS, tensor network and cut estimates follow the same principle with their own structural inputs: the worst-case term count, the rigorous bond-dimension bound, the contraction order's largest tensor, and the sum over fragment evaluations. All use **checked arithmetic**, so an unrepresentable quantity makes a candidate infeasible with a reason and never wraps.
 
-## Why the choice does not depend on timing
+## When the choice depends on timing
 
-The planner picks the algorithm by work units alone. Timing never enters that decision, which keeps algorithm choice deterministic and identical across machines.
+- **A job with no time budget:** the planner picks the algorithm by work units alone. Timing never enters that decision, which keeps the choice deterministic and identical across machines.
+- **A job with a time budget** (since Phase 24): the planner picks the feasible candidate with the fewest predicted seconds, because the budget is a statement about seconds. Every candidate is then costed in full, with no branch-and-bound pruning, because pruning bounds work units and a candidate with more work units can be the faster one.
 
 ## Calibration
 
@@ -35,16 +36,29 @@ Seconds come from a one-time calibration, performed the first time a job is plan
 | Host↔device transfer rates | Pageable host memory, the path the backend really takes | CUDA estimates |
 | Kernel-launch overhead | A tiny kernel, including constant upload and synchronize | CUDA estimates |
 | Device work rate | A real circuit through the CUDA engine, launch overhead subtracted | CUDA estimates |
+| Seconds per time count, per CPU engine | Each engine runs a few small fixed circuits on one thread. A non-negative least-squares fit then gives what one count of each of the engine's time terms costs | CPU estimates |
 
-Calibration measures this machine's speed on the code that will actually run, instead of assuming a constant. It costs on the order of 0.1 s the first time in a process (measured at roughly 86 to 99 ms on the development machine) and microseconds thereafter.
+Calibration measures this machine's speed on the code that will actually run, instead of assuming a constant. It runs the first time a job needs a calibrated profile in a process, and then costs microseconds.
+
+That first run took 1.0–1.1 s on Windows and 1.8–2.5 s on Linux with the CUDA calibration included (development machine, Phase 24). Before the per-engine time model it was about 0.1 s.
+
+An unbudgeted CPU-only job never runs it.
 
 ### Seconds for a CPU candidate
 
 ```text
-seconds = max( work_units / work_units_per_second ,  peak_bytes / memory_bandwidth )
+seconds = max( Σ_engines Σ_c  time_count[engine][c] · seconds_per_count[engine][c] ,
+               floor_bytes / memory_bandwidth )
 ```
 
-The first term comes from calibration on a cache-resident circuit, so it is optimistic for very large states. The second is a physical floor: a candidate that materializes `peak_bytes` cannot finish sooner than that many bytes take to stream.
+Each CPU engine's estimate reports up to four **time counts**: structural counts of what its runtime is made of. For example:
+- dense: passes, work units and shots;
+- stabilizer: gates, tableau updates and word operations;
+- MPS: SVDs, flops, tensor elements and sampled elements.
+
+Calibration measures each count's cost per engine. The candidate is priced as the sum over the engines it uses, so each engine is timed in its own unit, and no constant relates one engine's work to another's. The second term is a physical floor: a candidate that materializes `floor_bytes` cannot finish sooner than that many bytes take to stream. The floor is the peak bytes, except for Pauli propagation, where it is the unbranched term list's bytes.
+
+If an engine has no calibrated figures, its candidate falls back to `work_units / work_units_per_second` at the dense rate.
 
 ### Seconds for a CUDA candidate
 
@@ -59,34 +73,41 @@ The launch term is what makes small circuits slower on the GPU: each launch cost
 
 ## How accurate is it?
 
-Measured on the development machine (Phase 24, `docs/adr/0028` sections 16.10 and 16.12): actual over predicted seconds for every engine. Each engine ran easy, representative and stress workloads, with the prediction and the run in the same process, in three processes per platform. The table is Linux (WSL, GCC), the reproducible platform. On Windows the same models read further off for dense, density-matrix and factorized jobs, because the calibration there is slower and varies more between processes.
+This was measured on the development machine (Phase 24, `docs/adr/0028` section 20.5).
+
+**Method.**
+- Each engine's actual over predicted seconds was measured on easy, representative and stress workloads.
+- Every job carries a time budget.
+- The prediction and the run are in the same process.
+- There were three processes per platform.
+
+"Typical error" is the median of |ln(actual ÷ predicted)|, expressed as a factor. "P90" is the 90th percentile of the same figure.
 
 ::: warning Disclaimer
 These figures come from benchmarks run on the developer's own machine. Treat them as indicative; on your hardware they will differ.
 :::
 
-| Engine | Median actual ÷ predicted | Range | Typical error |
-|---|---|---|---|
-| Dense (CPU) | 1.2 | 0.58 to 1.75 | 1.3× |
-| Dense (CUDA) | 0.92 | 0.80 to 0.98 | 1.1× |
-| Factorized | 1.5 | 0.91 to 2.05 | 1.5× |
-| Trajectory | 1.5 | 1.47 to 1.59 | 1.5× |
-| Density matrix | 0.40 | 0.37 to 1.21 | 2.5× |
-| Cut and recombine | 3.8 | 2.6 to 5.1 | 3.7× |
-| Tensor network | 4.9 | 4.6 to 5.1 | 4.9× |
-| Pauli propagation | 0.40 | 0.013 to 9.3 | 7.4× |
-| **Stabilizer** | **10** | **0.79 to 30** | **7.9×** |
-| **MPS** | **21** | **0.78 to 58** | **12×** |
+| Engine | Linux: typical error | Linux: P90 | Windows: typical error | Windows: P90 |
+|---|---|---|---|---|
+| Dense (CPU) | 1.16× | 1.37× | 1.69× | 3.57× |
+| Dense (CUDA) | 1.14× | 1.21× | not built | not built |
+| Density matrix | 1.03× | 1.36× | 1.17× | 2.78× |
+| Factorized | 1.11× | 1.46× | 1.53× | 2.19× |
+| Tensor network | 1.10× | 1.17× | 1.14× | 1.25× |
+| Trajectory | 1.24× | 1.42× | 1.26× | 1.65× |
+| MPS | 1.55× | 1.78× | 2.12× | 3.09× |
+| Pauli propagation | 1.64× | 2.15× | 2.26× | 2.95× |
+| Stabilizer | 1.70× | 3.09× | 2.04× | 3.99× |
+| Cut and recombine | not measured | not measured | not measured | not measured |
 
-"Typical error" is the median of |ln(actual ÷ predicted)| expressed as a factor.
+Before the per-engine time model, the typical error on Linux was 28× for MPS, 18× for stabilizer, 11× for tensor network and 7.2× for Pauli propagation.
 
 What the table says:
-- **Dense, CUDA dense, factorized and trajectory** predictions are within a factor of about two.
-- **The MPS model is optimistic,** worst on low-entanglement circuits, where every bond is small. Its per-gate cost is dominated by a fixed cost of each SVD and its allocations, which the χ³ term does not see.
-- **The stabilizer model is optimistic on long Clifford circuits** and close on graph states.
-- **The Pauli model charges the worst-case branching.** Its prediction grows about 4× per non-Clifford rotation while the measured time stays flat.
-
-These models are scheduled for a follow-on phase with targets set from this table.
+- **Every engine is within a factor of about two typically, and of four at the 90th percentile.** On Windows the MPS, Pauli and stabilizer medians are slightly over two.
+- **Pauli propagation is optimistic,** more so with each non-Clifford rotation. The time model charges a run in which no term branches.
+- **The stabilizer model is optimistic on 1000-qubit random Clifford circuits and pessimistic on 2000-qubit graph states.** Calibration uses tableaux of at most 512 qubits.
+- **Dense on Windows is pessimistic at 20–22 qubits.** Calibration runs on one thread, and large jobs run on every thread.
+- **Cut and recombine has no measured rows.** Under the seconds ranking, the planner chose a direct plan on every cut workload.
 
 The disk tier's prediction (since Phase 24): the work at the dense rate measured on every hardware thread, plus the bytes written at the scratch directory's write bandwidth and the bytes read at its read bandwidth. Measured over predicted on the Phase 23 gate circuits:
 - 0.81 at 30 qubits on Linux;

@@ -36,7 +36,7 @@ using SecondsPerTimeCount = std::array<std::array<double, kTimeComponents>, kTim
 
 // The non-negative least-squares fit the calibration uses, exposed for its
 // unit test: rows[i] are the time-component counts of measurement i (one
-// engine's three), seconds[i] its measured time. Minimises
+// engine's components), seconds[i] its measured time. Minimises
 // sum_i ((rows[i] . x) / seconds[i] - 1)^2 over x >= 0, i.e. the relative
 // error, so a short calibration run weighs as much as a long one. Components
 // that are zero in every row get 0.

@@ -1,0 +1,10 @@
+environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+calibration_seconds=2.53494
+time_model engine=0 7.12817e-07 1.72563e-10 7.49007e-08 0
+time_model engine=1 2.43665e-08 4.86856e-09 2.60262e-10 0
+time_model engine=2 0 1.07286e-08 1.55463e-09 0
+time_model engine=3 1.27294e-06 4.8219e-09 2.67895e-09 1.74378e-09
+time_model engine=4 0 1.12764e-09 1.31797e-06 0
+time_model engine=5 5.98146e-08 1.71204e-10 6.76152e-08 0
+time_model engine=6 3.17478e-08 6.0502e-10 4.82538e-07 0
+calibrated: work_units_per_second=4.67499e+09 memory_bandwidth_bytes_per_second=3.37055e+10 cuda_device_work_units_per_second=8.51122e+09 threads=22

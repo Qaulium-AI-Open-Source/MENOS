@@ -2070,6 +2070,10 @@ Final commit of items 1, 2, 3 and 9: `05056f8` on `phase-24-planner-accuracy`. T
 
 The first Windows attempt ran at the same time as the WSL run. It failed in the ASan stage with an out-of-memory error from the sanitizer, not a test failure. Run alone, it passed as above. The two scripts are now run one after the other.
 
+### 16.14 Gate ruling (2026-11-10)
+
+The owner passed the accuracy gate of items 1, 2, 3 and 9 on 2026-11-10. They ruled that the moves listed in 16.12 are run-to-run variation and do not count against it.
+
 ## 17. Kickoff: item 7, gate fusion in the dense CPU engine — [MENOS] / [OPEN]
 
 **Started by the owner on 2026-11-09**, in the order the owner set on
@@ -2963,3 +2967,184 @@ The item 7 probe re-run in full on `aed0ee7` with the AVX2 kernels (`docs/benchm
 | 5 | 0.24× | 0.12–0.69× | 0.26× | 0.07–0.74× |
 
 Window 2 stays the best everywhere. A dense block of three or more qubits runs on the generic kernel, which stays scalar (Q4), so wider windows still lose. Through `menos::run`, fusion now gives 2.25–2.57× on Linux and 2.30–2.65× on Windows over the unfused AVX2 engine. The window stays 2, as the owner decided. A vectorised generic kernel, the condition under which a wider window could pay, would need a new decision.
+
+### 19.10 Gate ruling (2026-11-10)
+
+The owner passed the item 8 gate on 2026-11-10. They ruled that the narrow Linux 3b miss and the criterion 4 rows of 19.8 do not count against it. The verification of the phase head (section 22) covers the CPU/CUDA and in-memory/disk identities named in 19.8.
+
+## 20. The model fixes: a calibrated time model per engine — [MENOS] / [MEASURED]
+
+### 20.1 The problem
+
+**The old pricing.** Until this item, every CPU candidate's seconds were its work units divided by one rate: the dense engine's calibrated `work_units_per_second`. The result was floored by its peak bytes over the memory bandwidth. Work units rank the candidates of one job against each other. They were never wall-clock equivalent across engines (`docs/planning/cost-model.md`).
+
+**What step 1 measured** (16.10):
+- MPS ran 20–57× slower than predicted, and stabilizer up to 30×;
+- Pauli predictions were up to 75× too pessimistic;
+- tensor network was off by about 5×.
+
+**Item 8 made it worse.** It made the dense rate 2–3× faster (19.8, "Predictability"). That made every other engine's prediction 2–3× more optimistic, with no change to that engine.
+
+**The baseline.** The baseline before this item, on the item 8 head, is `docs/benchmarks/phase-24/model/before/{linux,windows}`. The typical error is the median of |ln r| as a factor. On Linux it read:
+
+| Engine | Typical error |
+|---|---|
+| MPS | 28× |
+| stabilizer | 18× |
+| tensor network | 11× |
+| cut | 9.4× |
+| Pauli | 7.2× |
+
+### 20.2 Owner decisions (2026-11-10)
+
+- **Target:** for every engine, on both platforms, the median of |ln(actual / predicted)| is within ln 2 (a factor of 2), and its 90th percentile is within ln 4.
+- **Scope:** the model fixes, then item 4, then the phase's verification, the gate, the merge and the push.
+
+### 20.3 Design
+
+**Every CPU engine reports what its runtime is made of.** `CostEstimate::time` (`include/menos/plan.h`, `TimeTerms`) holds up to four structural counts per engine. They come from the same structural facts the estimate already uses, and need no measurement:
+
+| Engine | Component 0 | Component 1 | Component 2 | Component 3 |
+|---|---|---|---|---|
+| dense | passes over the state | work units (amplitude updates weighted by 2^k) | shots | — |
+| stabilizer | gates | tableau updates, n per gate | word operations of the eliminations and of sampling | — |
+| Pauli | gates | term updates: the observable's own terms per gate | words of those updates | — |
+| MPS | SVDs | their flops and the expectation contractions | tensor elements built or touched | elements the sampler touches over all shots |
+| tensor network | elimination steps over every term | multiply-adds | operations placed in every term's network | — |
+| density matrix | passes | work | shots | — |
+| trajectory | passes of every trajectory | work | trajectories | — |
+
+Two engines count differently from their work units:
+- **MPS.** The counts come from the memory replay at each operation's own bonds. The work units use the peak bond instead, which charged every gate as the circuit's widest one.
+- **Pauli.** The counts are those of a run in which no term branches. In 16.10.1 the worst-case branching bound grew 4× per rotation while the time stayed flat. Its memory floor is the unbranched term list's peak bytes (`TimeTerms::floor_bytes`), not the worst-case peak.
+
+**The calibration measures what one count costs, engine by engine.** `calibrate_time_model()` (`src/plan/time_model.{h,cpp}`) works like this:
+- it runs each engine on three to five small fixed circuits whose counts differ in proportion;
+- it times each circuit on one thread, after a discarded run, for at least 10 ms and three repetitions;
+- it solves for non-negative seconds per count that reproduce the times, by least squares on relative error (`fit_seconds_per_count`).
+
+The figures are stored in `HardwareProfile::seconds_per_time_count`. An engine whose calibration cannot run keeps zeros, which the planner reads as "uncalibrated" for that engine alone.
+
+**The planner prices a candidate by its own terms.** `cpu_seconds` (`src/plan/planner.cpp`) sums counts times figures over the engines the candidate uses. The bandwidth floor applies as before.
+- A Factorized candidate carries the sum of its regions' terms, plus the recombination's.
+- A cut candidate carries the sum over its fragment evaluations.
+- A candidate with no terms, or with an engine that has no figures, keeps the work-unit price.
+- CUDA candidates are unchanged.
+
+**No constant relates one engine's work to another's.** Every figure is measured on this machine, on the code that runs.
+
+### 20.4 What changed and what did not
+
+- **Plans of unbudgeted jobs are unchanged.** They rank by work units (section 21), and the golden corpus pins them. Only three budgeted jobs per platform changed (21.3).
+- **Calibration takes longer.**
+  - The whole calibrated profile now takes 1.81–2.53 s per process on Linux. That build is `cuda12-release`, so the figure includes the CUDA calibration.
+  - On Windows it takes 1.03–1.08 s.
+  - Before, the CPU figures took about 0.1 s (`docs/planning/cost-model.md`).
+
+  Calibration still runs once per process, and only for a job that needs a calibrated profile. An unbudgeted CPU-only job never runs it (`plan::hardware_profile_for`).
+- **Memory estimates are unchanged.** The terms add no allocation and change no `estimated_peak_bytes`.
+
+### 20.5 Measurement — [MEASURED]
+
+**Method.**
+- **Runs:** `menos_cost_model_accuracy_benchmark`, three processes per platform, on `3b3397f`, on AC at every checkpoint, 2026-11-10 18:48–19:01 UTC.
+- **Scripts and records:** `docs/benchmarks/phase-24/model/scripts/accuracy.{sh,ps1}`; the records are in `docs/benchmarks/phase-24/model/after/{linux,windows}`.
+- **Tables:** from `bench/tools/accuracy_table.py`.
+
+Each cell is median / P90. The typical error is the factor exp(median |ln r|), and P90 is its 90th percentile. "Before" is the item 8 head.
+
+| Engine | Linux before | Linux after | Windows before | Windows after | Target met |
+|---|---|---|---|---|---|
+| dense (CPU) | 1.22 / 1.54 | **1.16 / 1.37** | 1.92 / 3.73 | **1.69 / 3.57** | yes |
+| dense (CUDA, Linux) | 1.14 / 1.15 | 1.14 / 1.21 | not built | not built | yes (unchanged model) |
+| density matrix | 1.22 / 1.61 | **1.03 / 1.36** | 1.55 / 4.22 | **1.17 / 2.78** | yes |
+| factorized | 3.40 / 8.88 | **1.11 / 1.46** | 2.33 / 13.6 | **1.53 / 2.19** | yes |
+| MPS | 28.3 / 130 | **1.55 / 1.78** | 28.9 / 138 | **2.12** / 3.09 | **Windows median missed** |
+| Pauli | 7.21 / 33.6 | **1.64 / 2.15** | 7.25 / 45.9 | **2.26** / 2.95 | **Windows median missed** |
+| stabilizer | 18.0 / 63.7 | **1.70 / 3.09** | 11.7 / 53.2 | **2.04** / 3.99 | **Windows median missed** |
+| tensor network | 11.1 / 12.0 | **1.10 / 1.17** | 14.3 / 14.9 | **1.14 / 1.25** | yes |
+| trajectory | 2.44 / 2.60 | **1.24 / 1.42** | 2.00 / 2.13 | **1.26 / 1.65** | yes |
+| cut | 9.44 / 22.4 | not measured | 15.0 / 56.0 | not measured | **not measured** |
+
+**Linux meets the target on every measured engine. Windows meets every P90, and misses the median on three engines.** The misses are recorded for the owner's ruling, not claimed as met.
+
+**Why the misses are the model's shape.** Per workload, the three runs agree within about 15%, so the misses are not run-to-run variation:
+- **Pauli** underpredicts on every row, more with each rotation. Terms do branch on these circuits, and the unbranched count does not see it. A branching estimate with a measured basis would be new work.
+
+  | Rotations | Windows | Linux |
+  |---|---|---|
+  | 2 | 1.7–2.0× | 1.4–1.5× |
+  | 12 | 2.6–3.0× | 2.1–2.2× |
+
+- **Stabilizer** underpredicts the 1000-qubit random Clifford circuit and overpredicts the 2000-qubit graph state. The calibration's tableaux are at most 512 qubits, and per-row costs change with the tableau's size against the caches.
+
+  | Circuit | Windows | Linux |
+  |---|---|---|
+  | random Clifford, 1000 qubits (underpredicted) | 3.5–4.0× | 3.0–3.2× |
+  | graph state, 2000 qubits (overpredicted) | 2.2–2.4× | 1.7× |
+
+- **MPS** overpredicts the Trotter circuits, 2.5–3.1× on Windows and 1.6–1.8× on Linux. On Windows it underpredicts brickwork at 16–20 qubits 1.3–1.4×.
+- **Dense on Windows** is within the target, but overpredicts at 20–22 qubits (0.25–0.6 actual over predicted). The calibration runs on one thread, while the benchmark runs on every thread.
+
+Fitting the calibration to these benchmark sizes would close the medians without a structural basis, so it was not done (owner, 2026-11-10: record for the ruling).
+
+**Cut is not measured.**
+- **Why there are no cut rows.** The benchmark's jobs carry a time budget, so under item 4 they rank by seconds. On every cut fixture the planner now chooses direct dense or direct MPS, or refuses: the 12- and 14-wide scrambled circuits are refused, as before. No cut plan runs, so there is no row.
+- **The old cut prices were too low.** Before this item the cut rows read 9.4× (Linux) and 15× (Windows) actual over predicted. Under a seconds ranking at those old prices, cut would have been chosen over a plan that its own model predicted to be faster.
+- **Not measured here:** whether the direct plans chosen now are in fact faster than the cut plan was.
+
+## 21. Item 4: the ranking rule — [MENOS] / [MEASURED]
+
+### 21.1 Owner decision (2026-11-10)
+
+The owner chose option (b) of the BUILD_PLAN: **a job with a time budget ranks feasible candidates by predicted seconds, and every other job ranks by work units**, as before.
+
+### 21.2 Implementation
+
+- **When it applies.** `rank_by_seconds` (`src/plan/planner.cpp`) holds when the job carries `time_budget_seconds` and the profile is calibrated. Every budgeted job is planned against a calibrated profile, so in practice the budget alone decides.
+- **The winner** is the feasible candidate with the fewest `estimated_seconds`. The same comparison (`cheaper`) is used for every candidate family. Ties keep the existing order.
+- **Branch-and-bound pruning is off for these jobs.**
+  - Why: its bound is in work units, and under a seconds ranking a candidate with more work units can be the faster one. Pruning it could change the winner.
+  - Every candidate is therefore costed in full, as for a forced CUDA backend or a forced disk tier.
+  - Unbudgeted jobs prune exactly as before. The pruning invariant is unchanged: a pruned candidate is one that a cheaper feasible candidate already beats.
+- **The Phase 11 invariants hold:**
+  - the threshold is still the caller's budget;
+  - an observation can only raise a figure;
+  - a job with no budget installs no monitor and plans as before.
+
+### 21.3 What changed in the corpus
+
+The golden corpus's only budgeted family, `expectation_ising_budgeted.{small,medium,large}`, changed on both platforms:
+- its winner, cost and regions are unchanged;
+- the tensor-network and cut candidates that were reported as pruned are now costed in full, with their own figures.
+
+Every other golden plan is byte-identical.
+
+### 21.4 Tests
+
+**`tests/plan/time_model_test.cpp`:**
+- the fit recovers known rates and never returns a negative one;
+- every CPU engine reports its own terms and no other engine's;
+- a Factorized candidate carries the sum of its regions' terms;
+- `RankingRuleTest` plans a connected Clifford counts job with a profile that makes the stabilizer slow:
+  - an unbudgeted job picks the stabilizer, which has the fewest work units;
+  - a budgeted job picks dense, which has the fewest seconds;
+  - the winner's seconds are no more than any feasible candidate's;
+- the calibration gives every engine finite, non-negative, non-zero figures.
+
+**`tests/plan/planner_test.cpp`:**
+- `WithATimeBudgetEveryCandidateIsCostedInFullAndTheFastestWins` replaces the test that pruning still applied under a budget.
+- Tests that pin work-unit behaviour under a budget use a profile whose bandwidth term never binds: `kWorkRateProfile` here, and `kUnitRateProfile` in `tests/api/replan_test.cpp`.
+
+### 21.5 Commits
+
+On `phase-24-simd-kernels`, from `e2dc135` and `87600b9` through `3b3397f`:
+
+| Commits | Change |
+|---|---|
+| `e2dc135` | the accuracy scripts |
+| `87600b9` | the time terms |
+| `b9671ff` | the calibrated model and the ranking |
+| `01d1128`–`62a6e5f` | the MPS, Pauli and calibration-case refinements |
+| `099f9c5`–`6fbb778`, `3b3397f` | the test fixtures and goldens |
+| `61cff63`–`9d288b7` | the format and clang-tidy fixes |

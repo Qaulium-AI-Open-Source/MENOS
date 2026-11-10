@@ -561,7 +561,7 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 #### Planner accuracy: items 1, 2, 3 and 9 (started 2026-11-05)
 
-**Status (2026-11-06).** The owner started items 1 (measure the cost model), 2 (report and bound planning cost), 3 (per-region observations) and 9 (threaded calibration and the disk link per direction) on 2026-11-05, on branch `phase-24-planner-accuracy` from `main` at `65e9c6c`, and answered the design questions the same day (`docs/adr/0028` sections 16–16.9, with the termination proof of per-region replanning in 16.8 and the benchmark method in 16.9). Step 1 measured every engine's actual over predicted seconds on Linux and Windows, planning cost and the dense rate by size and thread count (16.10). At checkpoint A (16.11) the owner decided: the threaded rate prices the disk tier only, with reads and writes at their own bandwidths; the MPS formula is unchanged (per-gate bonds would move it the wrong way; a measured per-gate fixed cost is a follow-on item); no search cap (the 4.4 s case now plans in 2–6 ms); the accuracy gate is no regression on Linux plus the disk tier within 2× on the Phase 23 circuits, with per-engine model fixes a follow-on phase. Implemented: `Result::plan_seconds()`/`replan_seconds()` and `plan_s=`/`replan_s=` in `explain()` (item 2); the disk tier's pricing (item 9); per-region and plan floors so that a Factorized overrun replans instead of being refused, with a cut overrun still refused (item 3). The final measurement and verification are in `docs/adr/0028` section 16.12. **Gate: OPEN** (the owner's).
+**Status (2026-11-06).** The owner started items 1 (measure the cost model), 2 (report and bound planning cost), 3 (per-region observations) and 9 (threaded calibration and the disk link per direction) on 2026-11-05, on branch `phase-24-planner-accuracy` from `main` at `65e9c6c`, and answered the design questions the same day (`docs/adr/0028` sections 16–16.9, with the termination proof of per-region replanning in 16.8 and the benchmark method in 16.9). Step 1 measured every engine's actual over predicted seconds on Linux and Windows, planning cost and the dense rate by size and thread count (16.10). At checkpoint A (16.11) the owner decided: the threaded rate prices the disk tier only, with reads and writes at their own bandwidths; the MPS formula is unchanged (per-gate bonds would move it the wrong way; a measured per-gate fixed cost is a follow-on item); no search cap (the 4.4 s case now plans in 2–6 ms); the accuracy gate is no regression on Linux plus the disk tier within 2× on the Phase 23 circuits, with per-engine model fixes a follow-on phase. Implemented: `Result::plan_seconds()`/`replan_seconds()` and `plan_s=`/`replan_s=` in `explain()` (item 2); the disk tier's pricing (item 9); per-region and plan floors so that a Factorized overrun replans instead of being refused, with a cut overrun still refused (item 3). The final measurement and verification are in `docs/adr/0028` section 16.12. **Gate: PASSED** by the owner on 2026-11-10, ruling that the moves listed in 16.12 are run-to-run variation (section 16.14).
 
 #### Item 7, gate fusion in the dense CPU engine (started 2026-11-09)
 
@@ -584,7 +584,28 @@ The owner took every recommendation the same day (19.5): baseline and AVX2 only 
 
 The criterion 4 rows are listed in 19.8 for the owner. Q5: the item 7 probe re-run with the new kernels keeps window 2 as the best (19.9).
 
-**Gate: OPEN** (the owner's).
+**Gate: PASSED** by the owner on 2026-11-10, ruling that the Linux 3b miss and the criterion 4 rows do not count against it (19.10).
+
+#### The model fixes and item 4, the ranking rule (started 2026-11-10)
+
+**Status (2026-11-10).** The owner asked for the model fixes and item 4, then the phase's verification, gate, merge and push, on branch `phase-24-simd-kernels`.
+
+**Owner decisions:**
+- the target for every engine on both platforms: a median within 2× and a 90th percentile within 4×;
+- ranking option (b): seconds under a time budget, work units otherwise.
+
+**Built** (`docs/adr/0028` sections 20 and 21, `e2dc135`–`3b3397f`):
+- **Time counts.** Every CPU engine's estimate reports up to four structural time counts (`CostEstimate::time`).
+- **Calibration.** `calibrate_time_model()` measures each count's cost per engine on small fixed circuits, by a non-negative least-squares fit.
+- **Pricing.** The planner prices CPU candidates by their own counts.
+- **Ranking.** A budgeted job picks the fewest predicted seconds and costs every candidate in full. Unbudgeted jobs rank by work units, and their plans are unchanged.
+- **Goldens.** Only the three budgeted golden jobs changed, on each platform. The winner is the same; the candidates that were pruned are now costed in full.
+
+**Measured** (section 20.5, three processes per platform on `3b3397f`):
+- **Linux:** every measured engine meets the target. Before, MPS read 28×, stabilizer 18×, tensor network 11× and Pauli 7.2×. Now the worst median is stabilizer at 1.70× and the worst P90 is stabilizer at 3.09×.
+- **Windows:** every P90 is within 4× (worst: stabilizer at 3.99×). Three medians miss 2×: Pauli at 2.26×, MPS at 2.12× and stabilizer at 2.04×. These are the model's shape (Pauli branching, stabilizer tableau sizes against the caches), not run-to-run variation, and are recorded for the owner's ruling.
+- **Cut:** not measured. Under the seconds ranking no cut plan was chosen.
+- **Calibration cost:** now 1.0–2.5 s per process, against about 0.1 s before.
 
 #### Stabilizer sampler fix (owner addition, 2026-11-09)
 
