@@ -3148,3 +3148,24 @@ On `phase-24-simd-kernels`, from `e2dc135` and `87600b9` through `3b3397f`:
 | `01d1128`–`62a6e5f` | the MPS, Pauli and calibration-case refinements |
 | `099f9c5`–`6fbb778`, `3b3397f` | the test fixtures and goldens |
 | `61cff63`–`9d288b7` | the format and clang-tidy fixes |
+
+### 21.6 A budget can change the seeded counts (owner, 2026-11-11)
+
+**What the verification found.** The first `scripts/verify.sh` run on `64ae983` failed one test, the Phase 17 `test_the_qiskit_backend_honours_a_generous_budget` (`docs/adr/0021` section 10, "a met budget gives the same counts"). On its 3-qubit Bell circuit, two plans win:
+
+| Run | Ranking | Winner |
+|---|---|---|
+| no budget | work units | `factorized`, 16 work units: stabilizer on qubits 0–1, dense on qubit 2 |
+| 3600 s budget | seconds | `direct_stabilizer`, predicted faster because it has no recombination |
+
+**Why the counts differ.** Both plans are exact. A different engine draws a different sample from the same seed, as forcing CUDA does (`docs/adr/0021` section 2, correction of 2026-10-09).
+
+**The owner's ruling.** The owner ruled to keep the test's purpose and drop the same-counts check. The test now checks that:
+- the budget is forwarded;
+- the run completes with no replan;
+- the counts are a valid sample: only `000` and `011`, 256 shots.
+
+**What still holds, and what does not.**
+- A job with no budget plans and samples exactly as before.
+- Within one process, a budgeted job's plan, and so its seeded counts, repeat.
+- Between processes they can differ when two candidates' predicted seconds are close, because the calibration differs between processes. On Windows this is about 1.5× (BUILD_PLAN, item 4).

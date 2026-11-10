@@ -104,11 +104,18 @@ def test_the_qiskit_backend_defaults_to_no_time_budget(backend):
     assert backend.options.time_budget_seconds is None
 
 
+# A budget ranks candidates by predicted seconds (Phase 24 item 4, owner
+# option (b), docs/adr/0028 section 21), so a budgeted job may run a different
+# exact plan than the unbudgeted one -- here direct stabilizer instead of
+# factorized -- and draw a different sample for the same seed. Phase 17's
+# same-counts check is therefore replaced by a check that the counts are a
+# valid sample of the Bell state (owner, 2026-11-11, section 21.6).
 def test_the_qiskit_backend_honours_a_generous_budget(backend):
     qc = _bell_qc()
-    reference = backend.run(qc, shots=256, seed_simulator=5).result()
     budgeted = backend.run(qc, shots=256, seed_simulator=5, time_budget_seconds=3600.0).result()
-    assert budgeted.get_counts() == reference.get_counts()
+    counts = budgeted.get_counts()
+    assert set(counts) <= {"000", "011"}
+    assert sum(counts.values()) == 256
     # No attempt was abandoned, so nothing is added to the metadata.
     assert "menos_replans" not in getattr(budgeted.results[0], "metadata", {})
 
