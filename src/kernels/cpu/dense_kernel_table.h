@@ -30,7 +30,7 @@ struct DenseKernelTable {
     // lo[i], hi[i] <- m * (lo[i], hi[i]) for i in [0, n): one 1-qubit gate on
     // n pairs whose members are hi - lo apart. m is the row-major 2x2 matrix.
     void (*pair_run)(double* lo, double* hi, std::size_t n, const double* m);
-    // The same gate on operand q in {0, 1, 2}, over every block of 2^(q+1)
+    // The same gate on operand q in {0, 1, 2, 3}, over every block of 2^(q+1)
     // amplitudes of amps[0, total).
     void (*pair_blocks)(double* amps, std::size_t total, std::uint32_t q, const double* m);
     // a[i] <- (+0, +0) + s * a[i] for i in [0, n).

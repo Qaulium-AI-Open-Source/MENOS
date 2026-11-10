@@ -123,8 +123,11 @@ void baseline_pair_blocks(double* amps, std::size_t total, std::uint32_t q, cons
         case 1:
             baseline_pair_blocks_q<1>(amps, total, m);
             return;
-        default:
+        case 2:
             baseline_pair_blocks_q<2>(amps, total, m);
+            return;
+        default:
+            baseline_pair_blocks_q<3>(amps, total, m);
             return;
     }
 }
@@ -214,6 +217,11 @@ double* as_doubles(std::complex<double>* p) {
 
 // Runs shorter than 2^kRunKernelMinQubit are not worth a call each.
 inline constexpr std::uint32_t kRunKernelMinQubit = 3;
+// A 1-qubit gate on an operand below this walks whole blocks in one call
+// (pair_blocks) instead of one call per run: measured in item 8's gate run,
+// operand 3's 8-pair runs lost 1.4-1.7x of the AVX2 gain to the per-call
+// setup (docs/adr/0028 section 19.8).
+inline constexpr std::uint32_t kPairBlocksMaxQubit = 3;
 
 // k = 1. For each pair (i0, i1) differing only in bit q, the generic kernel
 // gathers {state[i0], state[i1]} as local indices 0 and 1 and computes
@@ -234,7 +242,7 @@ void apply_matrix_1q(std::span<std::complex<double>> state,
     const double* const m = as_doubles(matrix.data());
     const std::size_t pairs = state.size() >> 1;
     std::complex<double>* const amps = state.data();
-    if (q < kRunKernelMinQubit && team_size(pairs, num_threads) == 1) {
+    if (q <= kPairBlocksMaxQubit && team_size(pairs, num_threads) == 1) {
         kernels.pair_blocks(as_doubles(amps), state.size(), q, m);
         return;
     }

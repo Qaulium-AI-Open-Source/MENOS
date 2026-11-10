@@ -205,9 +205,14 @@ void avx2_pair_blocks(double* amps, std::size_t total, std::uint32_t q, const do
                 _mm256_storeu_pd(amps + 2 * base + 4, h);
             }
             return;
-        default:  // q == 2, blocks of 8: lo = 4 amplitudes, hi = the next 4
+        case 2:  // blocks of 8: lo = 4 amplitudes, hi = the next 4
             for (std::size_t base = 0; base < total; base += 8) {
                 pair_run_body(amps + 2 * base, amps + 2 * base + 8, 4, g, m);
+            }
+            return;
+        default:  // q == 3, blocks of 16: lo = 8 amplitudes, hi = the next 8
+            for (std::size_t base = 0; base < total; base += 16) {
+                pair_run_body(amps + 2 * base, amps + 2 * base + 16, 8, g, m);
             }
             return;
     }
