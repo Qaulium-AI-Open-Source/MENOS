@@ -144,8 +144,7 @@ void measure_kernels(std::uint32_t max_qubits, std::uint64_t budget, double band
                     const Clock::time_point start = Clock::now();
                     menos::engines::dense::apply_matrix(
                         sv.amplitudes(), matrix, c.operands, threads);
-                    samples.push_back(
-                        std::chrono::duration<double>(Clock::now() - start).count());
+                    samples.push_back(std::chrono::duration<double>(Clock::now() - start).count());
                 }
                 const Spread s = spread(samples);
                 std::printf("%s,%u,%s,%u,%.6e,%.6e,%.6e,%.6e,%.6e,%.3f\n",
