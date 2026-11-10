@@ -2769,13 +2769,18 @@ All CPU gate kernels are in `src/kernels/cpu/dense_kernels.cpp`. The target is c
 
 ### 19.3 Step 1: the measurement before any SIMD code — [MENOS]
 
-This runs on `adab80d`, on the gate machine, Linux (WSL, GCC 15.2, `build/cuda12-release`) and Windows (MSVC 14.50, `build/windows-bench`), on mains power, and is recorded in `docs/benchmarks/phase-24/simd-step1/`. `benchmarks/dense_fusion_probe.cpp` already measures most of it. Step 1 re-runs its sections and adds a per-kernel table:
+This runs on the gate machine, on the unchanged kernels, Linux (WSL, GCC 15.2, `build/bench`) and Windows (MSVC 14.50, `build/windows-bench`), on mains power. It is recorded in `docs/benchmarks/phase-24/simd-step1/` and driven by that directory's `scripts/step1.{sh,ps1}`. A new probe, `benchmarks/dense_simd_probe.cpp`, measures table A. `benchmarks/dense_fusion_probe.cpp` measures table B, through a new `runs` argument that runs its section 3 alone with the same circuits:
 
-- **A. One pass by kernel.** 1q (low and high operand), 2q (adjacent and far operands), diagonal 1q and 2q, generic 3q, at n = 16, 20, 22, 24, on one thread and on every thread: seconds per pass and GB/s against `measure_memory_bandwidth()`. This answers which kernels are compute-bound (where SIMD helps) and which are already at memory bandwidth (where it cannot), per size and thread count.
+- **A. One pass by kernel.** At n = 16, 20, 22, 24, on one thread and on every thread: seconds per pass, and the ratio to the streaming floor from `measure_memory_bandwidth()`. Each operand placement selects a different code path:
+  - 1q at operands 0, 2, 3, n/2 and n-1;
+  - 2q at {0,1}, {1,0}, {0,n-1}, {n/2-1,n/2} and {n-2,n-1};
+  - diagonal 1q at {0} and {n-1};
+  - diagonal 2q at {0,1} and {n-2,n-1};
+  - generic 3q at {0,n/2,n-1}. This answers which kernels are compute-bound (where SIMD helps) and which are already at memory bandwidth (where it cannot), per size and thread count.
 - **B. The fused brickwork sweep through `menos::run`** (17.7's table, unchanged) is the end-to-end figure item 8 must move.
-- **C. Linux with the clones off** (one build with `MENOS_KERNEL_CLONES` empty). This puts a number on what GCC's AVX2 clones give today. That is the best available estimate of the 1q/diagonal gain on MSVC, and of the 2q gain from the same treatment.
+- **C. Linux with the clones off** (table A from `build/bench-noclones`, the same tree with `MENOS_KERNEL_CLONES` defined empty for that build only). This puts a number on what GCC's AVX2 clones give today. That is the best available estimate of the 1q/diagonal gain on MSVC, and of the 2q gain from the same treatment.
 
-Each figure is the median of 3 timed runs after a discarded warm-up, with min..max, as in 17.5.
+Each table A figure is the median, with min..max, of 10 timed passes after a discarded one (the Phase 15 repetition count). Each table B figure is the median of 3 runs after a discarded one, as in 17.7.
 
 ### 19.4 Owner questions — [OPEN]
 
@@ -2792,3 +2797,12 @@ Each figure is the median of 3 timed runs after a discarded warm-up, with min..m
   5. no FMA instruction in the AVX2 object on either compiler (disassembly check);
   6. both verification scripts exit 0 on the final commit.
 - **Q7, the four conditions.** Proposed: item 7's acceptance bar carries over unchanged. Numerical correctness (criterion 1, bitwise), memory accounting (no new allocation: kernels work in place on the existing state), cross-engine consistency (criterion 2) and performance predictability. For the last, step 1 and the final measurement report the calibrated-rate change and the per-k price shift of 19.1. Any fix goes to the model-fixes item.
+
+### 19.5 Owner answers (2026-11-10)
+
+The owner took every recommendation of 19.4:
+- **Q1:** baseline and AVX2 paths only. AVX-512 is deferred until a machine in the verification set can run it.
+- **Q2 and Q3:** hand-written AVX2 intrinsics, with no FMA, for the 1-qubit, 2-qubit and diagonal kernels. They go in one translation unit, dispatched by `cpuid` on GCC, Clang and MSVC alike, and replace GCC's `target_clones`.
+- **Q4:** as Q3. The generic kernel and the expectation sum stay scalar.
+- **Q5:** re-run the item 7 probe after item 8 and report it. The fusion window stays 2.
+- **Q6 and Q7:** the gate as proposed, with item 7's four conditions. The speed-up factors are the owner's, set from step 1.

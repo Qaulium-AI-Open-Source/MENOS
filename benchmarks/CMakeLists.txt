@@ -54,6 +54,14 @@ target_link_libraries(menos_dense_fusion_probe PRIVATE
 )
 target_compile_options(menos_dense_fusion_probe PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 24 item 8 step 1 (docs/adr/0028 section 19.3): one pass of each dense
+# CPU kernel by the operand placement that selects its code path.
+add_executable(menos_dense_simd_probe dense_simd_probe.cpp)
+target_link_libraries(menos_dense_simd_probe PRIVATE
+    menos_plan menos_engines_dense menos_benchmark_environment
+)
+target_compile_options(menos_dense_simd_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
 # Phase 24 owner question 4: does calibration noise change the chosen plan?
 add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
 target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)

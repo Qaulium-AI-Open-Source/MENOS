@@ -31,7 +31,9 @@
 //      the largest amplitude difference between the two statevectors. Rows
 //      "run".
 //
-// Usage: menos_dense_fusion_probe [max_qubits]
+// Usage: menos_dense_fusion_probe [max_qubits [sections]]
+// sections: "all" (the default) or "runs" (section 3 only; docs/adr/0028
+// section 19.3 re-measures it alone, with the same circuits).
 // CSV on stdout, the environment on stderr. A report, not a unit test.
 
 #include <algorithm>
@@ -521,8 +523,15 @@ int main(int argc, char** argv) {
                      profile.memory_bandwidth_bytes_per_second,
                      profile.work_units_per_second,
                      static_cast<unsigned long long>(budget));
-        measure_passes(max_qubits, budget, profile.memory_bandwidth_bytes_per_second);
-        measure_circuits(max_qubits, budget);
+        const std::string sections = argc > 2 ? argv[2] : "all";
+        if (sections != "all" && sections != "runs") {
+            std::fprintf(stderr, "dense_fusion_probe: sections must be all or runs\n");
+            return 2;
+        }
+        if (sections == "all") {
+            measure_passes(max_qubits, budget, profile.memory_bandwidth_bytes_per_second);
+            measure_circuits(max_qubits, budget);
+        }
         measure_runs(max_qubits, budget);
         return 0;
     } catch (const std::exception& e) {

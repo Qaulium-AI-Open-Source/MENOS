@@ -573,6 +573,8 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 - the step-1 method (19.3);
 - the owner's questions (19.4).
 
+The owner took every recommendation the same day (19.5): baseline and AVX2 only (AVX-512 deferred), intrinsics in one AVX2 unit with `cpuid` dispatch on every compiler, the generic kernel and the expectation sum kept scalar, the fusion window re-measured but kept at 2, and item 7's gate bar with speed-up factors set from step 1.
+
 **Gate: OPEN** (the owner's).
 
 #### Stabilizer sampler fix (owner addition, 2026-11-09)
