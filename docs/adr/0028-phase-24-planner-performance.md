@@ -2681,6 +2681,10 @@ A third run, on `195fc0b`, stopped at the Python editable install because pypi.o
 
 The `cuda12` stages run the fused CUDA engine against the Phase 21 baseline's `dense_cuda_*_fused` entries. That is the cross-engine check of criterion 1 on the device: the fused CUDA statevector digest `17358dda1e64619a` equals the CPU one.
 
+### 17.9 Gate (2026-11-10)
+
+**The owner passed the item 7 gate on 2026-11-10** ("item 7 gate passed") on the evidence in 17.7 and 17.8 (final commit `195fc0b`, records in `adab80d`). In the same message the owner started item 8 (section 19).
+
 ## 18. Stabilizer sampler fix (owner addition, 2026-11-09) — [MEASURED]
 
 **The symptom.** On some Clifford circuits the stabilizer engine's counts
@@ -2735,3 +2739,56 @@ the sampler being integer arithmetic over the same seed; the Windows probe
 generated them and the Linux verification of the fusion head confirms
 them). The stabilizer expectation fixture and every other baseline entry
 are unchanged, and so are the planner, the estimates and `explain()`.
+
+## 19. Kickoff: item 8, SIMD kernels for the dense CPU engine — [MENOS] / [OPEN]
+
+The owner started item 8 on 2026-11-10, after passing item 7's gate. Branch `phase-24-simd-kernels`, from `phase-24-dense-fusion` at `adab80d`. Its scope is the BUILD_PLAN's Phase 24 item 8 text. This section records what the kernels do today, the proposed design, the step-1 method and the owner's questions. Nothing is built before the answers.
+
+### 19.1 What the code does today — [MENOS], read from the source
+
+All CPU gate kernels are in `src/kernels/cpu/dense_kernels.cpp`. The target is compiled for baseline x86-64 (SSE2), with `-ffp-contract=off` on GCC/Clang and `/fp:precise` on MSVC (`src/kernels/CMakeLists.txt`). There are no intrinsics anywhere.
+
+- **One qubit, non-diagonal** (`apply_matrix_1q`): unit-stride runs of pairs (`pair_run`), or whole blocks for operands 0–2 (`pair_blocks<Q>`). Each output is `from_zero(cmul(m_r0, a0)) + cmul(m_r1, a1)`, the generic kernel's expression written out so the compiler can vectorise it.
+- **Diagonal, any width** (`apply_diagonal`): one complex multiply per amplitude over unit-stride runs (`scale_run`), or element by element for low operands (`scale_elements`).
+- **Two qubits, non-diagonal** (`apply_matrix_2q`): a scalar loop over groups of four. It gathers four amplitudes, forms each output as `sum += matrix[out*4+in] * a[in]` with `std::complex` `operator*`, and scatters them back.
+- **Three qubits or more, non-diagonal** (`apply_matrix_generic`): the scalar oracle, which every other kernel must equal bit for bit (`tests/engines/dense/specialised_kernels_test.cpp`).
+
+**The only vectorisation today is GCC's.** The four unit-stride loops (`pair_run`, `pair_blocks`, `scale_run`, `scale_elements`) carry `[[gnu::target_clones("avx2", "default")]]`. The loader picks the AVX2 clone where the CPU has it, and neither clone enables FMA. On MSVC and Clang the macro is empty, so those loops are whatever each compiler's auto-vectoriser makes of baseline SSE2 code. This explains the single-thread gap in 17.7: fusion gained 1.43–1.45× on Linux against 2.01–2.06× on Windows. Linux's 1-qubit passes were already AVX2, so merging them saved less. **The 2-qubit kernel is scalar on every platform.** Since item 7, most fused blocks are 2-qubit (window 2), so this is the kernel that now carries most of a circuit's passes.
+
+**The cost model and calibration.** `plan::calibrated_hardware_profile` times the dense engine itself on an H/CX layer circuit (`measure_work_units_per_second`, `src/plan/hardware_profile.cpp`). A kernel speed-up therefore reaches the calibrated rate with no code change. What it does not reach is the per-k weighting: the cost model charges 2^(n+k) per block for every k. If item 8 speeds up the 1- and 2-qubit kernels but not the generic one, the relative prices of k = 1, 2 and k ≥ 3 blocks move. Unbudgeted CPU-only jobs never calibrate (`hardware_profile_for`), so their fixed rate does not move at all. Step 1 measures both effects. Whether either matters is a question for the model-fixes item, not this one.
+
+**The machines.** The verification machine (Core Ultra 7 155H) has AVX2 and FMA and **no AVX-512**. That holds under WSL (`/proc/cpuinfo`) and natively. No machine in the verification set has been shown to have AVX-512.
+
+### 19.2 Design proposed — [MENOS]
+
+1. **Correctness rule (unchanged from the BUILD_PLAN).** Vectorise across amplitudes (several groups per instruction), never across a sum. Each lane performs the scalar code's multiplies and adds, in the scalar code's order, with no FMA. Every kernel stays bitwise identical to `apply_matrix_generic` on every thread count, and therefore to CUDA (`-fmad=false`), to the disk tier and to the Phase 21 baseline. `cmul`'s products-then-sums form is the operation to reproduce per lane. A complex multiply in a 256-bit register (two complex doubles) computes `ar*br`, `ai*bi`, `ar*bi`, `ai*br` with separate `_mm256_mul_pd` and combines them with `_mm256_addsub_pd`, or an explicit sub and add. That is the same two roundings per component as the scalar code. A `_mm256_fmaddsub_pd` would fuse them and is excluded.
+2. **Dispatch, portable to MSVC.** One translation unit per ISA (`dense_kernels_avx2.cpp` beside the baseline code), compiled with `-mavx2` (no `-mfma`) on GCC/Clang and `/arch:AVX2` on MSVC, with contraction off in both. The ISA is chosen once at load time from `cpuid` (plus `xgetbv` for the OS's AVX state), through a function-pointer table. This replaces GCC's `target_clones`, which MSVC and Clang lack, so all three compilers run the same AVX2 code. The baseline path remains for any x86-64 without AVX2, and the wheels keep running on any x86-64. Whether MSVC's `/arch:AVX2` under `/fp:precise` ever emits an FMA is checked by the bitwise tests and by a disassembly grep for `vfmadd` in step 2, not assumed.
+3. **Which kernels.** The 2-qubit kernel (the main gain: scalar today, and the bulk of fused passes), the 1-qubit kernel and the diagonal kernels (vectorised on GCC today, not on MSVC). `apply_matrix_generic` stays scalar: it is the oracle, and k ≥ 3 non-diagonal blocks arise only from 3-qubit and wider gates (item 7's window is 2). The expectation kernel (`expectation_of_term_accumulate`) is a sum, so vectorising it would change its summation order. It is out of scope, as the BUILD_PLAN's "never across a sum" requires.
+4. **Testing both paths on one machine.** An internal, non-public override (a function in `kernels::cpu`, used only by tests and the probe) forces the baseline table. The bitwise tests then run every kernel on both paths, on every thread count, on the AVX2 machines that do the verification. Without it, the baseline path would go untested on this machine.
+5. **Nothing above the kernel seam changes.** Same `apply_matrix` signature, plans, estimates and `explain()` output. No option is added, since there is no accuracy trade to opt into.
+
+### 19.3 Step 1: the measurement before any SIMD code — [MENOS]
+
+This runs on `adab80d`, on the gate machine, Linux (WSL, GCC 15.2, `build/cuda12-release`) and Windows (MSVC 14.50, `build/windows-bench`), on mains power, and is recorded in `docs/benchmarks/phase-24/simd-step1/`. `benchmarks/dense_fusion_probe.cpp` already measures most of it. Step 1 re-runs its sections and adds a per-kernel table:
+
+- **A. One pass by kernel.** 1q (low and high operand), 2q (adjacent and far operands), diagonal 1q and 2q, generic 3q, at n = 16, 20, 22, 24, on one thread and on every thread: seconds per pass and GB/s against `measure_memory_bandwidth()`. This answers which kernels are compute-bound (where SIMD helps) and which are already at memory bandwidth (where it cannot), per size and thread count.
+- **B. The fused brickwork sweep through `menos::run`** (17.7's table, unchanged) is the end-to-end figure item 8 must move.
+- **C. Linux with the clones off** (one build with `MENOS_KERNEL_CLONES` empty). This puts a number on what GCC's AVX2 clones give today. That is the best available estimate of the 1q/diagonal gain on MSVC, and of the 2q gain from the same treatment.
+
+Each figure is the median of 3 timed runs after a discarded warm-up, with min..max, as in 17.5.
+
+### 19.4 Owner questions — [OPEN]
+
+- **Q1, which ISA paths.** Proposed: **baseline and AVX2 only**. AVX-512 is not built. No machine in the verification set has it, and an untested path would break "evidence before claims". It can be added later, with a machine to verify it on.
+- **Q2, dispatch.** Proposed: **one AVX2 translation unit plus runtime `cpuid` dispatch on every compiler**, replacing GCC's `target_clones`. The alternative keeps `target_clones` on GCC and adds a separate MSVC path. That leaves two different AVX2 implementations to keep bitwise identical, and Clang still gets none.
+- **Q3, intrinsics or auto-vectorisation.** Proposed: **hand-written AVX2 intrinsics for the 2-qubit kernel**, since no compiler vectorises its gather/scatter today, and **intrinsics for the 1-qubit and diagonal loops too**, so that MSVC, GCC and Clang execute the same instruction sequence and the bitwise identity does not depend on each compiler's vectoriser. The alternative, compiling the existing loops with `/arch:AVX2`, is less code but leaves the 2-qubit kernel scalar, and leaves the identity to three auto-vectorisers.
+- **Q4, which kernels.** Proposed: 1q, 2q and diagonal. The generic kernel (the oracle) and the expectation sum stay scalar (19.2, item 3).
+- **Q5, the fusion window.** 17.6 recorded that item 8 "re-measures and may widen the window". Proposed: **re-run the item 7 probe after item 8 and report it**, but keep the window at 2 unless the measurement shows a gain and the owner decides to change it. That would be a change to item 7's passed design, so it is the owner's decision, not this item's.
+- **Q6, the gate.** Proposed criteria, with targets set from step 1 as for item 7:
+  1. every vectorised kernel bitwise identical to `apply_matrix_generic` on both dispatch paths, on every thread count, on both platforms; the Phase 21 baselines (unfused and fused) and the golden corpus unchanged;
+  2. CPU/CUDA and in-memory/disk identities unchanged (the `cuda12` and disk-tier tests);
+  3. a single-thread speed-up of the 2-qubit kernel at 16–20 qubits, and a speed-up of the fused brickwork sweep through `menos::run` on one thread and on every thread at 20–24 qubits, on both platforms, each at a factor the owner sets from step 1's table A and the clones-off measurement;
+  4. no measurable slowdown (outside step 1's run-to-run spread) of any kernel on any size or thread count;
+  5. no FMA instruction in the AVX2 object on either compiler (disassembly check);
+  6. both verification scripts exit 0 on the final commit.
+- **Q7, the four conditions.** Proposed: item 7's acceptance bar carries over unchanged. Numerical correctness (criterion 1, bitwise), memory accounting (no new allocation: kernels work in place on the existing state), cross-engine consistency (criterion 2) and performance predictability. For the last, step 1 and the final measurement report the calibrated-rate change and the per-k price shift of 19.1. Any fix goes to the model-fixes item.
