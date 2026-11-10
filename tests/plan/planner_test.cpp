@@ -744,6 +744,16 @@ constexpr HardwareProfile kUnitRateProfile{
     .work_units_per_second = 1.0,
 };
 
+// One work unit per second and a bandwidth floor too small to bind:
+// estimated_seconds then equals work_units, so a budgeted job, which ranks by
+// seconds (Phase 24 item 4, docs/adr/0028 section 21), ranks in work-unit
+// order. For the tests below that are about observations, not the ranking.
+constexpr HardwareProfile kWorkRateProfile{
+    .total_memory_bytes = 1ULL << 40,
+    .memory_bandwidth_bytes_per_second = 1.0e300,
+    .work_units_per_second = 1.0,
+};
+
 TEST(TimeBudgetTest, AGenerousBudgetLeavesTheWinnerUnchanged) {
     JobSpec job = make_job(3, /*budget=*/1'000'000);
     const Plan without = plan_job(job, kUnitRateProfile);
@@ -910,14 +920,14 @@ TEST(RuntimeObservationTest, AnObservedFloorAboveTheBudgetMovesTheWinnerToAnothe
     JobSpec job = make_clifford_job(4);
     job.time_budget_seconds = 1.0e9;  // generous: every candidate fits the model
 
-    const Plan before = plan_job(job, kUnitRateProfile);
+    const Plan before = plan_job(job, kWorkRateProfile);
     ASSERT_EQ(before.strategy, Strategy::DirectStabilizer)
         << "a Clifford counts job is expected to route to the stabilizer engine";
 
     RuntimeObservations observations;
     observations.observe(Engine::Stabilizer, Backend::Cpu, 2.0e9);  // over the budget
 
-    const Plan after = plan_job(job, kUnitRateProfile, observations);
+    const Plan after = plan_job(job, kWorkRateProfile, observations);
     EXPECT_NE(after.strategy, Strategy::DirectStabilizer)
         << "the observed engine must not be re-selected";
     // Which candidate takes over is the EXISTING selection rule's business --
@@ -1077,7 +1087,7 @@ TEST(RuntimeObservationTest, AFactorizedPlansFloorsApplyToThatPlanAlone) {
         .expectation = std::nullopt,
     };
     job.time_budget_seconds = 1.0e9;
-    const Plan before = plan_job(job, kUnitRateProfile);
+    const Plan before = plan_job(job, kWorkRateProfile);
     ASSERT_EQ(before.strategy, Strategy::Factorized) << before.explain();
     ASSERT_EQ(before.regions.size(), 4U);
     const PlanKey key = plan_key(before);
@@ -1099,7 +1109,7 @@ TEST(RuntimeObservationTest, AFactorizedPlansFloorsApplyToThatPlanAlone) {
     // The plan floor over the budget excludes this plan, as measured.
     RuntimeObservations over;
     over.observe_plan(key, 2.0e9);
-    const Plan after = plan_job(job, kUnitRateProfile, over);
+    const Plan after = plan_job(job, kWorkRateProfile, over);
     EXPECT_NE(plan_key(after), key);
     EXPECT_FALSE(factorized_of(after).feasible);
     EXPECT_NE(factorized_of(after).infeasible_reason.find("observed runtime"), std::string::npos)
@@ -1109,7 +1119,7 @@ TEST(RuntimeObservationTest, AFactorizedPlansFloorsApplyToThatPlanAlone) {
     RuntimeObservations regions;
     regions.observe_region(key.regions[0], modelled + 3.0);
     regions.observe_region(key.regions[1], 4.0);
-    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kUnitRateProfile, regions)).estimated_seconds,
+    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kWorkRateProfile, regions)).estimated_seconds,
                      modelled + 7.0);
 
     // Floors keyed on other qubits, or on another plan, change nothing: a
@@ -1122,7 +1132,7 @@ TEST(RuntimeObservationTest, AFactorizedPlansFloorsApplyToThatPlanAlone) {
         PlanKey{Strategy::Factorized, {moved, key.regions[1], key.regions[2], key.regions[3]}},
         9.0e6);
     elsewhere.observe(key.regions[0].engine, key.regions[0].backend, 9.0e6);
-    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kUnitRateProfile, elsewhere)).estimated_seconds,
+    EXPECT_DOUBLE_EQ(factorized_of(plan_job(job, kWorkRateProfile, elsewhere)).estimated_seconds,
                      modelled);
 }
 

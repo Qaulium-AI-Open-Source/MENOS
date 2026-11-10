@@ -29,11 +29,14 @@
 namespace menos::api {
 namespace {
 
-// One work unit per second, one byte per second: seconds then equal
-// max(work_units, peak_bytes), so every figure below is computable by hand.
+// One work unit per second and a bandwidth floor too small to bind: seconds
+// then equal work_units, so every figure below is computable by hand. A
+// budgeted job ranks its candidates by those seconds (Phase 24 item 4,
+// docs/adr/0028 section 21), which here is the work-unit order these tests
+// were written against.
 constexpr plan::HardwareProfile kUnitRateProfile{
     .total_memory_bytes = 1ULL << 40,
-    .memory_bandwidth_bytes_per_second = 1.0,
+    .memory_bandwidth_bytes_per_second = 1.0e300,
     .work_units_per_second = 1.0,
 };
 
