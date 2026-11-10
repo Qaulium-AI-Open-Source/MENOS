@@ -41,6 +41,7 @@
 #include "common/thread_count.h"
 #include "engines/dense/apply_matrix.h"
 #include "engines/dense/state_vector.h"
+#include "kernels/cpu/dense_kernel_table.h"
 #include "menos_benchmark_environment.h"
 #include "plan/hardware_profile.h"
 
@@ -177,12 +178,16 @@ int main(int argc, char** argv) {
         const menos::plan::HardwareProfile& profile = menos::plan::calibrated_hardware_profile();
         std::fprintf(stderr,
                      "%s\nthreads=%u memory_bandwidth_B_per_s=%.6e work_units_per_s=%.6e "
-                     "safe_budget_bytes=%llu\n",
+                     "safe_budget_bytes=%llu kernel_isa=%s\n",
                      menos_benchmark::describe_environment().c_str(),
                      menos::common::default_thread_count(),
                      profile.memory_bandwidth_bytes_per_second,
                      profile.work_units_per_second,
-                     static_cast<unsigned long long>(budget));
+                     static_cast<unsigned long long>(budget),
+                     menos::kernels::cpu::active_dense_kernel_isa() ==
+                             menos::kernels::cpu::KernelIsa::Avx2
+                         ? "avx2"
+                         : "baseline");
         measure_kernels(max_qubits, budget, profile.memory_bandwidth_bytes_per_second);
         return 0;
     } catch (const std::exception& e) {
