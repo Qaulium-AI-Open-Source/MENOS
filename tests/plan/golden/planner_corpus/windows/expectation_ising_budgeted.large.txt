@@ -7,7 +7,7 @@ candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operat
 candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
 candidate 3strategy=direct_mps feasible=true winner=false peak_bytes=2733818224 work_units=31629899726872 est_seconds=31629.9
 candidate 4strategy=direct_tensor_network feasible=false winner=false reason="the elimination search for one observable term did not finish within the job's own memory budget (8589934592 bytes) -- this means the search was stopped early, not that no valid contraction plan exists for this circuit"
-candidate 5strategy=cut_and_recombine feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in fragment 1 of 2, at 187837710336 work units, already more than the 32078036992 of a cheaper feasible alternative"
+candidate 5strategy=cut_and_recombine feasible=true winner=false peak_bytes=269258410 work_units=8828372386544 est_seconds=8828.37
 strategy   direct_dense (exact)
 region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23] engine=dense backend=cpu fusion=containment blocks=449 absorbed=948
 estimated  state_bytes=268450000 work_units=32078036992
