@@ -2057,6 +2057,19 @@ These moves are the size of the run-to-run variation of unchanged code between t
 
 **Verification** — recorded in 16.13.
 
+### 16.13 Verification of the accuracy branch — [MEASURED]
+
+Final commit of items 1, 2, 3 and 9: `05056f8` on `phase-24-planner-accuracy`. Two commits after 16.12 changed no behaviour. They add clang-tidy annotations that the first `scripts/verify.sh` run asked for:
+- `84be301`: `NOLINT` on `measure_work_units_per_second` in `src/plan/hardware_profile.cpp`;
+- `6dfc2cb`/`05056f8`: `NOLINT` blocks and `engine->engine_id()` in `benchmarks/cost_model_accuracy_benchmark.cpp`.
+
+| Script | Where | Result |
+|---|---|---|
+| `scripts/verify.sh` | WSL clone `~/MENOS`, `UV_PYTHON_PREFERENCE=only-managed` | exit 0, "all stages passed": dev and release 869/869; Python 576 passed; `cuda12-dev` and `cuda12-release` 949/949 each, with the GPU tests executing; the docs stage skipped (no Node in the clone) |
+| `scripts/verify-windows.ps1` | native Windows, detached worktree `C:/Users/janak/menos-verify` | exit 0, "verify-windows: all stages passed": `windows-dev` (ASan) 870/870, `windows-release` 870/870, pytest 576 passed, wheel smoke 2 passed |
+
+The first Windows attempt ran at the same time as the WSL run. It failed in the ASan stage with an out-of-memory error from the sanitizer, not a test failure. Run alone, it passed as above. The two scripts are now run one after the other.
+
 ## 17. Kickoff: item 7, gate fusion in the dense CPU engine — [MENOS] / [OPEN]
 
 **Started by the owner on 2026-11-09**, in the order the owner set on
@@ -2652,6 +2665,21 @@ The raw records are `docs/benchmarks/phase-24/fusion-gate/{linux,windows}/`, the
 **Criterion 6:** the one changed winner is listed above with its reason.
 
 **Criterion 7:** recorded in 17.8.
+
+### 17.8 Verification of the fusion branch — [MEASURED]
+
+Final commit: `195fc0b` on `phase-24-dense-fusion`. It contains item 7, the section 18 stabilizer fix, and two commits written for this verification. Neither changes engine behaviour:
+- **`8c9bdd5`** fixes two clang-tidy findings in `benchmarks/dense_fusion_probe.cpp`: a `NOLINT` for swappable parameters on `brickwork_circuit`, and a checked statevector optional in place of an unchecked dereference. The first `scripts/verify.sh` run, on `08e35f3`, failed at the benchmark clang-tidy stage on them.
+- **`195fc0b`** updates `CudaExecutionMonitorTest`. With fusion the CUDA engine reports to the monitor once per fused block, as the CPU engine does, but the GPU-only test still expected one call per operation (38 calls; the engine made 15). The test was renamed `TheCudaEngineCallsTheMonitorOncePerBlockOrOncePerOperation` and checks both modes, mirroring `ExecutionMonitorTest.DenseCallsTheMonitorOncePerBlockOrOncePerOperation`. The second run, on `8c9bdd5`, failed on it in `cuda12-dev`, the only presets that reach the GPU on this machine. Every earlier stage of that run passed.
+
+A third run, on `195fc0b`, stopped at the Python editable install because pypi.org timed out three times after the machine woke from sleep, a network failure. Every C++ stage before it passed. The run below is a fresh, complete run on the same commit.
+
+| Script | Where | Result |
+|---|---|---|
+| `scripts/verify.sh` | WSL clone `~/MENOS`, `UV_PYTHON_PREFERENCE=only-managed`, 2026-11-10 07:24–09:37 UTC | exit 0, "all stages passed": dev and release 917/917; Python 576 passed (2 deselected); wheel smoke 2 passed; `cuda-dev`, `cuda-release`, `cuda12-dev` and `cuda12-release` 1007/1007 each, the `cuda12` presets with the GPU tests executing; the docs stage skipped (no Node in the clone) |
+| `scripts/verify-windows.ps1` | native Windows, detached worktree `C:/Users/janak/menos-verify`, run after the WSL run, never alongside it | exit 0, "verify-windows: all stages passed": `windows-dev` (ASan) 918/918, `windows-release` 918/918, pytest 576 passed (2 deselected), wheel smoke 2 passed |
+
+The `cuda12` stages run the fused CUDA engine against the Phase 21 baseline's `dense_cuda_*_fused` entries. That is the cross-engine check of criterion 1 on the device: the fused CUDA statevector digest `17358dda1e64619a` equals the CPU one.
 
 ## 18. Stabilizer sampler fix (owner addition, 2026-11-09) — [MEASURED]
 
