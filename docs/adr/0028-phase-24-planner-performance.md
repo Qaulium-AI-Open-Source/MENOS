@@ -2806,3 +2806,73 @@ The owner took every recommendation of 19.4:
 - **Q4:** as Q3. The generic kernel and the expectation sum stay scalar.
 - **Q5:** re-run the item 7 probe after item 8 and report it. The fusion window stays 2.
 - **Q6 and Q7:** the gate as proposed, with item 7's four conditions. The speed-up factors are the owner's, set from step 1.
+
+### 19.6 Step 1: the measurement — [MEASURED]
+
+Commit `a326851`, the gate machine (Core Ultra 7 155H, 22 hardware threads), on mains power at every checkpoint.
+- **Linux:** WSL, GCC 15.2, `build/bench` and `build/bench-noclones`, 2026-11-10 10:30–10:33 UTC.
+- **Windows:** MSVC 14.50, `build/windows-bench`, 10:33–10:34 UTC.
+
+The records are `docs/benchmarks/phase-24/simd-step1/{linux,windows}/`. Table A's full per-placement tables are produced by `bench/tools/simd_table.py`. Below are the ranges over operand placements per kernel class.
+
+"Floor×" is a pass's median time over the time to stream its bytes at the calibrated bandwidth (3.0–3.8 × 10¹⁰ B/s in these processes). It is a yardstick, not a hard limit: a state that fits in the 24 MiB last-level cache (n ≤ 20) or a pass on every thread can go below 1. The "clones gain" is the clones-off median over the clones-on median, on Linux.
+
+**Table A, one thread**
+
+| n | kernel | Linux floor× | clones gain (Linux) | Windows floor× | Windows / Linux |
+|---|---|---|---|---|---|
+| 16 | 1q | 0.37–0.77 | 1.78–4.19 | 1.37–1.58 | 2.02–3.70 |
+| 16 | 2q | 3.49–3.96 | 0.95–1.06 | 3.13–3.38 | 0.77–0.94 |
+| 16 | diagonal 1q/2q | 0.26–1.94 | 1.00–2.30 | 0.75–2.33 | 1.08–3.00 |
+| 16 | generic 3q | 11.80 | 1.03 | 12.49 | 1.03 |
+| 20 | 1q | 0.52–0.88 | 1.70–2.59 | 1.69–2.33 | 2.19–3.15 |
+| 20 | 2q | 3.58–3.82 | 1.00–1.07 | 3.55–6.93 | 0.97–1.87 |
+| 20 | diagonal 1q/2q | 0.57–2.24 | 1.07–1.90 | 1.18–2.95 | 1.20–2.36 |
+| 20 | generic 3q | 12.52 | 1.05 | 13.20 | 1.03 |
+| 22 | 1q | 1.12–2.00 | 1.09–1.49 | 2.00–6.07 | 0.98–4.41 |
+| 22 | 2q | 3.74–4.19 | 0.96–1.09 | 3.21–6.61 | 0.77–1.72 |
+| 22 | diagonal 1q/2q | 1.37–3.49 | 0.95–1.35 | 1.33–3.48 | 0.94–1.24 |
+| 24 | 1q | 1.11–2.00 | 1.14–1.70 | 2.11–6.42 | 1.05–4.80 |
+| 24 | 2q | 3.82–4.50 | 0.99–1.03 | 3.55–7.02 | 0.90–1.76 |
+| 24 | diagonal 1q/2q | 1.32–3.68 | 1.00–1.44 | 1.43–3.65 | 0.97–1.37 |
+| 24 | generic 3q | 12.85 | 1.02 | 13.22 | 1.00 |
+
+**Table A, every thread** (n = 16 runs on one thread whatever the cap: 2^15 groups is below `kParallelMinGroups`)
+
+| n | kernel | Linux floor× | clones gain (Linux) | Windows floor× | Windows / Linux |
+|---|---|---|---|---|---|
+| 20 | 1q | 0.42–1.01 | 0.86–1.27 | 0.38–1.09 | 0.79–1.21 |
+| 20 | 2q | 0.73–1.10 | 0.78–1.04 | 0.67–0.73 | 0.62–0.89 |
+| 22 | 1q | 0.42–0.58 | 1.08–1.14 | 0.45–0.68 | 0.98–1.14 |
+| 22 | 2q | 0.68–0.76 | 0.95–1.18 | 0.71–0.73 | 0.94–1.04 |
+| 22 | diagonal 1q/2q | 0.45–0.87 | 1.07–1.34 | 0.48–0.85 | 0.96–1.05 |
+| 24 | 1q | 0.50–0.61 | 0.93–1.08 | 0.53–0.67 | 1.01–1.14 |
+| 24 | 2q | 0.65–0.69 | 0.92–1.09 | 0.66–0.74 | 0.95–1.12 |
+| 24 | diagonal 1q/2q | 0.56–0.93 | 0.96–1.20 | 0.59–0.92 | 0.96–1.03 |
+| 24 | generic 3q | 1.84 | 0.94 | 1.87 | 0.99 |
+
+**Table B, the fused brickwork sweep through `menos::run`** (fused median, seconds; the unfused/fused ratio is item 7's)
+
+| n | threads | Linux fused s | Windows fused s | Linux fusion gain | Windows fusion gain |
+|---|---|---|---|---|---|
+| 16 | 1 | 0.0161 | 0.0169 | 1.40 | 1.72 |
+| 20 | 1 | 0.367 | 0.350 | 1.47 | 1.83 |
+| 20 | 22 | 0.0808 | 0.0682 | 1.92 | 1.89 |
+| 22 | 22 | 0.338 | 0.365 | 2.09 | 1.93 |
+| 24 | 22 | 1.326 | 1.573 | 2.40 | 2.23 |
+
+#### 19.6.1 What the numbers say — [DERIVED]
+
+1. **On one thread, the 2-qubit kernel is arithmetic-bound on both platforms.** It runs at 3.1–4.5× the floor (3.5–7.0× on Windows for the far pair {0, n−1}). GCC's AVX2 1-qubit kernel, which streams the same bytes, runs at 0.4–0.9× at n ≤ 20 and 1.1–2.0× at 22–24. Turning the clones off changes nothing for the 2-qubit kernel (0.95–1.09), confirming that no compiler vectorises it today. It is item 8's main target: bringing it to the 1-qubit kernel's floor ratio would be 2–4× per pass.
+2. **On one thread, MSVC's 1-qubit and streaming-diagonal kernels are 2.0–3.9× slower than GCC's AVX2 clones at n ≤ 20.** That is the same range as the clones' own gain on Linux (1.7–4.2×), so the gap is the vector code, not the compiler otherwise. At 22–24 qubits the gap is smaller (1.0–2.1×), except for operand 2 on MSVC (`pair_blocks<2>`, 4.4–4.8× slower, 6× the floor). That is a scalar loop-shape problem that the intrinsics replace.
+3. **On every thread at 22–24 qubits, every kernel except the generic one already runs close to the calibrated floor or below it** (0.42–0.93×). The 2-qubit pass costs 1.1–1.8× the 1-qubit pass across placements. GCC's clones change it by 0.92–1.20×, and Windows matches Linux within 0.94–1.14×. Here the passes are limited by memory traffic, which SIMD does not reduce. The most item 8 can recover on every thread is the 2-qubit pass's excess over the 1-qubit pass. A sweep that is mostly 2-qubit blocks could therefore gain up to about 1.5×, and less where the 1-qubit pass is itself slow. **[DERIVED]** This is a bound, not a prediction.
+4. **The low-operand diagonal kernel (`scale_elements`) is slow for a reason vectorising the multiply alone does not fix.** It runs at 1.4–3.7× the floor on one thread, and the clones do not help it (1.00–1.12): it extracts operand bits per element. The step 2 design treats it as a loop-shape change (a diagonal entry per run of 2^q_min elements, unrolled for q_min < 3), held to the same bitwise rule.
+5. **The generic kernel** (11.8–13.2× the floor on one thread) stays scalar by the owner's answer (Q4). It is the oracle, and since item 7 it serves only 3-qubit and wider non-diagonal gates.
+
+#### 19.6.2 Proposed speed-up factors for criterion 3 — [OPEN]
+
+These are proposed for the owner to set, measured as same-run ratios against the unchanged kernels of `a326851`, on both platforms:
+- **3a, the 2-qubit kernel on one thread at n = 16–20:** at least **2.0×** on every operand placement. From 19.6.1 point 1: 3.5–4.0× the floor today, against 0.4–0.9× for a vectorised kernel streaming the same bytes.
+- **3b, the 1-qubit kernel on one thread at n = 16–20, on Windows:** at least **1.8×** on every operand placement. On Linux, at least 0.95× of the clones (no regression from replacing `target_clones` with intrinsics). From point 2: Windows is 2.0–3.7× slower than GCC's clones there today.
+- **3c, the fused brickwork sweep through `menos::run` on one thread at n = 16–20:** at least **1.5×** on both platforms. Most of its fused passes are 2-qubit blocks, so 3a dominates it.
+- **3d, every thread at n = 20–24: no speed-up factor.** Point 3 bounds the possible gain at up to about 1.5×, and the clones-on/off and Windows/Linux comparisons already move by up to ±20% between processes at these sizes, so a factor would be a run-to-run claim. Criterion 4 (no slowdown outside step 1's spread) applies, and the result is reported.
