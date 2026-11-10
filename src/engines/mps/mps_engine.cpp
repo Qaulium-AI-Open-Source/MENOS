@@ -158,17 +158,21 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
         // two-site updates, each an SVD with allocations whose fixed cost the
         // chi^3 term does not see (the low-entanglement Trotter rows ran
         // 40-57x their chi^3 prediction, section 16.10.1); component 1 the
-        // chi^3 work above; component 2 the one-site operations, the 1-qubit
-        // gates and the sites swept for counts and for each expectation term.
+        // chi^3 work above; component 2 the chi^2 work: every operation at a
+        // bond moves its tensors -- each two-site update's contraction and
+        // copies, each 1-qubit gate, and each site swept for counts and for
+        // each expectation term -- which at small and medium bonds costs more
+        // than the chi^3 rate measured at a large one implies.
         double sweeps = request.want_counts ? static_cast<double>(request.num_qubits) : 0.0;
         if (request.want_expectation) {
             sweeps += static_cast<double>(request.observable->terms.size()) *
                       static_cast<double>(request.num_qubits);
         }
+        const double chi = static_cast<double>(estimated_bond);
         auto& mps = estimate.time.counts[static_cast<std::size_t>(Engine::MPS)];
         mps[0] = updates;
         mps[1] = static_cast<double>(work);
-        mps[2] = one_site + sweeps;
+        mps[2] = (updates + one_site + sweeps) * chi * chi;
         return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};

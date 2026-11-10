@@ -151,6 +151,12 @@ inline constexpr std::size_t kTimeEngineCount = 7;  // the values of Engine
 inline constexpr std::size_t kTimeComponents = 3;
 struct TimeTerms {
     std::array<std::array<double, kTimeComponents>, kTimeEngineCount> counts{};
+    // The bytes the run is certain to write, for the planner's bandwidth
+    // floor; negative means the estimate's peak bytes, which is right for
+    // every engine whose peak is what it allocates. An engine whose peak is a
+    // worst-case bound (Pauli propagation's branching) sets the bytes it
+    // allocates even when nothing branches.
+    double floor_bytes = -1.0;
 };
 
 // A candidate's estimated resource requirements, or why it can't be

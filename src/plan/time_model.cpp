@@ -139,9 +139,9 @@ Circuit paired_gates(std::uint32_t n, std::uint32_t gates) {
     return c;
 }
 
-// One-qubit gates only: every MPS bond stays 1.
-Circuit one_qubit_gates(std::uint32_t n, std::uint32_t gates) {
-    Circuit c(n, n);
+// circuit followed by `gates` one-qubit rotations spread over the register.
+Circuit then_one_qubit_gates(Circuit c, std::uint32_t gates) {
+    const std::uint32_t n = c.num_qubits();
     for (std::uint32_t g = 0; g < gates; ++g) {
         c.append(Opcode::RY, {(g * 5) % n}, {0.1 + (0.01 * static_cast<double>(g % 50))});
     }
@@ -214,13 +214,16 @@ std::vector<Case> cases_for(Engine engine) {
             // requires (a Clifford one goes to the stabilizer engine); placed
             // first, on |0>-side terms it splits nothing.
             cases.push_back(expectation_case(with_rz(clifford(8, 30000)), z_on(8, 0)));
+            cases.push_back(expectation_case(with_rz(clifford(40, 300)), mixed_terms(40, 300)));
             cases.push_back(
-                expectation_case(with_rz(clifford(128, 300)), mixed_terms(128, 300)));
+                expectation_case(with_rz(clifford(256, 300)), mixed_terms(256, 300)));
             break;
         case Engine::MPS:
+            // Bonds at most 2: the per-update cost. Bonds up to 64: chi^3.
+            // Bonds up to 16 with many one-site gates after them: chi^2.
             cases.push_back(counts_case(paired_gates(16, 2000), 1));
             cases.push_back(counts_case(ry_cx_layers(12, 6), 1));
-            cases.push_back(expectation_case(one_qubit_gates(40, 4000), all_z(40)));
+            cases.push_back(counts_case(then_one_qubit_gates(ry_cx_layers(10, 4), 3000), 1));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));

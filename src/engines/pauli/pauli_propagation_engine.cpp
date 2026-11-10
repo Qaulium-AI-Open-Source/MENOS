@@ -611,15 +611,21 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         // a term splits only when a rotation anticommutes with it, and on the
         // measured workloads the runtime stayed flat while the bound grew 4x
         // per rotation (section 16.10.1). The time model therefore charges
-        // the observable's own terms through every gate -- component 0 the
-        // gates, component 1 the term updates, t0 terms of n/64 words per
-        // gate -- the cost of a run in which no term branches. It is a lower
-        // bound on a run that branches heavily; such a run overruns its
-        // prediction and is caught by the Phase 11 monitor like any other.
+        // the observable's own terms through every gate, the cost of a run in
+        // which no term branches: component 0 the gates; component 1 the term
+        // updates, t0 per gate, each with a fixed cost; component 2 their
+        // words, n/64 per term update. It is a lower bound on a run that
+        // branches heavily; such a run overruns its prediction and is caught
+        // by the Phase 11 monitor like any other. For the same reason the
+        // bandwidth floor is taken from the term list a run allocates when
+        // nothing branches, not from the worst-case peak above.
         const double words = static_cast<double>((std::uint64_t{request.num_qubits} + 63) / 64);
+        const double term_updates = static_cast<double>(t0) * static_cast<double>(num_gates);
         auto& pauli = estimate.time.counts[static_cast<std::size_t>(Engine::Pauli)];
         pauli[0] = static_cast<double>(num_gates);
-        pauli[1] = static_cast<double>(t0) * static_cast<double>(num_gates) * words;
+        pauli[1] = term_updates;
+        pauli[2] = term_updates * words;
+        estimate.time.floor_bytes = static_cast<double>(peak_bytes_of(t0, request.num_qubits, t0));
         return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};

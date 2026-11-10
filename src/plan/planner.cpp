@@ -319,8 +319,7 @@ Plan plan_job(const JobSpec& job_spec,
     // uses an engine the model has no figures for keeps the work-unit term.
     const auto cpu_seconds =
         [&](std::uint64_t work_units, std::uint64_t peak_bytes, const TimeTerms& time) {
-            const double traffic_seconds =
-                static_cast<double>(peak_bytes) / bandwidth_bytes_per_second;
+            double traffic_seconds = static_cast<double>(peak_bytes) / bandwidth_bytes_per_second;
             bool any_term = false;
             bool covered = true;
             double modelled = 0.0;
@@ -340,6 +339,9 @@ Plan plan_job(const JobSpec& job_spec,
                 }
             }
             if (any_term && covered) {
+                if (time.floor_bytes >= 0.0) {
+                    traffic_seconds = time.floor_bytes / bandwidth_bytes_per_second;
+                }
                 return std::max(modelled, traffic_seconds);
             }
             const double work_seconds = static_cast<double>(work_units) / work_units_per_second;
