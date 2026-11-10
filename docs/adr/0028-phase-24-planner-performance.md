@@ -2884,3 +2884,82 @@ The owner set criterion 3 as proposed in 19.6.2:
 - **3b:** the 1-qubit kernel on one thread at n = 16–20, at least 1.8× on Windows, and at least 0.95× of today's GCC clones on Linux.
 - **3c:** the fused brickwork sweep through `menos::run` on one thread at n = 16–20, at least 1.5× on both platforms.
 - **3d:** no factor on every thread at n = 20–24. Criterion 4 (no slowdown) applies, and the result is reported.
+
+### 19.8 Implementation and gate evidence — [MEASURED]
+
+**Built** on `phase-24-simd-kernels`, from `4e690c8` to `aed0ee7`.
+
+- **The table and its dispatch.** `src/kernels/cpu/dense_kernel_table.h` defines `DenseKernelTable`, the five inner loops: `pair_run`, `pair_blocks`, `scale_run`, `scale_elements` and `two_qubit`.
+  - Two tables exist. The baseline one in `dense_kernels.cpp` is the pre-item-8 scalar loops, unchanged in arithmetic. The AVX2 one is in `dense_kernels_avx2.cpp`.
+  - `active_dense_kernels()` picks AVX2 once per process, when `cpu_supports_avx2()` holds: `cpuid` plus `xgetbv` on MSVC, `__builtin_cpu_supports` on GCC and Clang.
+  - `force_dense_kernel_isa` / `reset_dense_kernel_isa` are a test-only override.
+  - GCC's `target_clones` is gone.
+  - `apply_matrix`'s signature, the plans, the estimates and `explain()` are unchanged.
+- **The AVX2 unit.** It is compiled with `-mavx2` or `/arch:AVX2` only on x86-64 (`src/kernels/CMakeLists.txt`). It is written in intrinsics over `double*`, two complex amplitudes per register:
+  - each complex product is `vmulpd`, `vpermilpd`, `vmulpd`, `vaddsubpd`;
+  - every output starts with `vaddpd` of +0.0;
+  - the 2-qubit kernel loads four inputs for two groups at once: one 256-bit load per input when both operands are above bit 0, otherwise two 128-bit halves;
+  - the low-operand diagonal assembles the local index from an 8-entry table plus a per-block high part.
+- **The loop shape changed twice after the first gate run, with the same arithmetic per amplitude:**
+  - 1-qubit gates on operands 0–3 walk whole blocks, with one table call per thread's chunk, on one thread and on many (`kPairBlocksMaxQubit`). One call per 1–8 pairs had cost operand 3 on one thread 1.4–1.7×, and operands 0–2 on every thread 0.87–0.97×.
+  - The 1-qubit and scale loops are unrolled to four amplitudes, with the matrix broadcasts hoisted out of the loop.
+- **A compiler finding, recorded because the bitwise rule depends on it.** After the loop restructuring, MSVC 14.50 `/arch:AVX2` folded `_mm256_add_pd(_mm256_setzero_pd(), p)` into `p`. The disassembly had two `vaddsubpd` and one `vaddpd` per output. The fold drops the −0.0 → +0.0 normalisation, which is not an identity under `/fp:precise`. `SimdKernelsTest.SignedZerosStayBitwiseIdenticalBothTables` caught it. Every zero start now reads +0.0 through a `volatile` once per kernel call (`opaque_zero`), and the adds are back (`vaddpd` 76 → 96).
+
+**Criteria 1, 2 and 5: correctness**
+- **The tests.** `tests/engines/dense/simd_kernels_test.cpp` forces each table in turn and requires the bytes of `apply_matrix_generic`, covering:
+  - every 1-qubit operand at n = 1–10;
+  - every ordered 2-qubit pair at n = 2–8;
+  - diagonals of width 1–5 at fifteen placements;
+  - signed zeros in matrices and states;
+  - n = 18 at 1, 2, 3 and 7 threads, where the thread splits fall on odd group boundaries.
+
+  A further test checks that production uses AVX2 where the CPU has it.
+- **Where they pass.** On MSVC (`windows-release`, the dense tests 57/57) and on GCC under ASan and UBSan (`dev`, 164/164), including the Phase 21 memory fixtures, unfused and fused, against their unchanged bitwise baselines. The CPU/CUDA and in-memory/disk identities are the verification's `cuda12` and disk-tier tests (19.10).
+- **Disassembly** (criterion 5):
+  - neither compiler's AVX2 object has a `vfmadd`/`vfmsub`/`vfnmadd`/`vfnmsub` instruction (MSVC `dumpbin /disasm`, GCC `objdump -d`);
+  - each object exports exactly one symbol, `avx2_dense_kernels`, so no AVX2-compiled inline function can be kept by the linker for other callers;
+  - the baseline GCC object uses no `ymm` register.
+- **No new allocation.** The kernels work in place on the existing state, so memory accounting is untouched (item 7's second condition).
+
+**Criteria 3 and 4: speed.** The gate scripts are `docs/benchmarks/phase-24/simd-gate/scripts/gate.{sh,ps1}`. They build the step-1 commit `a326851` in a separate worktree and run old, new, new, old in one session, on AC throughout. The tables come from `bench/tools/simd_gate_table.py`, and the records are in `docs/benchmarks/phase-24/simd-gate/{linux,windows}`, commit `aed0ee7`, 2026-11-10 12:18–12:25 UTC.
+
+One-thread figures on this machine move by up to 2× between rounds, because a thread lands on a performance or an efficiency core. The unchanged generic kernel read 0.81–1.11× between old and new in the unpinned runs. The one-thread rows were therefore also measured pinned to one performance core, with four alternating rounds per binary (`scripts/pinned.{sh,ps1}`, `bench/tools/simd_pinned_table.py`, records `linux-pinned/`, `windows-pinned/`):
+- Linux pins logical CPU 2.
+- Windows pins logical CPU 14. Measured on Windows, CPUs 0, 10 and 12–18 run the generic kernel in 650–810 µs; CPUs 2–8 take 1.0–1.4 ms and CPU 20 takes 2.1 ms.
+
+In the pinned runs the generic kernel reads 0.98–1.01×, so they are the figures that can be compared.
+
+| Criterion | Bar | Linux (GCC 15.2) | Windows (MSVC 14.50) | Result |
+|---|---|---|---|---|
+| 3a: 2q, one thread, n = 16–20, every placement | ≥ 2.0× | pinned 3.47–4.80×; unpinned 3.23–4.90× | pinned 2.92–4.44×; unpinned 2.64× minimum | **met** |
+| 3b: 1q, one thread, n = 16–20, every placement | Windows ≥ 1.8×; Linux ≥ 0.95× of GCC's clones | pinned 0.90–1.50×: four placements below 0.95, at (16, 8) 0.91, (20, 2) 0.91, (20, 10) 0.94 and (20, 19) 0.90; their old and new rounds overlap | pinned 1.94–3.39×; unpinned 1.81–5.45× | **Windows met; Linux missed narrowly**, for the owner's ruling |
+| 3c: fused brickwork sweep through `menos::run`, one thread, n = 16–20 | ≥ 1.5× | 4.37× (16), 3.73× (20) | 3.76× (16), 3.32× (20) | **met** |
+| 3d: every thread, n = 20–24 | no factor | fused sweep 1.59× (20), 1.49× (22), 1.16× (24) | 2.38× (20), 1.55× (22), 1.41× (24) | reported |
+| 4: no slowdown outside the spread | — | see below | see below | for the owner's ruling |
+
+**3b on Linux, what the miss is.** The bar compares the new intrinsics with GCC's own AVX2 clones of the same loops. GCC's clone of `pair_run` (disassembled from `a326851`) issues the same instruction sequence as the new code: `vmulpd`, `vpermilpd`, `vaddsubpd`, `vaddpd` of zero, two pairs per iteration. The four placements below 0.95 are 0.90–0.94, and each pair of old and new rounds overlaps; for example (20, 19) reads old 604–730 µs against new 637–752 µs. A build without the 4-amplitude unroll measured no better: 0.92 at (20, 19), worse on the other rows. At n = 16 operand 3, the new block path is 1.50–1.64×. This is not claimed as met.
+
+**Criterion 4, rows where new's faster round is slower than old's slower round:**
+- **Linux, in the unpinned run, one thread:** fifteen rows, from 1q, diagonal and the unchanged generic kernel alike. The generic kernel's presence shows this is core placement. Pinned, no one-thread row on either platform has new's fastest round slower than old's slowest, the 3b rows above included.
+- **Linux, every thread:** (20, 1q, 10) 0.69 and (20, 1q, 19) 0.73, on the `pair_run` path that `aed0ee7` did not change; the same rows read 1.02–1.04 in the first gate run, on `8ed6707`. A pass there takes about 0.4 ms against the pool's wake-up of about 0.2 ms (`docs/adr/0019` section 10). Also (22, diag2, 20 21) 0.89.
+- **Windows, every thread, n = 22:** 1q at operands 3, 11 and 21 read 0.92–0.93×, on the streaming path at the bandwidth floor (0.4–0.5× of it). At n = 24 every 1q row reads 1.03–1.29×.
+- **Windows, one thread:** the unchanged generic kernel twice.
+
+Step 1 recorded process-to-process differences of up to about ±20% at these sizes (19.6.1, point 3). Every flagged every-thread row lies within that, but it is stated here row by row for the owner, not claimed as met.
+
+**Predictability (Q7).** The calibrated dense rate rose with the kernels: `work_units_per_s` was about 1.4–1.5 × 10⁹ in the reference processes and 3.3–5.2 × 10⁹ in the new ones, so a calibrated plan prices the faster engine with no code change. Two effects are not fixed here and belong to the model-fixes item:
+- unbudgeted CPU-only jobs, which skip calibration, keep the fixed rate;
+- the per-k weighting of 19.1 has moved, since k = 1 and 2 passes got faster and the generic kernel did not.
+
+### 19.9 The fusion window after item 8 (Q5) — [MEASURED]
+
+The item 7 probe re-run in full on `aed0ee7` with the AVX2 kernels (`docs/benchmarks/phase-24/fusion-step1/scripts/step1.{sh,ps1}`, records `docs/benchmarks/phase-24/simd-gate/fusion-rerun/{linux,windows}`, 2026-11-10 12:27–12:32 UTC, on AC). On the brickwork circuits, against gate by gate:
+
+| Window | Linux, one thread, n = 20 | Linux, every thread, n = 20–24 | Windows, one thread, n = 20 | Windows, every thread, n = 20–24 |
+|---|---|---|---|---|
+| 2 | 2.19× | 2.35–2.79× | 2.46× | 2.34–2.82× |
+| 3 | 0.41× | 1.06–1.31× | 0.45× | 0.57–1.26× |
+| 4 | 0.28× | 0.68–0.86× | 0.30× | 0.37–0.89× |
+| 5 | 0.24× | 0.12–0.69× | 0.26× | 0.07–0.74× |
+
+Window 2 stays the best everywhere. A dense block of three or more qubits runs on the generic kernel, which stays scalar (Q4), so wider windows still lose. Through `menos::run`, fusion now gives 2.25–2.57× on Linux and 2.30–2.65× on Windows over the unfused AVX2 engine. The window stays 2, as the owner decided. A vectorised generic kernel, the condition under which a wider window could pay, would need a new decision.

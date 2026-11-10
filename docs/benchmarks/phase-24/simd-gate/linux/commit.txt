@@ -1,0 +1,2 @@
+aed0ee7 1-qubit kernels: threaded low operands walk whole blocks per chunk
+reference a326851

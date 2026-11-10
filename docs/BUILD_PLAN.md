@@ -575,6 +575,15 @@ The planner checks each candidate's `estimated_peak_bytes` against the host budg
 
 The owner took every recommendation the same day (19.5): baseline and AVX2 only (AVX-512 deferred), intrinsics in one AVX2 unit with `cpuid` dispatch on every compiler, the generic kernel and the expectation sum kept scalar, the fusion window re-measured but kept at 2, and item 7's gate bar with speed-up factors set from step 1.
 
+**Step 1 was measured the same day** (19.6). On one thread, the 2-qubit kernel ran at 3.1–4.5× the memory floor on both platforms, and MSVC's 1-qubit kernel was 2–3.7× slower than GCC's AVX2 clones. On every thread at 22–24 qubits, every kernel was already near the floor. The owner set the factors from it (19.7): 3a 2.0×, 3b 1.8× on Windows and 0.95× of GCC's clones on Linux, 3c 1.5×, 3d none.
+
+**Built and measured** (19.8, `4e690c8`–`aed0ee7`): an AVX2 translation unit dispatched by `cpuid`, bitwise identical to the generic kernel on both tables. On one thread at 16–20 qubits, pinned to a performance core:
+- **3a:** the 2-qubit kernel is 3.5–4.8× faster on Linux and 2.9–4.4× on Windows; met.
+- **3b:** the 1-qubit kernel is 1.94–3.39× faster on Windows (met) and 0.90–1.50× of GCC's clones on Linux, with four placements at 0.90–0.94 inside overlapping rounds: a narrow miss.
+- **3c:** the fused sweep through `menos::run` is 3.3–4.4× faster; met.
+
+The criterion 4 rows are listed in 19.8 for the owner. Q5: the item 7 probe re-run with the new kernels keeps window 2 as the best (19.9).
+
 **Gate: OPEN** (the owner's).
 
 #### Stabilizer sampler fix (owner addition, 2026-11-09)
