@@ -162,8 +162,21 @@ TEST(SimdKernelsTest, TwoQubitEveryOrderedPairBothTables) {
 TEST(SimdKernelsTest, DiagonalsOfEveryWidthAndPlacementBothTables) {
     std::mt19937_64 rng(2423);
     const std::vector<std::vector<std::uint32_t>> placements = {
-        {0}, {1}, {2}, {3}, {8},          {0, 1},    {1, 0},          {2, 7},
-        {6, 7}, {0, 4, 8}, {5, 1, 3}, {0, 1, 2, 3}, {8, 2, 5, 0}, {0, 2, 4, 6, 8}, {7, 6, 5, 4, 3},
+        {0},
+        {1},
+        {2},
+        {3},
+        {8},
+        {0, 1},
+        {1, 0},
+        {2, 7},
+        {6, 7},
+        {0, 4, 8},
+        {5, 1, 3},
+        {0, 1, 2, 3},
+        {8, 2, 5, 0},
+        {0, 2, 4, 6, 8},
+        {7, 6, 5, 4, 3},
     };
     for (const auto& operands : placements) {
         expect_all_tables_bitwise(
