@@ -101,6 +101,7 @@ inline Gate1 gate1(const double* m) {
 }
 
 // (l, h) <- m * (a0, a1) for the two pairs in a0 = [lo values], a1 = [hi values].
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): inputs, then the two outputs.
 inline void pair2(const Gate1& g, __m256d a0, __m256d a1, __m256d& l, __m256d& h) {
     l = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m00.r, g.m00.i, a0)), cmul2(g.m01.r, g.m01.i, a1));
     h = _mm256_add_pd(_mm256_add_pd(g.zero, cmul2(g.m10.r, g.m10.i, a0)), cmul2(g.m11.r, g.m11.i, a1));
@@ -245,7 +246,8 @@ void avx2_scale_elements(double* amps,
                          const std::uint32_t* operands,
                          std::size_t k,
                          const double* d) {
-    std::size_t low_table[8] = {};  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    std::size_t low_table[8] = {};
     for (std::size_t t = 0; t < 8; ++t) {
         for (std::size_t j = 0; j < k; ++j) {
             if (operands[j] < 3) {
@@ -297,7 +299,8 @@ inline void two_qubit_one(double* amps,
                           std::size_t base,
                           const std::size_t* off,
                           const double* m) {
-    __m128d a[4];  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    __m128d a[4];
     for (std::size_t in = 0; in < 4; ++in) {
         a[in] = _mm_loadu_pd(amps + 2 * (base + off[in]));
     }
@@ -327,8 +330,10 @@ void avx2_two_qubit(double* amps,
     const std::uint32_t hi = q0 < q1 ? q1 : q0;
     const std::size_t b0 = std::size_t{1} << q0;
     const std::size_t b1 = std::size_t{1} << q1;
-    const std::size_t off[4] = {0, b0, b1, b0 | b1};  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-    Bcast2 c[16];                                     // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    const std::size_t off[4] = {0, b0, b1, b0 | b1};
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    Bcast2 c[16];
     for (std::size_t e = 0; e < 16; ++e) {
         c[e] = bcast2(m + 2 * e);
     }
@@ -341,7 +346,8 @@ void avx2_two_qubit(double* amps,
         }
         for (; i + 2 <= end; i += 2) {
             const std::size_t base = insert_zero_bit(insert_zero_bit(i, lo), hi);
-            __m256d a[4];  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+            // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+            __m256d a[4];
             for (std::size_t in = 0; in < 4; ++in) {
                 a[in] = _mm256_loadu_pd(amps + 2 * (base + off[in]));
             }
@@ -357,7 +363,8 @@ void avx2_two_qubit(double* amps,
         for (; i + 2 <= end; i += 2) {
             const std::size_t base_a = insert_zero_bit(insert_zero_bit(i, lo), hi);
             const std::size_t base_b = insert_zero_bit(insert_zero_bit(i + 1, lo), hi);
-            __m256d a[4];  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+            // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+            __m256d a[4];
             for (std::size_t in = 0; in < 4; ++in) {
                 a[in] = _mm256_insertf128_pd(
                     _mm256_castpd128_pd256(_mm_loadu_pd(amps + 2 * (base_a + off[in]))),
