@@ -131,7 +131,7 @@ TEST(TimeTermsTest, EveryCpuEngineReportsItsOwnTermsAndNoOtherEngines) {
             .want_expectation = !c.counts,
             .observable = c.counts ? nullptr : &observable,
             .trajectories = c.trajectories,
-            .shots = c.counts ? 100 : 0,
+            .shots = c.counts ? std::uint64_t{100} : std::uint64_t{0},
             .bitstring_width = c.counts ? c.circuit.num_qubits() : 0,
         });
         ASSERT_TRUE(estimate.feasible) << static_cast<int>(c.engine) << ": "
