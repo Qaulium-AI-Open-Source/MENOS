@@ -37,7 +37,7 @@ struct Case {
     bool want_statevector = false;
     bool want_counts = false;
     std::uint64_t shots = 0;
-    std::optional<Observable> observable;
+    std::optional<Observable> observable = std::nullopt;
     std::uint64_t trajectories = 0;
 };
 
