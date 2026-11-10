@@ -206,6 +206,7 @@ JobSpec clifford_counts_job() {
         }
         circuit.append(Opcode::CX, {0, 1});
         circuit.append(Opcode::CX, {2, 3});
+        circuit.append(Opcode::CX, {1, 2});  // one block, so no Factorized plan
     }
     for (std::uint32_t q = 0; q < 4; ++q) {
         circuit.append_measure(q, q);
