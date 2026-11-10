@@ -547,11 +547,13 @@ TEST(PlanJobExpectationTest, TensorNetworkLosesToACheaperCandidateOnCost) {
     EXPECT_FALSE(tn->is_winner);
 }
 
-TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsStillPruned) {
-    // The same job with a (generous) time budget. Branch and bound stays on in
-    // a CPU-only job (docs/adr/0028 section 13, D.1b): every candidate is held
-    // to the budget before it can serve as the bound, and Pauli, which fits
-    // it, is the bound. The plan is the one the unbudgeted job gets.
+TEST(PlanJobExpectationTest, WithATimeBudgetEveryCandidateIsCostedInFullAndTheFastestWins) {
+    // The same job with a (generous) time budget. A budgeted job is ranked by
+    // predicted seconds (Phase 24 item 4, owner decision (b), docs/adr/0028
+    // section 21), and the branch-and-bound bound is a work-unit figure that
+    // cannot stand for seconds, so every candidate is costed in full: the
+    // tensor network is not pruned, and the winner is the feasible candidate
+    // with the fewest predicted seconds.
     Circuit circuit(1, 0);
     circuit.append(Opcode::RZ, {0}, {0.5});
     const Observable obs{{{one_qubit_z(), {1.0, 0.0}}}};
@@ -567,23 +569,20 @@ TEST(PlanJobExpectationTest, WithATimeBudgetTheTensorNetworkIsStillPruned) {
                              .work_units_per_second = 1.0};
     const Plan plan = plan_job(job, hw);
 
-    const CandidateSummary* tn = nullptr;
-    const CandidateSummary* pauli = nullptr;
+    const CandidateSummary* winner = nullptr;
     for (const CandidateSummary& c : plan.candidates) {
-        if (c.strategy == Strategy::DirectTensorNetwork) {
-            tn = &c;
-        }
-        if (c.strategy == Strategy::DirectPauli) {
-            pauli = &c;
+        EXPECT_FALSE(c.infeasible_reason.starts_with(kPrunedReasonPrefix))
+            << c.infeasible_reason;
+        if (c.is_winner) {
+            winner = &c;
         }
     }
-    ASSERT_NE(tn, nullptr);
-    ASSERT_NE(pauli, nullptr);
-    ASSERT_TRUE(pauli->feasible);
-    EXPECT_FALSE(tn->feasible);
-    EXPECT_TRUE(tn->infeasible_reason.starts_with(kPrunedReasonPrefix)) << tn->infeasible_reason;
-    EXPECT_EQ(plan.strategy, Strategy::DirectPauli);
-    EXPECT_FALSE(tn->is_winner);
+    ASSERT_NE(winner, nullptr);
+    for (const CandidateSummary& c : plan.candidates) {
+        if (c.feasible) {
+            EXPECT_LE(winner->estimated_seconds, c.estimated_seconds);
+        }
+    }
 }
 
 // A time budget that some candidate misses must not let that candidate serve
@@ -695,8 +694,13 @@ TEST(PlanJobExpectationTest, BranchAndBoundNeverChangesTheWinner) {
                     .seed = 0,
                     .memory_budget_bytes = 1ULL << 30,
                     .expectation = obs};
+        // A budget costs every candidate in full. Under it the job ranks by
+        // seconds (Phase 24 item 4), and with a bandwidth floor too small to
+        // bind those are work units / 1e30, in the same order as the work
+        // units the unbudgeted job ranks by -- so the two plans' winners must
+        // agree, which is what this test checks of the pruning.
         const HardwareProfile hw{.total_memory_bytes = 1ULL << 30,
-                                 .memory_bandwidth_bytes_per_second = 1e30,
+                                 .memory_bandwidth_bytes_per_second = 1e300,
                                  .work_units_per_second = 1e30};
         const Plan pruned = plan_job(job, hw);
         job.time_budget_seconds = 1e30;
