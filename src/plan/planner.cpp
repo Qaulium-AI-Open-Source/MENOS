@@ -318,9 +318,10 @@ Plan plan_job(const JobSpec& job_spec,
     // make another engine look slower or faster than it is. A candidate that
     // uses an engine the model has no figures for keeps the work-unit term.
     // A work figure and a byte figure: distinct roles, named at every call.
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     const auto cpu_seconds =
         [&](std::uint64_t work_units, std::uint64_t peak_bytes, const TimeTerms& time) {
+            // NOLINTEND(bugprone-easily-swappable-parameters)
             double traffic_seconds = static_cast<double>(peak_bytes) / bandwidth_bytes_per_second;
             bool any_term = false;
             bool covered = true;

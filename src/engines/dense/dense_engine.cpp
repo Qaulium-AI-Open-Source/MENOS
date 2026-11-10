@@ -234,10 +234,11 @@ std::uint64_t gate_passes(const ir::FusionPlan& plan) {
 // state; component 1 the work units, amplitude updates weighted by 2^k;
 // component 2 the shots sampled.
 // A pass count and a work figure: distinct roles, named at both call sites.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 TimeTerms dense_time_terms(const EngineEstimateRequest& request,
                            std::uint64_t gate_pass_count,
                            std::uint64_t work) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     double passes = 1.0 + static_cast<double>(gate_pass_count);
     passes += request.want_statevector ? 1.0 : 0.0;
     passes += request.want_counts ? 1.0 : 0.0;
