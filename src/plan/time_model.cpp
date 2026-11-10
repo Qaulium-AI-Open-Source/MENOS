@@ -9,6 +9,7 @@
 #include <exception>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "menos/circuit.h"
@@ -123,27 +124,26 @@ Circuit ry_cx_layers(std::uint32_t n, std::uint32_t layers) {
     return c;
 }
 
-// Gates that keep a product state: X and phase gates, and CX between qubits
-// in basis states, so every MPS bond stays 1 and only the per-update cost
-// shows.
-Circuit product_preserving(std::uint32_t n, std::uint32_t gates) {
+// Two-qubit gates on the disjoint pairs (2i, 2i + 1) only, with a rotation
+// between them: no gate ever crosses the cut between pairs, so every MPS bond
+// is at most 2 whatever the depth (the exact policy keeps zero singular
+// values, so a bond is bounded by structure, not by entanglement), and the
+// per-update cost shows without the chi^3 term.
+Circuit paired_gates(std::uint32_t n, std::uint32_t gates) {
     Circuit c(n, n);
     for (std::uint32_t g = 0; g < gates; ++g) {
-        const std::uint32_t q = (g * 5) % n;
-        switch (g % 4) {
-            case 0:
-                c.append(Opcode::X, {q});
-                break;
-            case 1:
-                c.append(Opcode::T, {q});
-                break;
-            case 2:
-                c.append(Opcode::S, {q});
-                break;
-            default:
-                c.append(Opcode::CX, {q, (q + 1) % n});
-                break;
-        }
+        const std::uint32_t q = 2 * ((g * 3) % (n / 2));
+        c.append(Opcode::RY, {q}, {0.2 + (0.01 * static_cast<double>(g % 50))});
+        c.append(Opcode::CX, {q, q + 1});
+    }
+    return c;
+}
+
+// One-qubit gates only: every MPS bond stays 1.
+Circuit one_qubit_gates(std::uint32_t n, std::uint32_t gates) {
+    Circuit c(n, n);
+    for (std::uint32_t g = 0; g < gates; ++g) {
+        c.append(Opcode::RY, {(g * 5) % n}, {0.1 + (0.01 * static_cast<double>(g % 50))});
     }
     return c;
 }
@@ -169,6 +169,17 @@ Circuit noisy_layers(std::uint32_t n, std::uint32_t layers) {
         for (std::uint32_t q = 0; q < n; ++q) {
             bit_flip(c, q, 0.01);
         }
+    }
+    return c;
+}
+
+// circuit with an RZ on qubit 0 in front.
+Circuit with_rz(const Circuit& circuit) {
+    Circuit c(circuit.num_qubits(), circuit.num_clbits());
+    c.append(Opcode::RZ, {0}, {0.3});
+    for (const Operation& op : circuit.operations()) {
+        const auto& gate = std::get<GateOp>(op);
+        c.append(gate.opcode, gate.qubits, gate.params);
     }
     return c;
 }
@@ -199,13 +210,17 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(clifford(512, 512), 20000));
             break;
         case Engine::Pauli:
-            cases.push_back(expectation_case(clifford(8, 30000), z_on(8, 0)));
-            cases.push_back(expectation_case(clifford(128, 300), mixed_terms(128, 300)));
+            // One RZ makes the circuit non-Clifford, which the Pauli engine
+            // requires (a Clifford one goes to the stabilizer engine); placed
+            // first, on |0>-side terms it splits nothing.
+            cases.push_back(expectation_case(with_rz(clifford(8, 30000)), z_on(8, 0)));
+            cases.push_back(
+                expectation_case(with_rz(clifford(128, 300)), mixed_terms(128, 300)));
             break;
         case Engine::MPS:
-            cases.push_back(counts_case(product_preserving(16, 4000), 1));
+            cases.push_back(counts_case(paired_gates(16, 2000), 1));
             cases.push_back(counts_case(ry_cx_layers(12, 6), 1));
-            cases.push_back(expectation_case(product_preserving(40, 40), all_z(40)));
+            cases.push_back(expectation_case(one_qubit_gates(40, 4000), all_z(40)));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));
