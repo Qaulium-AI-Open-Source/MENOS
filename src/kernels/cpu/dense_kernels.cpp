@@ -217,9 +217,10 @@ double* as_doubles(std::complex<double>* p) {
 
 // Runs shorter than 2^kRunKernelMinQubit are not worth a call each.
 inline constexpr std::uint32_t kRunKernelMinQubit = 3;
-// A 1-qubit gate on an operand below this walks whole blocks in one call
-// (pair_blocks) instead of one call per run: measured in item 8's gate run,
-// operand 3's 8-pair runs lost 1.4-1.7x of the AVX2 gain to the per-call
+// A 1-qubit gate on an operand up to this walks whole blocks, one call per
+// thread's chunk (pair_blocks), instead of one call per run of 2^q pairs:
+// measured in item 8's gate run, operand 3's 8-pair runs on one thread, and
+// operands 0-2 on every thread, lost much of the AVX2 gain to the per-call
 // setup (docs/adr/0028 section 19.8).
 inline constexpr std::uint32_t kPairBlocksMaxQubit = 3;
 
@@ -242,8 +243,15 @@ void apply_matrix_1q(std::span<std::complex<double>> state,
     const double* const m = as_doubles(matrix.data());
     const std::size_t pairs = state.size() >> 1;
     std::complex<double>* const amps = state.data();
-    if (q <= kPairBlocksMaxQubit && team_size(pairs, num_threads) == 1) {
-        kernels.pair_blocks(as_doubles(amps), state.size(), q, m);
+    if (q <= kPairBlocksMaxQubit) {
+        // Whole blocks of 2^(q+1) amplitudes, one call per thread's chunk of
+        // blocks: a call per run of 2^q pairs would cost a table call and the
+        // matrix broadcasts every one to eight pairs.
+        const std::size_t block = std::size_t{2} << q;
+        auto blocks = [&](std::size_t begin, std::size_t end) {
+            kernels.pair_blocks(as_doubles(amps + (begin * block)), (end - begin) * block, q, m);
+        };
+        parallel_for(state.size() / block, team_size(pairs, num_threads), blocks);
         return;
     }
     // Pair p lives at i0 = insert_zero_bit(p, q) = (p >> q) * 2 * bit + (p & (bit - 1)).
