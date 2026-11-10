@@ -2876,3 +2876,11 @@ These are proposed for the owner to set, measured as same-run ratios against the
 - **3b, the 1-qubit kernel on one thread at n = 16–20, on Windows:** at least **1.8×** on every operand placement. On Linux, at least 0.95× of the clones (no regression from replacing `target_clones` with intrinsics). From point 2: Windows is 2.0–3.7× slower than GCC's clones there today.
 - **3c, the fused brickwork sweep through `menos::run` on one thread at n = 16–20:** at least **1.5×** on both platforms. Most of its fused passes are 2-qubit blocks, so 3a dominates it.
 - **3d, every thread at n = 20–24: no speed-up factor.** Point 3 bounds the possible gain at up to about 1.5×, and the clones-on/off and Windows/Linux comparisons already move by up to ±20% between processes at these sizes, so a factor would be a run-to-run claim. Criterion 4 (no slowdown outside step 1's spread) applies, and the result is reported.
+
+### 19.7 Owner answers: the speed-up factors (2026-11-10)
+
+The owner set criterion 3 as proposed in 19.6.2:
+- **3a:** the 2-qubit kernel on one thread at n = 16–20, at least 2.0× on every operand placement, on both platforms.
+- **3b:** the 1-qubit kernel on one thread at n = 16–20, at least 1.8× on Windows, and at least 0.95× of today's GCC clones on Linux.
+- **3c:** the fused brickwork sweep through `menos::run` on one thread at n = 16–20, at least 1.5× on both platforms.
+- **3d:** no factor on every thread at n = 20–24. Criterion 4 (no slowdown) applies, and the result is reported.

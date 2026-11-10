@@ -2,6 +2,7 @@ add_executable(menos_engines_dense_tests
     state_vector_test.cpp
     apply_matrix_test.cpp
     specialised_kernels_test.cpp
+    simd_kernels_test.cpp
     threaded_kernels_test.cpp
     thread_pool_test.cpp
     sample_test.cpp
