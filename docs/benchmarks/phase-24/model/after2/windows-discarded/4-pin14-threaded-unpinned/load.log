@@ -1,0 +1,4 @@
+accuracy_run1 2026-11-11T07:18:37Z cpu_load=5% power: status=2 charge=97
+accuracy_run2 2026-11-11T07:25:44Z cpu_load=0% power: status=2 charge=98
+accuracy_run3 2026-11-11T07:28:42Z cpu_load=0% power: status=2 charge=100
+end 2026-11-11T07:31:42Z cpu_load=0% power: status=2 charge=100

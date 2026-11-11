@@ -1,0 +1,4 @@
+accuracy_run1 2026-11-11T06:43:11Z loadavg=1.13 0.27 0.09 power: {"ac_online": true, "battery_percent": 88, "power_scheme": "Balanced"}
+accuracy_run2 2026-11-11T06:45:06Z loadavg=4.01 1.98 0.76 power: {"ac_online": true, "battery_percent": 88, "power_scheme": "Balanced"}
+accuracy_run3 2026-11-11T06:47:00Z loadavg=3.42 2.52 1.11 power: {"ac_online": true, "battery_percent": 88, "power_scheme": "Balanced"}
+end 2026-11-11T06:48:52Z loadavg=5.03 3.68 1.71 power: {"ac_online": true, "battery_percent": 88, "power_scheme": "Balanced"}

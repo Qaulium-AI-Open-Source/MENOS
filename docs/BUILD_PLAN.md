@@ -607,6 +607,19 @@ The criterion 4 rows are listed in 19.8 for the owner. Q5: the item 7 probe re-r
 - **Cut:** not measured. Under the seconds ranking no cut plan was chosen.
 - **Calibration cost:** now 1.0–2.5 s per process, against about 0.1 s before.
 
+**The three Windows misses, fixed (2026-11-11, `docs/adr/0028` section 22, `bacbf21`).** The owner asked for structural fixes, then the verification. Each miss was a cost that the counts did not see:
+- **Stabilizer:** `rowsum` summed its phase one qubit at a time, which made an elimination O(n³). It is now summed a word at a time.
+- **Stabilizer and Pauli:** the gate rules branched on the row's bits. They are now branch-free.
+- **Pauli:** rotation visits and per-term setup were not counted. Both are now counted.
+- **MPS:** the sampler's cost per site visit was not counted. It is now counted.
+- **Calibration:** it ran with no memory ledger installed. It now runs under one.
+
+Results are bitwise unchanged, and the stabilizer is 3.8–5.8× faster on random Clifford circuits. Measured on three processes per platform, **every measured engine meets the target on both platforms**:
+- Windows worst median: factorized, 1.80×. Windows worst P90: dense, 3.61×.
+- Linux worst median: Pauli, 1.48×. Linux worst P90: Pauli, 1.79×.
+
+On Windows the one-thread engines are now pinned to a performance core, and every other engine runs on the performance cores (section 22.5). Unpinned, Windows moved one-thread work onto efficiency cores partway through a run, 3–10× slower than the core the calibration ran on. The method change and its four attempts are recorded for the owner.
+
 #### Stabilizer sampler fix (owner addition, 2026-11-09)
 
 **Status (2026-11-09).** The owner placed a correctness fix in this phase: the stabilizer engine's counts sampler returned impossible outcomes on some Clifford circuits (seen on 2026-11-05 at 40–100 qubits in the cross-simulator comparison, reproduced by `docs/benchmarks/cross-simulator-2026-11-05/harness/stabilizer_repro.{py,json}`, and on 2026-11-07 from 8 qubits up: a qubit whose exact marginal is 0.5 came out 1 in every shot). Cause (`docs/adr/0028` section 18): the sampler combined each selected generator into the base outcome with OR instead of XOR, so a base bit of 1 could never flip to 0; the tableau, `reduce()` and the expectation path were right, which is why single-qubit measurements and expectation values agreed with other simulators. Fixed the same day: `BitString::operator^=` and the sampler flipping with it; pinned by the minimal anti-correlated pair (X, H, CX), the owner's 50-qubit reproducer, and the random-Clifford differential test now drawing from the engine's own sampler and checking every drawn outcome against the dense oracle (it had enumerated `reduce()`'s subspace itself, which is why the bug stayed hidden). Counts from `direct_stabilizer` plans change wherever the bug fired, which includes the two Phase 21 stabilizer counts fixtures: their baseline entries had pinned the buggy sampler's outcomes and are regenerated (the same digests on both platforms, as before, the sampler being integer arithmetic over the same seed); the stabilizer expectation fixture and every other entry are unchanged.

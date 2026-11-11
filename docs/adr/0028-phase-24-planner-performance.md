@@ -3169,3 +3169,147 @@ On `phase-24-simd-kernels`, from `e2dc135` and `87600b9` through `3b3397f`:
 - A job with no budget plans and samples exactly as before.
 - Within one process, a budgeted job's plan, and so its seeded counts, repeat.
 - Between processes they can differ when two candidates' predicted seconds are close, because the calibration differs between processes. On Windows this is about 1.5× (BUILD_PLAN, item 4).
+
+## 22. The three Windows median misses: what each model did not see (owner, 2026-11-11) — [MENOS] / [MEASURED]
+
+### 22.1 The request
+
+Section 20.5 left three Windows medians over the owner's 2× target: Pauli 2.26×, MPS 2.12× and stabilizer 2.04×. On 2026-11-11 the owner asked for structural fixes that bring them within the target, followed by the phase's verification on both platforms. No coefficient or calibration case was to be fitted to the benchmark.
+
+### 22.2 Diagnosis
+
+Each miss was a cost that the time counts did not see. Each cause below was found in the code and then confirmed by a measurement.
+
+**Stabilizer: `rowsum` was O(n), not O(words).**
+- `rowsum` (`src/engines/stabilizer/tableau.cpp`) summed the product's phase one qubit at a time, so each call cost n bit steps.
+- An elimination on a dense tableau makes about n²/2 rowsums, so it cost about n³/2. The model counted 2·n²·w word operations.
+- At about 3 ns per bit step this predicts the missing time exactly:
+
+  | Circuit | Missing time predicted | Missing time measured |
+  |---|---|---|
+  | random Clifford, n = 1000 | 1.5 s | 1.5 s (2.07 s actual, 0.58 s predicted) |
+  | random Clifford, n = 256 | 25 ms | 25 ms |
+
+- A graph state's x-part is the identity, so it needs no rowsums. It was overpredicted, because the calibration's 512-qubit case had folded the n³ elimination into the per-update figure.
+
+**Stabilizer and Pauli: the gate rules branched on the row's bits.**
+- `common::apply_*` flipped the sign with `if (xa && za)`, and `get_bit`, `set_bit` and `xor_bit` were out-of-line calls whose `xor_bit` branched on its value.
+- On a random dense row these branches mispredict about half the time. One update cost 10 ns on a sparse row and 15 ns on a dense one, measured on calibration cases with the same counts.
+- No structural count can see the contents of a row.
+
+**Pauli: per-term and per-rotation costs.**
+- Each rotation visit builds its split's terms afresh, two heap vectors per copy, even when the term does not branch. The calibration had one rotation per propagation.
+- Each observable term is propagated on its own, with a term list, a ledger charge and a final evaluation.
+- The calibration's two many-term cases both had 300 gates per term. A term's fixed cost and its updates therefore moved together, and the fit could trade one for the other.
+
+**MPS: the sampler has a cost per site visit.**
+- `MPSCountsSampler::sample_one` allocates its two candidate vectors and reassigns the running vector at every site of every shot.
+- The model counted only the 2·l·r elements per site.
+- The calibration's sampler case had about 30 elements per site and the Trotter circuits about 300. The Trotter circuits were therefore overpredicted: 2.5–3.1× on Windows and 1.6–1.8× on Linux, where the heap is faster.
+
+**Every engine: the calibration ran with no memory ledger.**
+- `Runtime::execute` installs a `MemoryLedger` for each attempt. `measure()` in `src/plan/time_model.cpp` did not, so every `Charge::set` was a no-op there.
+- The Pauli engine recharges its term list at every gate of every term. The benchmark's Pauli circuit ran in 3.35 ms through the engine with no ledger, and in 4.95 ms through `Runtime::execute`.
+
+### 22.3 Changes (`bacbf21`)
+
+**Engine changes.** Results are bitwise unchanged: the arithmetic is exact integer or bit arithmetic, and the Phase 21 baseline and every golden passed unchanged.
+- **The phase is summed a word at a time.** `common::pauli_product_phase_exponent` builds two masks per word, the anticommuting positions and the cyclic pairs X·Y, Y·Z and Z·X, and popcounts them. `rowsum` uses it, so a rowsum is O(n/64).
+  - Tested against the per-qubit table on all 16 ordered pairs at bits 0, 17, 63, 64 and 100.
+  - Tested against 1,000 random row pairs at n = 1, 63, 64, 65 and 200.
+- **The bit helpers are inline and branch-free,** and every `apply_*` flips the sign with a XOR of its condition.
+
+**New time counts.** `kTimeComponents` goes from 4 to 5.
+
+| Engine | Component | Counts |
+|---|---|---|
+| stabilizer | [3] | the eliminations' pivot scans, n² per elimination |
+| Pauli | [3] | rotation visits, t0 per RZ/RX/RY/P/U |
+| Pauli | [4] | the observable's terms |
+| MPS | [4] | sampled sites, n per shot |
+
+**New calibration cases.**
+
+| Engine | Case | Why |
+|---|---|---|
+| stabilizer | `clifford(64, 768)` | eliminations at 1 word per row |
+| stabilizer | `clifford(1024, 8192)` | eliminations at 16 words per row |
+| Pauli | 5,000 Z0 terms through 30 RZ on other qubits | rotations alone, nothing branches; 30 rotations, because the worst-case branching bound t0·2^rotations must stay finite (30,000 rotations made the estimate infeasible, and the case was silently dropped) |
+| Pauli | `with_rz(clifford(40, 1200))` against 75 random terms | the same updates at four times the gates per term |
+| MPS | `paired_gates(16, 40)`, 20,000 shots | the sampler at bonds of at most 2 |
+| MPS | `ry_cx_layers(12, 7)`, 300 shots | the sampler at bonds up to 64 |
+
+**Calibration under a ledger.** Each calibration run executes under its own `MemoryLedger`, as `Runtime::execute` runs every attempt.
+
+**Calibration cost.**
+- Linux: 2.07–2.13 s per process, including the CUDA calibration (1.8–2.5 s before).
+- Windows: 1.41–1.49 s per process (1.0–1.1 s before). The processes that run the threaded labels on the performance-core mask took 3.50–3.54 s.
+
+### 22.4 Measurement — [MEASURED]
+
+**Method.**
+- Three processes per platform on `bacbf21`, on AC at every checkpoint, on 2026-11-11.
+- Linux: `accuracy.sh after2` in the WSL clone, unchanged.
+- Windows: `accuracy.ps1 after2 -PinOneThread 4000 -PinThreaded FFC03` (22.5). Each run is one process per engine label:
+  - stabilizer, Pauli and tensor network, which run on one thread and call no threaded library, run on logical CPU 14, a performance core;
+  - every other label (threaded engines, and MPS, whose SVDs run on OpenBLAS's threads) runs on the twelve performance-core threads, logical CPUs 0, 1 and 10–19.
+- Records: `docs/benchmarks/phase-24/model/after2/{linux,windows}`. Tables: `bench/tools/accuracy_table.py`.
+
+Each cell is median / P90 of |ln(actual / predicted)| as a factor. "Before" is section 20.5.
+
+| Engine | Linux before | Linux after | Windows before | Windows after | Target met |
+|---|---|---|---|---|---|
+| dense (CPU) | 1.16 / 1.37 | 1.13 / 1.35 | 1.69 / 3.57 | 1.66 / 3.61 | yes |
+| dense (CUDA, Linux) | 1.14 / 1.21 | 1.15 / 1.17 | not built | not built | yes |
+| density matrix | 1.03 / 1.36 | 1.09 / 1.24 | 1.17 / 2.78 | 1.22 / 3.10 | yes |
+| factorized | 1.11 / 1.46 | 1.26 / 1.50 | 1.53 / 2.19 | 1.80 / 2.09 | yes |
+| MPS | 1.55 / 1.78 | **1.07 / 1.16** | **2.12** / 3.09 | **1.31 / 1.89** | yes |
+| Pauli | 1.64 / 2.15 | **1.48 / 1.79** | **2.26** / 2.95 | **1.57 / 1.88** | yes |
+| stabilizer | 1.70 / 3.09 | **1.29 / 1.61** | **2.04** / 3.99 | **1.23 / 1.48** | yes |
+| tensor network | 1.10 / 1.17 | 1.13 / 1.42 | 1.14 / 1.25 | 1.07 / 1.09 | yes |
+| trajectory | 1.24 / 1.42 | 1.23 / 1.32 | 1.26 / 1.65 | 1.25 / 1.28 | yes |
+| cut | not measured | not measured | not measured | not measured | **not measured** |
+
+**Every measured engine meets the target on both platforms:** a median within 2× and a P90 within 4×.
+- **Cut is still not measured,** as in 20.5. On every cut fixture the planner chooses a direct plan or refuses.
+- **What is left:**
+  - Pauli still underpredicts on every row (1.3–1.9×), more with each rotation. Branching is the unmodelled part; it depends on the terms' supports at each rotation.
+  - Dense on Windows still overpredicts at 20–22 qubits (0.26–0.56×), as in 20.5.
+
+**The engines are faster.** Linux medians of three processes, before (20.5) and after:
+
+| Workload | Before | After | Speed-up |
+|---|---|---|---|
+| stabilizer, random Clifford n = 1000 | 2.34 s | 0.40 s | 5.8× |
+| stabilizer, random Clifford n = 256 | 84 ms | 22 ms | 3.8× |
+| stabilizer, graph state n = 2000 | 104 ms | 80 ms | 1.3× |
+| Pauli, 2 rotations | 8.2 ms | 5.1 ms | 1.6× |
+| Pauli, 12 rotations | 11.9 ms | 6.9 ms | 1.7× |
+
+### 22.5 The Windows method: why the one-thread engines are pinned — [MEASURED]
+
+**This replaces the unpinned method of 20.5 on Windows, after four attempts. All four are recorded for the owner.**
+
+**What happened.** Unpinned on 2026-11-11, Windows moved the one-thread engines onto efficiency cores partway through a process. The calibration, at the start of the process, still ran on a performance core.
+
+**The same binary at the same moment** (Pauli, actual over predicted):
+
+| Run | rz2 | rz12 |
+|---|---|---|
+| unpinned | 1.42× | 7.7× (rising to 10.8× at rz10) |
+| at high priority | 1.44× | 5.2× |
+| pinned to CPU 14 | 1.43× | 1.87× |
+
+Stabilizer n = 1000 shows the same: 4.5× unpinned, 1.12× pinned.
+
+**The four attempts.**
+1. Unpinned, run twice, `windows-discarded/{1,2}-unpinned`. Every one-thread engine read 3–5×.
+2. Every label on the performance-core mask `FFC03`. Records not kept: they were overwritten by the next attempt. Pauli read 2.47×, because the thread still moved between performance cores, which differ in clock speed.
+3. One-thread labels on CPU 14, every other label unpinned, `windows-discarded/4-pin14-threaded-unpinned`. Two problems:
+   - MPS on one CPU ran its OpenBLAS SVDs 2.9–3.9× slower than predicted.
+   - Trajectory, unpinned, read 4.2×.
+4. The method above, which uses no efficiency cores. The rule is fixed by the code: an engine that runs on one thread and calls no threaded library is pinned to one performance core; every other engine runs on the performance cores.
+
+**Linux, in the WSL clone, showed none of this,** and runs unpinned as before.
+
+**What this means for a user.** On a hybrid CPU, a one-thread engine's runtime depends on which core Windows gives it, by up to 10× here. The time model predicts the runtime on the core the calibration ran on. The model cannot see where the operating system will place the thread, and this is not fixed here.
