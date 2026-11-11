@@ -139,6 +139,10 @@ Result run(const Circuit& circuit, const RunOptions& options) {
         .with_plan_seconds(job.plan_seconds);
 }
 
+Result run(const CircuitBuilder& builder, const RunOptions& options) {
+    return run(builder.to_circuit(), options);
+}
+
 Plan preview(const Circuit& circuit, const RunOptions& options) {
     return validate_and_plan(circuit, options).plan;
 }

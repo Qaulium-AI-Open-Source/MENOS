@@ -24,6 +24,7 @@ add_executable(menos_api_tests
     fuse_diagonal_run_test.cpp
     peak_memory_test.cpp
     tier_request_test.cpp
+    builder_run_test.cpp
 )
 
 if(MENOS_ENABLE_CUDA)

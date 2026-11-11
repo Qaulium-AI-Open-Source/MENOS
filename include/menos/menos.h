@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "menos/accuracy_policy.h"
+#include "menos/builder.h"
 #include "menos/circuit.h"
 #include "menos/noise_method.h"
 #include "menos/observable.h"
@@ -172,6 +173,11 @@ struct RunOptions {
 // ResourceExceeded (menos::common) on invalid input, an unsupported
 // feature, or an exceeded memory budget, respectively.
 [[nodiscard]] Result run(const Circuit& circuit, const RunOptions& options);
+
+// run(builder.to_circuit(), options): the builder's circuit, which must have
+// no parameters (InvalidCircuit naming them otherwise; bind them with
+// CircuitBuilder::bind and run the Circuit). docs/adr/0029 section 3.3.
+[[nodiscard]] Result run(const CircuitBuilder& builder, const RunOptions& options);
 
 // Validates circuit and the output request, plans, and returns the Plan
 // without executing it -- the same validation and planning run() performs,
