@@ -16,8 +16,7 @@ namespace menos::ir {
 // opcode must be a named gate (not Unitary or Measure): InternalError
 // otherwise, through common::ensure.
 template <class P>
-[[nodiscard]] std::pair<Opcode, std::vector<P>> inverse_gate(Opcode opcode,
-                                                             std::vector<P> params);
+[[nodiscard]] std::pair<Opcode, std::vector<P>> inverse_gate(Opcode opcode, std::vector<P> params);
 
 // The exact inverse of op, by inverse_gate.
 [[nodiscard]] GateOp inverse_of(const GateOp& op);

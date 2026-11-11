@@ -48,9 +48,7 @@ const NamedCase kNamedCases[] = {
     {"t", [](CircuitBuilder& b) { b.t(1); }, [](Circuit& c) { c.append(Opcode::T, {1}); }},
     {"tdg", [](CircuitBuilder& b) { b.tdg(1); }, [](Circuit& c) { c.append(Opcode::Tdg, {1}); }},
     {"sx", [](CircuitBuilder& b) { b.sx(1); }, [](Circuit& c) { c.append(Opcode::SX, {1}); }},
-    {"sxdg",
-     [](CircuitBuilder& b) { b.sxdg(1); },
-     [](Circuit& c) { c.append(Opcode::SXdg, {1}); }},
+    {"sxdg", [](CircuitBuilder& b) { b.sxdg(1); }, [](Circuit& c) { c.append(Opcode::SXdg, {1}); }},
     {"rx",
      [](CircuitBuilder& b) { b.rx(0.3, 1); },
      [](Circuit& c) { c.append(Opcode::RX, {1}, {0.3}); }},
@@ -66,12 +64,8 @@ const NamedCase kNamedCases[] = {
     {"u",
      [](CircuitBuilder& b) { b.u(0.1, 0.2, 0.3, 1); },
      [](Circuit& c) { c.append(Opcode::U, {1}, {0.1, 0.2, 0.3}); }},
-    {"cx",
-     [](CircuitBuilder& b) { b.cx(2, 0); },
-     [](Circuit& c) { c.append(Opcode::CX, {2, 0}); }},
-    {"cz",
-     [](CircuitBuilder& b) { b.cz(0, 2); },
-     [](Circuit& c) { c.append(Opcode::CZ, {0, 2}); }},
+    {"cx", [](CircuitBuilder& b) { b.cx(2, 0); }, [](Circuit& c) { c.append(Opcode::CX, {2, 0}); }},
+    {"cz", [](CircuitBuilder& b) { b.cz(0, 2); }, [](Circuit& c) { c.append(Opcode::CZ, {0, 2}); }},
     {"swap",
      [](CircuitBuilder& b) { b.swap(1, 2); },
      [](Circuit& c) { c.append(Opcode::SWAP, {1, 2}); }},
@@ -232,8 +226,8 @@ TEST(CircuitBuilderTest, BindRefusalsNameTheParameters) {
     const std::string partly = message_of([&] { (void)builder.bind({{"alpha", 1.0}}); });
     EXPECT_NE(partly.find("'beta'"), std::string::npos);
     EXPECT_EQ(partly.find("'alpha'"), std::string::npos);
-    const std::string unknown = message_of(
-        [&] { (void)builder.bind({{"alpha", 1.0}, {"beta", 1.0}, {"gamma", 1.0}}); });
+    const std::string unknown =
+        message_of([&] { (void)builder.bind({{"alpha", 1.0}, {"beta", 1.0}, {"gamma", 1.0}}); });
     EXPECT_NE(unknown.find("no parameter of the circuit: 'gamma'"), std::string::npos);
     const std::string inf = message_of([&] {
         (void)builder.bind({{"alpha", std::numeric_limits<double>::infinity()}, {"beta", 1.0}});
@@ -289,16 +283,22 @@ TEST(CircuitBuilderTest, InverseUsesTheExactRule) {
     const Parameter a("a");
     CircuitBuilder builder(2);
     builder.global_phase = 0.3;
-    builder.s(0).sx(1).rx(a, 0).u(0.1, 0.2, a + 0.3, 1).cp(-0.4, 0, 1).unitary(
-        {Complex{0.0, 1.0}, 0.0, 0.0, Complex{0.0, -1.0}}, {1});
+    builder.s(0)
+        .sx(1)
+        .rx(a, 0)
+        .u(0.1, 0.2, a + 0.3, 1)
+        .cp(-0.4, 0, 1)
+        .unitary({Complex{0.0, 1.0}, 0.0, 0.0, Complex{0.0, -1.0}}, {1});
     const CircuitBuilder inv = builder.inverse();
     Circuit expected(2, 0);
     expected.global_phase = -0.3;
     // The conjugate transpose: std::conj also flips the sign of a zero
     // imaginary part, which the bitwise comparison sees.
-    expected.append_unitary(
-        {1}, {std::conj(Complex{0.0, 1.0}), std::conj(Complex{0.0}), std::conj(Complex{0.0}),
-              std::conj(Complex{0.0, -1.0})});
+    expected.append_unitary({1},
+                            {std::conj(Complex{0.0, 1.0}),
+                             std::conj(Complex{0.0}),
+                             std::conj(Complex{0.0}),
+                             std::conj(Complex{0.0, -1.0})});
     expected.append(Opcode::CP, {0, 1}, {0.4});
     expected.append(Opcode::U, {1}, {-0.1, -(0.5 + 0.3), -0.2});
     expected.append(Opcode::RX, {0}, {-0.5});

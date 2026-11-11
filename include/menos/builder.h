@@ -29,7 +29,9 @@ namespace menos {
 class Parameter {
 public:
     explicit Parameter(std::string name);
-    [[nodiscard]] const std::string& name() const noexcept { return name_; }
+    [[nodiscard]] const std::string& name() const noexcept {
+        return name_;
+    }
 
 private:
     std::string name_;
@@ -58,10 +60,16 @@ public:
     // The parameter with coefficient 1. Implicit for the same reason.
     ParameterExpression(const Parameter& parameter);  // NOLINT(google-explicit-constructor)
 
-    [[nodiscard]] const std::vector<Term>& terms() const noexcept { return terms_; }
+    [[nodiscard]] const std::vector<Term>& terms() const noexcept {
+        return terms_;
+    }
     // c0, or nullopt when the expression has none (a bare parameter).
-    [[nodiscard]] const std::optional<double>& constant() const noexcept { return constant_; }
-    [[nodiscard]] bool is_constant() const noexcept { return terms_.empty(); }
+    [[nodiscard]] const std::optional<double>& constant() const noexcept {
+        return constant_;
+    }
+    [[nodiscard]] bool is_constant() const noexcept {
+        return terms_.empty();
+    }
 
     // The value under values (by parameter name), in the order above. Every
     // term's parameter must have a value: InternalError otherwise (callers
@@ -142,11 +150,19 @@ public:
     // The register of that name; throws if there is none.
     [[nodiscard]] const QuantumRegister& qreg(std::string_view name) const;
     [[nodiscard]] const ClassicalRegister& creg(std::string_view name) const;
-    [[nodiscard]] const std::vector<QuantumRegister>& qregs() const noexcept { return qregs_; }
-    [[nodiscard]] const std::vector<ClassicalRegister>& cregs() const noexcept { return cregs_; }
+    [[nodiscard]] const std::vector<QuantumRegister>& qregs() const noexcept {
+        return qregs_;
+    }
+    [[nodiscard]] const std::vector<ClassicalRegister>& cregs() const noexcept {
+        return cregs_;
+    }
 
-    [[nodiscard]] std::uint32_t num_qubits() const noexcept { return num_qubits_; }
-    [[nodiscard]] std::uint32_t num_clbits() const noexcept { return num_clbits_; }
+    [[nodiscard]] std::uint32_t num_qubits() const noexcept {
+        return num_qubits_;
+    }
+    [[nodiscard]] std::uint32_t num_clbits() const noexcept {
+        return num_clbits_;
+    }
 
     // Named gates. Each appends exactly the operation Circuit::append(opcode,
     // qubits, params) would, with angles before qubits as in Qiskit, and

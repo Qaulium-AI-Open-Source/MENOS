@@ -65,7 +65,8 @@ inline ::testing::AssertionResult same_circuit(const Circuit& a, const Circuit& 
         bool equal = false;
         if (const auto* g = std::get_if<GateOp>(&x)) {
             const auto& h = std::get<GateOp>(y);
-            equal = g->opcode == h.opcode && g->qubits == h.qubits && same_doubles(g->params, h.params);
+            equal =
+                g->opcode == h.opcode && g->qubits == h.qubits && same_doubles(g->params, h.params);
         } else if (const auto* u = std::get_if<UnitaryOp>(&x)) {
             const auto& v = std::get<UnitaryOp>(y);
             equal = u->qubits == v.qubits && same_matrix(u->matrix, v.matrix);

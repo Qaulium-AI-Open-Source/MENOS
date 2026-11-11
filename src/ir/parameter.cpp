@@ -27,8 +27,7 @@ double ParameterExpression::evaluate(
     for (const Term& term : terms_) {
         const auto it = values.find(term.name);
         common::ensure(it != values.end(),
-                       "ParameterExpression::evaluate: parameter '" + term.name +
-                           "' has no value");
+                       "ParameterExpression::evaluate: parameter '" + term.name + "' has no value");
         const double product = term.coefficient * it->second;
         value = started ? value + product : product;
         started = true;
@@ -66,8 +65,7 @@ ParameterExpression operator+(const ParameterExpression& a, const ParameterExpre
         }
     }
     if (b.constant_.has_value()) {
-        out.constant_ =
-            out.constant_.has_value() ? *out.constant_ + *b.constant_ : *b.constant_;
+        out.constant_ = out.constant_.has_value() ? *out.constant_ + *b.constant_ : *b.constant_;
     }
     return out;
 }

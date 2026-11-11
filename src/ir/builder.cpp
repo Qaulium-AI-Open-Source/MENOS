@@ -74,7 +74,8 @@ CircuitBuilder CircuitBuilder::from_circuit(const Circuit& circuit) {
                 using T = std::decay_t<decltype(o)>;
                 if constexpr (std::is_same_v<T, GateOp>) {
                     std::vector<ParameterExpression> params(o.params.begin(), o.params.end());
-                    out.operations_.emplace_back(BuilderGate{o.opcode, o.qubits, std::move(params)});
+                    out.operations_.emplace_back(
+                        BuilderGate{o.opcode, o.qubits, std::move(params)});
                 } else {
                     out.operations_.emplace_back(o);
                 }
@@ -162,16 +163,36 @@ CircuitBuilder& CircuitBuilder::gate(Opcode opcode,
     return *this;
 }
 
-CircuitBuilder& CircuitBuilder::x(QubitId q) { return gate(Opcode::X, {q}); }
-CircuitBuilder& CircuitBuilder::y(QubitId q) { return gate(Opcode::Y, {q}); }
-CircuitBuilder& CircuitBuilder::z(QubitId q) { return gate(Opcode::Z, {q}); }
-CircuitBuilder& CircuitBuilder::h(QubitId q) { return gate(Opcode::H, {q}); }
-CircuitBuilder& CircuitBuilder::s(QubitId q) { return gate(Opcode::S, {q}); }
-CircuitBuilder& CircuitBuilder::sdg(QubitId q) { return gate(Opcode::Sdg, {q}); }
-CircuitBuilder& CircuitBuilder::t(QubitId q) { return gate(Opcode::T, {q}); }
-CircuitBuilder& CircuitBuilder::tdg(QubitId q) { return gate(Opcode::Tdg, {q}); }
-CircuitBuilder& CircuitBuilder::sx(QubitId q) { return gate(Opcode::SX, {q}); }
-CircuitBuilder& CircuitBuilder::sxdg(QubitId q) { return gate(Opcode::SXdg, {q}); }
+CircuitBuilder& CircuitBuilder::x(QubitId q) {
+    return gate(Opcode::X, {q});
+}
+CircuitBuilder& CircuitBuilder::y(QubitId q) {
+    return gate(Opcode::Y, {q});
+}
+CircuitBuilder& CircuitBuilder::z(QubitId q) {
+    return gate(Opcode::Z, {q});
+}
+CircuitBuilder& CircuitBuilder::h(QubitId q) {
+    return gate(Opcode::H, {q});
+}
+CircuitBuilder& CircuitBuilder::s(QubitId q) {
+    return gate(Opcode::S, {q});
+}
+CircuitBuilder& CircuitBuilder::sdg(QubitId q) {
+    return gate(Opcode::Sdg, {q});
+}
+CircuitBuilder& CircuitBuilder::t(QubitId q) {
+    return gate(Opcode::T, {q});
+}
+CircuitBuilder& CircuitBuilder::tdg(QubitId q) {
+    return gate(Opcode::Tdg, {q});
+}
+CircuitBuilder& CircuitBuilder::sx(QubitId q) {
+    return gate(Opcode::SX, {q});
+}
+CircuitBuilder& CircuitBuilder::sxdg(QubitId q) {
+    return gate(Opcode::SXdg, {q});
+}
 CircuitBuilder& CircuitBuilder::rx(const Angle& theta, QubitId q) {
     return gate(Opcode::RX, {q}, {theta});
 }
@@ -196,7 +217,9 @@ CircuitBuilder& CircuitBuilder::cx(QubitId control, QubitId target) {
 CircuitBuilder& CircuitBuilder::cz(QubitId control, QubitId target) {
     return gate(Opcode::CZ, {control, target});
 }
-CircuitBuilder& CircuitBuilder::swap(QubitId a, QubitId b) { return gate(Opcode::SWAP, {a, b}); }
+CircuitBuilder& CircuitBuilder::swap(QubitId a, QubitId b) {
+    return gate(Opcode::SWAP, {a, b});
+}
 CircuitBuilder& CircuitBuilder::cp(const Angle& lambda, QubitId control, QubitId target) {
     return gate(Opcode::CP, {control, target}, {lambda});
 }
@@ -257,8 +280,7 @@ std::vector<std::uint32_t> resolve_map(const std::vector<std::uint32_t>& map,
         if (other_size > own_size) {
             throw common::InvalidCircuit(std::string("compose: the other circuit has ") +
                                          std::to_string(other_size) + " " + what +
-                                         ", more than this circuit's " +
-                                         std::to_string(own_size));
+                                         ", more than this circuit's " + std::to_string(own_size));
         }
         out.resize(other_size);
         for (std::uint32_t i = 0; i < other_size; ++i) {
@@ -267,10 +289,9 @@ std::vector<std::uint32_t> resolve_map(const std::vector<std::uint32_t>& map,
         return out;
     }
     if (map.size() != other_size) {
-        throw common::InvalidCircuit(std::string("compose: the ") + what + " map has " +
-                                     std::to_string(map.size()) +
-                                     " entries; the other circuit has " +
-                                     std::to_string(other_size) + " " + what);
+        throw common::InvalidCircuit(
+            std::string("compose: the ") + what + " map has " + std::to_string(map.size()) +
+            " entries; the other circuit has " + std::to_string(other_size) + " " + what);
     }
     std::set<std::uint32_t> seen;
     for (const std::uint32_t index : map) {
@@ -405,8 +426,7 @@ Circuit CircuitBuilder::bind(const std::map<std::string, double, std::less<>>& v
         throw common::InvalidCircuit("bindings name no parameter of the circuit: " + join(unknown));
     }
     if (!non_finite.empty()) {
-        throw common::InvalidCircuit("parameters bound to a non-finite value: " +
-                                     join(non_finite));
+        throw common::InvalidCircuit("parameters bound to a non-finite value: " + join(non_finite));
     }
 
     Circuit circuit(num_qubits_, num_clbits_);
@@ -435,6 +455,8 @@ Circuit CircuitBuilder::bind(const std::map<std::string, double, std::less<>>& v
     return circuit;
 }
 
-Circuit CircuitBuilder::to_circuit() const { return bind({}); }
+Circuit CircuitBuilder::to_circuit() const {
+    return bind({});
+}
 
 }  // namespace menos

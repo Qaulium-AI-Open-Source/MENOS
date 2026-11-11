@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted design; the owner answered section 9 on 2026-11-11, taking every recommended option (see "Owner answers").** The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24. No code is written until the owner has approved the implementation plan.
+**Accepted design; implemented 2026-11-11; verification pending (section 10).** The owner answered section 9 on 2026-11-11, taking every recommended option (see "Owner answers"), and approved the implementation plan the same day. The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24. No code is written until the owner has approved the implementation plan.
 
 Labels follow `docs/adr/0014`–`0028`: **[MEASURED]** (here: read from the source at `5d074e8`), **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9).
 
@@ -57,7 +57,7 @@ Validation follows the KIR rule: a gate's operand count, duplicate qubits, matri
 
 ### 3.2 Parameters (Q2, Q8)
 
-`Parameter{name}`: identity is the name, which must be an OpenQASM 3 identifier (`[A-Za-z_][A-Za-z0-9_]*`, not a keyword), so every parameter can be exported as an `input`. Under Q2 (a), a `ParameterExpression` is affine, `c0 + Σ cᵢ·θᵢ`, with terms kept in first-appearance order. It is built by `+ − *` with doubles and other expressions; a product of two parameters is refused. When bound, it is evaluated as `((c0 + c1·v1) + c2·v2) + …` in `double` with contraction off (the repository's flags). So `θ` alone binds to exactly `v`, and `-θ` to exactly `-v`. That gives the gate's "bitwise the same circuit built by hand" for the expressions a user writes by hand with the same order.
+`Parameter{name}`: identity is the name, which must be an OpenQASM 3 identifier (`[A-Za-z_][A-Za-z0-9_]*`, not a keyword), so every parameter can be exported as an `input`. Under Q2 (a), a `ParameterExpression` is affine, `c0 + Σ cᵢ·θᵢ`, with terms kept in first-appearance order. It is built by `+ − *` with doubles and other expressions; a product of two parameters is refused. When bound, it is evaluated as `((c1·v1 + c2·v2) + …) + c0` in `double` with contraction off (the repository's flags), with c0 added only when the expression has a constant. *(Corrected at implementation, section 10.1: the order first proposed, `c0` first, would turn `θ` bound to −0.0 into +0.0.)* So `θ` alone binds to exactly `v`, −0.0 included, and `-θ` to exactly `-v`. That gives the gate's "bitwise the same circuit built by hand" for the expressions a user writes by hand with the same order.
 
 ### 3.3 Binding and running (Q3)
 
@@ -66,7 +66,7 @@ Validation follows the KIR rule: a gate's operand count, duplicate qubits, matri
 ### 3.4 Composition, inverse, repeat
 
 - `compose(other, qubits = identity, clbits = identity)`: `other`'s operations are appended with operands remapped, and global phases added. Parameters merge by name (Q8). The maps must be injective and in range.
-- `inverse()`: the operations in reverse order, each by the rule of `inverse_of`. That rule moves from `src/qasm3/modifiers.cpp` to `src/ir/inverse.{h,cpp}` and is used by both the importer and the builder; this is its second caller. For a parametric gate the expression is negated, which is exact. The global phase is negated. A measurement or channel is refused (section 2.2).
+- `inverse()`: the operations in reverse order, each by the rule of `inverse_of`. That rule moves from `src/qasm3/modifiers.cpp` to `src/ir/inverse.{h,cpp}` and is used by both the importer and the builder; this is its second caller. For a parametric gate the expression is negated, which is exact. The global phase is negated, computed as `0.0 − phase` so that a zero phase stays +0.0 (section 10.1). A measurement or channel is refused (section 2.2).
 - `repeat(k)`, k ≥ 0: k copies; `repeat(0)` is empty with the same registers.
 
 The gate's "circuit then inverse is the identity within 1e-12, global phase included" is measured on the dense statevector.
@@ -170,3 +170,28 @@ The owner took the recommended option, (a), for every question:
 - **Q7:** Qiskit's names where they exist, `bind` for binding, `add_qreg`/`add_creg`.
 - **Q8:** parameter identity by name.
 - **Q9:** the gate as written in Q9.
+
+## 10. Implementation record
+
+### 10.1 As built, differing from section 3 (2026-11-11)
+
+- **Evaluation order (section 3.2).** The constant is added last, `((c1·v1 + c2·v2) + …) + c0`, and only when the expression has one. The order first written, `c0` first, would bind a bare parameter set to −0.0 to +0.0, so `θ` would not bind to exactly its value.
+- **`inverse()` keeps a zero global phase +0.0** (`0.0 − phase`, which equals `−phase` for every other value). A plain negation gave −0.0, which OpenQASM 3 cannot carry: the importer starts from 0.0 and adds each `gphase`, so −0.0 came back as +0.0 and broke the export round trip of an inverse.
+- **Export limits, documented:** a global phase of −0.0 is written as none and so comes back as +0.0; an angle the importer's `std::stod` cannot read (a subnormal) is refused on import with the importer's own "out of range" error. Register and parameter names that are OpenQASM 3 keywords, built-in constants or functions, standard gate names or `rzz`, or that two registers or parameters share, are refused at export with `UnsupportedFeature` naming them. The builder itself accepts them, because they are valid builder names.
+- **Bound expressions are written in evaluation order** as `term + term + (c0)`, each coefficient other than 1 as `(c)*name`. The importer evaluates `+` left to right, so it computes the same sequence of operations.
+- **The canonical `rzz` rule** also requires `stdgates.inc` to be included when the definition is read. Its body calls the `stdgates.inc` `cx` and `rz`, and the include is what stops a user definition of either.
+- **`compose` changes the builder in place and returns it**, unlike Qiskit's, which returns a new circuit by default; `inverse()` and `repeat()` return new builders, as Qiskit's do. Qiskit's argument names are used for the Python gate methods (for example `rz(phi, qubit)`, `cx(control_qubit, target_qubit)`).
+- **The Qiskit agreement criterion (Q9 item 6)** is tested on statevectors, within 1e-12 of both `MENOSBackend` and Qiskit's own `Statevector`, global phase included. That bounds every expectation value. Seeded counts after `measure_all()` are identical.
+
+### 10.2 Commits
+
+- `eeb44f5`: the exact inverse moved to `src/ir/inverse.{h,cpp}`; the importer's `inv` modifier calls it.
+- `f2e7635`: `CircuitBuilder`, `Parameter`, `ParameterExpression` (`include/menos/builder.h`, `src/ir/{builder,parameter}.cpp`, `src/ir/identifier.h`) and their unit tests.
+- `65bb5cb`: `run(CircuitBuilder)` and `tests/api/builder_run_test.cpp` (bitwise bound runs, plan reuse, inverse identity).
+- `4ab6910`: `qasm3::emit` (`src/qasm3/emitter.cpp`), the importer's canonical `rzz` rule and `tests/qasm3/emitter_test.cpp`.
+- `932f68e`: the Python bindings, `Circuit.operations()`, `python/tests/test_builder.py`, `python/tests/test_builder_qiskit.py`, and the documentation (`docs/build/circuit-builder.md`, `python-api.md`, `native-api.md`, `limitations.md`, `changelog.md`).
+- The following commit: clang-format, this record and the BUILD_PLAN status.
+
+### 10.3 Gate evidence
+
+Recorded when `scripts/verify.sh` and `scripts/verify-windows.ps1` have run on the final commit.

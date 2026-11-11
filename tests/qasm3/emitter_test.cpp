@@ -55,10 +55,10 @@ TEST(EmitterTest, ParametersRoundTripAsInputs) {
     const std::string text = qasm3::emit(b);
     EXPECT_NE(text.find("input float[64] phi;"), std::string::npos) << text;
     EXPECT_NE(text.find("input float[64] theta;"), std::string::npos) << text;
-    for (const auto& values : std::vector<std::map<std::string, double, std::less<>>>{
-             {{"theta", 0.1}, {"phi", -0.7}},
-             {{"theta", -0.0}, {"phi", 1e-300}},
-             {{"theta", 3.0}, {"phi", 0.0}}}) {
+    for (const auto& values :
+         std::vector<std::map<std::string, double, std::less<>>>{{{"theta", 0.1}, {"phi", -0.7}},
+                                                                 {{"theta", -0.0}, {"phi", 1e-300}},
+                                                                 {{"theta", 3.0}, {"phi", 0.0}}}) {
         qasm3::InputBindings inputs;
         for (const auto& [name, value] : values) {
             inputs.emplace(name, value);
@@ -106,44 +106,51 @@ std::string message_of(F&& f) {
 TEST(EmitterTest, InexpressibleOperationsAreRefusedByIndex) {
     CircuitBuilder u(1);
     u.h(0).unitary({0.0, 1.0, 1.0, 0.0}, {0});
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(u); })
-                  .find("operation 1 is an explicit unitary"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(u);
+              }).find("operation 1 is an explicit unitary"),
               std::string::npos);
     CircuitBuilder ch(1);
     ch.channel({{1.0, 0.0, 0.0, 1.0}}, {0});
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(ch); })
-                  .find("operation 0 is a noise channel"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(ch);
+              }).find("operation 0 is a noise channel"),
               std::string::npos);
     CircuitBuilder ro(1, 1);
     ro.measure(0, 0, ReadoutError{{0.9, 0.1, 0.1, 0.9}});
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(ro); })
-                  .find("operation 0 is a measurement with a readout error"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(ro);
+              }).find("operation 0 is a measurement with a readout error"),
               std::string::npos);
 }
 
 TEST(EmitterTest, ReservedOrSharedNamesAreRefused) {
     CircuitBuilder reg;
     reg.add_qreg("cx", 1);
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(reg); })
-                  .find("register name 'cx'"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(reg);
+              }).find("register name 'cx'"),
               std::string::npos);
     CircuitBuilder par(1);
     par.rx(Parameter("pi"), 0);
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(par); })
-                  .find("parameter name 'pi'"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(par);
+              }).find("parameter name 'pi'"),
               std::string::npos);
     CircuitBuilder clash(1);
     clash.rx(Parameter("q"), 0);
-    EXPECT_NE(message_of<common::UnsupportedFeature>([&] { (void)qasm3::emit(clash); })
-                  .find("'q' is used by more than one"),
+    EXPECT_NE(message_of<common::UnsupportedFeature>([&] {
+                  (void)qasm3::emit(clash);
+              }).find("'q' is used by more than one"),
               std::string::npos);
 }
 
 TEST(EmitterTest, NonFiniteAngleIsRefused) {
     CircuitBuilder b(1);
     b.rx(std::nan(""), 0);
-    EXPECT_NE(message_of<common::InvalidCircuit>([&] { (void)qasm3::emit(b); })
-                  .find("operation 0 is not finite"),
+    EXPECT_NE(message_of<common::InvalidCircuit>([&] {
+                  (void)qasm3::emit(b);
+              }).find("operation 0 is not finite"),
               std::string::npos);
 }
 

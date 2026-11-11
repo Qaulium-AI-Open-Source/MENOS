@@ -25,17 +25,17 @@ namespace {
 // built-in gates, and the `rzz` definition the exporter itself writes.
 bool is_reserved(std::string_view name) {
     static const std::set<std::string_view> kReserved = {
-        "OPENQASM", "include",  "qubit",    "bit",     "qreg",    "creg",     "const",
-        "input",    "output",   "gate",     "measure", "barrier", "reset",    "U",
-        "gphase",   "inv",      "pow",      "ctrl",    "negctrl", "if",       "else",
-        "for",      "while",    "switch",   "case",    "default", "break",    "continue",
-        "end",      "return",   "def",      "extern",  "delay",   "box",      "duration",
-        "stretch",  "defcal",   "defcalgrammar",       "cal",     "let",      "opaque",
-        "int",      "uint",     "float",    "angle",   "bool",    "complex",  "array",
-        "true",     "false",    "pi",       "tau",     "euler",   "sin",      "cos",
-        "tan",      "arcsin",   "arccos",   "arctan",  "exp",     "ln",       "sqrt",
-        "in",       "durationof", "sizeof", "mod",     "popcount", "rotl",    "rotr",
-        "real",     "imag",     "void",     "readonly", "mutable", "rzz",
+        "OPENQASM",   "include", "qubit",         "bit",      "qreg",    "creg",   "const",
+        "input",      "output",  "gate",          "measure",  "barrier", "reset",  "U",
+        "gphase",     "inv",     "pow",           "ctrl",     "negctrl", "if",     "else",
+        "for",        "while",   "switch",        "case",     "default", "break",  "continue",
+        "end",        "return",  "def",           "extern",   "delay",   "box",    "duration",
+        "stretch",    "defcal",  "defcalgrammar", "cal",      "let",     "opaque", "int",
+        "uint",       "float",   "angle",         "bool",     "complex", "array",  "true",
+        "false",      "pi",      "tau",           "euler",    "sin",     "cos",    "tan",
+        "arcsin",     "arccos",  "arctan",        "exp",      "ln",      "sqrt",   "in",
+        "durationof", "sizeof",  "mod",           "popcount", "rotl",    "rotr",   "real",
+        "imag",       "void",    "readonly",      "mutable",  "rzz",
     };
     return kReserved.contains(name) || detail::find_stdgate(name) != nullptr;
 }
@@ -139,8 +139,9 @@ private:
                                                  "' is an OpenQASM 3 reserved word or gate name");
             }
             if (!seen.insert(name).second) {
-                throw common::UnsupportedFeature("qasm3 export: the name '" + name +
-                                                 "' is used by more than one register or parameter");
+                throw common::UnsupportedFeature(
+                    "qasm3 export: the name '" + name +
+                    "' is used by more than one register or parameter");
             }
         };
         for (const QuantumRegister& r : builder_.qregs()) {
@@ -202,8 +203,12 @@ private:
 
 }  // namespace
 
-std::string emit(const CircuitBuilder& builder) { return Emitter(builder).run(); }
+std::string emit(const CircuitBuilder& builder) {
+    return Emitter(builder).run();
+}
 
-std::string emit(const Circuit& circuit) { return emit(CircuitBuilder::from_circuit(circuit)); }
+std::string emit(const Circuit& circuit) {
+    return emit(CircuitBuilder::from_circuit(circuit));
+}
 
 }  // namespace menos::qasm3

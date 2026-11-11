@@ -1,9 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <bit>
-#include <cmath>
 #include <cstdint>
-#include <limits>
 #include <map>
 #include <string>
 
@@ -13,9 +11,9 @@
 namespace menos {
 namespace {
 
-using Values = std::map<std::string, double, std::less<>>;
-
-std::uint64_t bits(double x) { return std::bit_cast<std::uint64_t>(x); }
+std::uint64_t bits(double x) {
+    return std::bit_cast<std::uint64_t>(x);
+}
 
 TEST(ParameterTest, AcceptsIdentifiersOnly) {
     EXPECT_EQ(Parameter("theta").name(), "theta");
@@ -90,8 +88,6 @@ TEST(ParameterExpressionTest, MissingValueIsAnInternalError) {
     const ParameterExpression e = Parameter("a");
     EXPECT_THROW((void)e.evaluate({}), common::InternalError);
     EXPECT_THROW((void)e.evaluate({{"b", 1.0}}), common::InternalError);
-    (void)Values{};
-    (void)std::numeric_limits<double>::infinity();
 }
 
 }  // namespace

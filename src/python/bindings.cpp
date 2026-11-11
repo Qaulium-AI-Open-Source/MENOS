@@ -21,8 +21,8 @@
 #include "common/error.h"
 #include "common/splitmix64.h"
 #include "menos/batch.h"
-#include "menos/builder.h"
 #include "menos/bitstring.h"
+#include "menos/builder.h"
 #include "menos/menos.h"
 #include "menos/mitigation.h"
 #include "menos/observable.h"
@@ -76,7 +76,6 @@ nb::dict mitigated_to_hex_dict(const menos::MitigatedResult& result,
     }
     return out;
 }
-
 
 // Operations cross to Python as tuples (docs/adr/0029 section 3.7):
 // ("gate", Opcode, qubits, params), ("unitary", qubits, matrix),
@@ -152,8 +151,8 @@ std::string expression_repr(const menos::ParameterExpression& e) {
                nb::repr(nb::float_(term.coefficient)).c_str() + "*" + term.name;
     }
     if (e.constant().has_value()) {
-        out += (out.empty() ? "" : " + ") +
-               std::string(nb::repr(nb::float_(*e.constant())).c_str());
+        out +=
+            (out.empty() ? "" : " + ") + std::string(nb::repr(nb::float_(*e.constant())).c_str());
     }
     return "ParameterExpression(" + out + ")";
 }
@@ -164,12 +163,18 @@ template <class Cls>
 void add_arithmetic(Cls& cls) {
     using Self = typename Cls::Type;
     using PE = menos::ParameterExpression;
-    cls.def("__add__", [](const Self& a, const PE& b) { return PE(a) + b; }, nb::is_operator())
-        .def("__radd__", [](const Self& a, const PE& b) { return b + PE(a); }, nb::is_operator())
-        .def("__sub__", [](const Self& a, const PE& b) { return PE(a) - b; }, nb::is_operator())
-        .def("__rsub__", [](const Self& a, const PE& b) { return b - PE(a); }, nb::is_operator())
-        .def("__mul__", [](const Self& a, const PE& b) { return PE(a) * b; }, nb::is_operator())
-        .def("__rmul__", [](const Self& a, const PE& b) { return b * PE(a); }, nb::is_operator())
+    cls.def(
+           "__add__", [](const Self& a, const PE& b) { return PE(a) + b; }, nb::is_operator())
+        .def(
+            "__radd__", [](const Self& a, const PE& b) { return b + PE(a); }, nb::is_operator())
+        .def(
+            "__sub__", [](const Self& a, const PE& b) { return PE(a) - b; }, nb::is_operator())
+        .def(
+            "__rsub__", [](const Self& a, const PE& b) { return b - PE(a); }, nb::is_operator())
+        .def(
+            "__mul__", [](const Self& a, const PE& b) { return PE(a) * b; }, nb::is_operator())
+        .def(
+            "__rmul__", [](const Self& a, const PE& b) { return b * PE(a); }, nb::is_operator())
         .def("__neg__", [](const Self& a) { return -PE(a); });
 }
 
@@ -261,8 +266,7 @@ NB_MODULE(_core, m) {
     nb::class_<menos::Parameter> parameter_cls(m, "Parameter");
     parameter_cls.def(nb::init<std::string>(), "name"_a)
         .def_prop_ro("name", &menos::Parameter::name)
-        .def("__repr__",
-             [](const menos::Parameter& p) { return "Parameter('" + p.name() + "')"; });
+        .def("__repr__", [](const menos::Parameter& p) { return "Parameter('" + p.name() + "')"; });
 
     nb::class_<menos::ParameterExpression> expression_cls(m, "ParameterExpression");
     expression_cls.def(nb::init<double>(), "constant"_a)
