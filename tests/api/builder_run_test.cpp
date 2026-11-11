@@ -312,7 +312,7 @@ TEST(BuilderRunTest, RunOfABuilderWithParametersIsRefusedByName) {
     CircuitBuilder b(1);
     b.rx(Parameter("gamma"), 0);
     try {
-        (void)run(b, RunOptions{.shots = 0, .want_statevector = true});
+        (void)run(b, RunOptions{.shots = 0, .want_statevector = true, .seed = 1});
         FAIL() << "expected InvalidCircuit";
     } catch (const common::InvalidCircuit& e) {
         EXPECT_NE(std::string(e.what()).find("'gamma'"), std::string::npos) << e.what();
