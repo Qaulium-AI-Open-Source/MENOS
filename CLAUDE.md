@@ -155,6 +155,10 @@ Invariants:
 - The plan cache reuses only a Direct, in-memory plan whose structure, options and hardware figures match; results and `explain()` are those of planning afresh.
 - The Phase 15/16/21/22/23 invariants hold unchanged: bitwise results, exact memory upper bounds, one synchronisation per gate, the tier never a speed choice.
 
+## Phase 25
+
+**Circuit builder (C++ and Python).** Specification: `docs/BUILD_PLAN.md`, Phase 25. Design: `docs/adr/0029`. The owner started the phase on 2026-11-11, while Phase 24's verification and gate are open. Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`; it merges after Phase 24. **Section 9 awaits the owner's answers; no code until then and an approved plan.**
+
 ## Definition of done
 
 1. `scripts/verify.sh` exits 0 in the current session.
