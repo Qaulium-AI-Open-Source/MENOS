@@ -157,7 +157,7 @@ Invariants:
 
 ## Phase 25
 
-**Circuit builder (C++ and Python).** Specification: `docs/BUILD_PLAN.md`, Phase 25. Design: `docs/adr/0029`. The owner started the phase on 2026-11-11, while Phase 24's verification and gate are open. Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`; it merges after Phase 24. **Section 9 awaits the owner's answers; no code until then and an approved plan.**
+**Circuit builder (C++ and Python).** Specification: `docs/BUILD_PLAN.md`, Phase 25. Design: `docs/adr/0029`. The owner started the phase on 2026-11-11, while Phase 24's verification and gate are open. Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`; it merges after Phase 24. The owner answered section 9 the same day, taking every recommended option (a `CircuitBuilder` type, affine parameters, `bind` plus `run` of a parameter-free builder, OpenQASM 3 export with the exact `rzz` definition read back as `RZZ`, no drawing, Qiskit's names, parameter identity by name, the Q9 gate).
 
 ## Definition of done
 

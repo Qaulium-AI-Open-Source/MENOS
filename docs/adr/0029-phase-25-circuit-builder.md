@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; awaiting the owner's answers to section 9.** The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24. No code is written until the owner has answered section 9 and approved the implementation plan.
+**Accepted design; the owner answered section 9 on 2026-11-11, taking every recommended option (see "Owner answers").** The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24. No code is written until the owner has approved the implementation plan.
 
 Labels follow `docs/adr/0014`–`0028`: **[MEASURED]** (here: read from the source at `5d074e8`), **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9).
 
@@ -156,3 +156,17 @@ With `rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` (the gate table), `cx a,b; rz(θ) 
   5. Every refusal of section 2.2, by name.
   6. Builder fixtures agree with the same circuits built in Qiskit and run through `MENOSBackend`: identical seeded counts, expectations within 1e-12.
   7. Existing suites unchanged; every new public symbol documented, with a production caller and tests; `scripts/verify.sh` and `scripts/verify-windows.ps1` exit 0 on the final commit.
+
+### Owner answers (2026-11-11)
+
+The owner took the recommended option, (a), for every question:
+
+- **Q1:** a new `CircuitBuilder` type; `Circuit` is unchanged apart from Python's read-only `operations()`.
+- **Q2:** affine parameter expressions with the fixed evaluation order of section 3.2.
+- **Q3:** `bind(values)` only, plus `run` accepting a builder with no free parameters.
+- **Q4:** OpenQASM 3 export only.
+- **Q5:** `RZZ` exported with the portable definition, which the importer reads back as `RZZ` when it matches token for token; `UnitaryOp`, `ChannelOp` and readout errors refused by name.
+- **Q6:** no text drawing; recorded as a deferral.
+- **Q7:** Qiskit's names where they exist, `bind` for binding, `add_qreg`/`add_creg`.
+- **Q8:** parameter identity by name.
+- **Q9:** the gate as written in Q9.
