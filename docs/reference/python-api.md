@@ -117,7 +117,7 @@ Circuit.operations() -> list[tuple]  # read-only
 
 ## `CircuitBuilder`
 
-Named gate methods, parameters, registers, `compose`, `inverse`, `repeat` and OpenQASM 3 export, producing ordinary `Circuit`s (since Phase 25). See [Circuit Builder](/build/circuit-builder).
+Named gate methods, parameters, registers, `compose`, `inverse`, `repeat` and OpenQASM 3 export, producing ordinary `Circuit`s (since Phase 25). Every member is described in the [Circuit Builder API](/reference/circuit-builder-api); the guide is [Writing Circuits](/build/circuit-builder).
 
 ```text
 CircuitBuilder(num_qubits: int = 0, num_clbits: int = 0)   # registers q and c

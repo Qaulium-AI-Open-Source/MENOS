@@ -100,6 +100,22 @@ print(counts)            # {'00': 507, '11': 493}
 assert set(counts) <= {"00", "11"}
 ```
 
+To write circuits by hand without Qiskit, use the circuit builder ([Writing Circuits](docs/build/circuit-builder.md)): named gates, parameters, registers, composition, inverse and OpenQASM 3 export:
+
+```python
+import menos
+
+theta = menos.Parameter("theta")
+ansatz = menos.CircuitBuilder(2)
+ansatz.h(0).cx(0, 1).rz(theta, 1).measure_all()
+
+options = menos.RunOptions()
+options.shots = 100
+options.seed = 1
+counts = menos.run(ansatz.bind({"theta": 0.5}), options).counts
+print(ansatz.to_qasm3())
+```
+
 To see how MENOS planned a job, use the native API, whose results carry a plan report:
 
 ```python

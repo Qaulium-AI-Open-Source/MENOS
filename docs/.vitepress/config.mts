@@ -45,7 +45,7 @@ const sidebar = [
       { text: 'Readout Mitigation', link: '/build/readout-mitigation' },
       { text: 'PennyLane Device', link: '/build/pennylane' },
       { text: 'Native API', link: '/build/native-api' },
-      { text: 'Circuit Builder', link: '/build/circuit-builder' },
+      { text: 'Writing Circuits', link: '/build/circuit-builder' },
       { text: 'Command Line', link: '/build/command-line' },
     ],
   },
@@ -158,6 +158,7 @@ const sidebar = [
     collapsed: true,
     items: [
       { text: 'Python API', link: '/reference/python-api' },
+      { text: 'Circuit Builder API', link: '/reference/circuit-builder-api' },
       { text: 'Qiskit Backend', link: '/reference/qiskit-backend' },
       { text: 'Estimator', link: '/reference/estimator-api' },
       { text: 'Job', link: '/reference/job-api' },

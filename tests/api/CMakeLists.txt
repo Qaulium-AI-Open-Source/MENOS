@@ -41,7 +41,7 @@ endif()
 # execution_monitor_test.cpp exercises the ExecutionMonitor seam against each
 # concrete engine directly (Phase 11), so it names them rather than reaching
 # them through the planner.
-target_link_libraries(menos_api_tests PRIVATE menos_api menos_test_fixture_loader
+target_link_libraries(menos_api_tests PRIVATE menos_api menos_qasm3 menos_test_fixture_loader
                                               menos_engines_dense menos_engines_stabilizer
                                               menos_engines_pauli menos_engines_mps
                                               menos_engines_tensor_network

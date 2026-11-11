@@ -17,6 +17,7 @@
 
 #include "common/error.h"
 #include "menos/menos.h"
+#include "menos/qasm3.h"
 
 namespace menos {
 namespace {
@@ -308,6 +309,25 @@ TEST(BuilderRunTest, RunOfABuilderWithParametersIsRefusedByName) {
     } catch (const common::InvalidCircuit& e) {
         EXPECT_NE(std::string(e.what()).find("'gamma'"), std::string::npos) << e.what();
     }
+}
+
+// The C++ example of docs/build/circuit-builder.md, verbatim between the
+// markers, so the documented code compiles and runs.
+TEST(BuilderRunTest, DocsExample) {
+    // --- docs/build/circuit-builder.md, section "C++" ---
+    menos::Parameter theta("theta");
+    menos::CircuitBuilder b(2, 2);
+    b.h(0).rzz(2.0 * theta, 0, 1).measure(0, 0).measure(1, 1);
+    const menos::Circuit circuit = b.bind({{"theta", 0.25}});
+    const menos::Result result = menos::run(circuit, menos::RunOptions{.shots = 100, .seed = 1});
+    const std::string qasm = menos::qasm3::emit(b);
+    // --- end ---
+    std::uint64_t total = 0;
+    for (const auto& [outcome, count] : result.counts()) {
+        total += count;
+    }
+    EXPECT_EQ(total, 100U);
+    EXPECT_NE(qasm.find("input float[64] theta;"), std::string::npos);
 }
 
 TEST(BuilderRunTest, RebindingLoopReusesThePlan) {
