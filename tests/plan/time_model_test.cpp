@@ -164,7 +164,11 @@ TEST(TimeTermsTest, TheSection22ComponentsCountScansRotationVisitsAndSampledSite
         cpu_engine(Engine::Stabilizer)
             ->estimate(EngineEstimateRequest{.num_qubits = 3,
                                              .operations = &clifford.operations(),
+                                             .want_statevector = false,
                                              .want_counts = true,
+                                             .want_expectation = false,
+                                             .observable = nullptr,
+                                             .trajectories = 0,
                                              .shots = 10,
                                              .bitstring_width = 3});
     ASSERT_TRUE(stabilizer.feasible) << stabilizer.infeasible_reason;
@@ -181,8 +185,13 @@ TEST(TimeTermsTest, TheSection22ComponentsCountScansRotationVisitsAndSampledSite
         cpu_engine(Engine::Pauli)
             ->estimate(EngineEstimateRequest{.num_qubits = 3,
                                              .operations = &rotations.operations(),
+                                             .want_statevector = false,
+                                             .want_counts = false,
                                              .want_expectation = true,
-                                             .observable = &two_terms});
+                                             .observable = &two_terms,
+                                             .trajectories = 0,
+                                             .shots = 0,
+                                             .bitstring_width = 0});
     ASSERT_TRUE(pauli.feasible) << pauli.infeasible_reason;
     EXPECT_EQ(pauli.time.counts[static_cast<std::size_t>(Engine::Pauli)][3], 6.0)
         << "two terms through three rotations";
@@ -193,7 +202,11 @@ TEST(TimeTermsTest, TheSection22ComponentsCountScansRotationVisitsAndSampledSite
         cpu_engine(Engine::MPS)
             ->estimate(EngineEstimateRequest{.num_qubits = 3,
                                              .operations = &rotations.operations(),
+                                             .want_statevector = false,
                                              .want_counts = true,
+                                             .want_expectation = false,
+                                             .observable = nullptr,
+                                             .trajectories = 0,
                                              .shots = 100,
                                              .bitstring_width = 3,
                                              .is_sole_region = true});
