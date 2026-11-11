@@ -32,6 +32,8 @@ Every entry here is a real limitation of this release. None is speculative, and 
 - **`Observable` and `PauliString` are importable only from `menos._core`.**
 - Native counts are hexadecimal-keyed.
 - **An observable whose terms are all the identity raises `InternalError`.**
+- **The circuit builder has no text drawing**, its parameters are affine only, and binding is through `bind` only ([Circuit Builder](/build/circuit-builder)).
+- **OpenQASM 3 export refuses explicit unitaries, noise channels and readout errors**, and there is no OpenQASM 2 export.
 
 ## PennyLane device
 

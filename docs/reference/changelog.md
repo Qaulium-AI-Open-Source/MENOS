@@ -2,6 +2,14 @@
 
 MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
 
+## Phase 25 (in progress): circuit builder
+
+- **`CircuitBuilder`** (C++ `include/menos/builder.h`, Python `menos.CircuitBuilder`): named gate methods for every gate, `unitary`, `measure`, `measure_all` and `channel`, each appending exactly the operation `append` would and returning the builder. Named quantum and classical registers are numbered in declaration order. The output is an ordinary `Circuit`, planned and run exactly as one built by hand. See [Circuit Builder](/build/circuit-builder).
+- **Run-time parameters**: `Parameter` and affine `ParameterExpression` angles, `bind(values)` with a documented evaluation order, so a bound circuit runs bit for bit like the hand-built one; a rebinding loop reuses its plan. An unbound or unknown parameter is refused by name.
+- **`compose`, exact `inverse()` and `repeat(k)`.** The inverse of a circuit with a measurement or channel is refused naming the operation.
+- **OpenQASM 3 export** (`to_qasm3()`, C++ `menos::qasm3::emit`), read back by `from_qasm3` into the identical operations. `from_qasm3` now reads the exported `rzz` definition (`cx; rz; cx` exactly) as one `rzz`; every other `rzz` definition is expanded as before.
+- **`Circuit.operations()`** in Python and **`menos::run(const CircuitBuilder&, …)`** / `menos.run(builder, options)`.
+
 ## Phase 24 (in progress): planner accuracy, planning cost and dense-engine throughput
 
 - **Gate fusion in the dense engines, on by default.** The CPU dense engine, the CUDA dense engine and the disk tier sweep the state once per fused block instead of once per gate: a gate joins the newest block that shares a qubit with it when one qubit set contains the other, so every merge removes a pass and widens none, and a diagonal pass is never turned into a dense one. A block's matrix is the product of its gates, computed by the kernel that applies it, so a fused run is exact up to rounding (within `1e-12` of the gate-by-gate run) and keeps every bit-for-bit identity the unfused run has: the same bytes on every thread count, on CPU and CUDA, in memory and on the disk tier. The planner charges the blocks, and `explain()` names the outcome on the region line (`fusion=containment blocks=… absorbed=…`). **New `RunOptions.fuse_gates`** (default `True`; CLI `--fusion on|off`): `False` applies every gate alone, with results and reports byte-identical to before. Measured on the development machine (`docs/adr/0028` section 17.5): on random brickwork circuits the sweep is 2.0–2.5× faster on every thread at 20–24 qubits. The opt-in `fuse_diagonal_gates` is unchanged.

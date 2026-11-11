@@ -23,7 +23,7 @@ circuit.global_phase = 0.0
 assert circuit.num_qubits() == 3 and circuit.num_clbits() == 3
 ```
 
-Explicit matrices use `append_unitary(qubits, matrix)` with a flat, row-major list of complex numbers; the matrix must be unitary and act on at most five qubits. Opcodes are the members of `menos.Opcode`; see [Supported Gates](/reference/supported-gates).
+For named gate methods, parameters, registers, composition and OpenQASM 3 export, use the [Circuit Builder](/build/circuit-builder), which produces the same `Circuit`. Explicit matrices use `append_unitary(qubits, matrix)` with a flat, row-major list of complex numbers; the matrix must be unitary and act on at most five qubits. Opcodes are the members of `menos.Opcode`; see [Supported Gates](/reference/supported-gates).
 
 ## Run it
 

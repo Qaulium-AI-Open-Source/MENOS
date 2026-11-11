@@ -7,16 +7,21 @@
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/string_view.h>
 #include <nanobind/stl/vector.h>
 
 #include <array>
 #include <complex>
 #include <cstring>
 #include <map>
+#include <string>
+#include <type_traits>
+#include <variant>
 
 #include "common/error.h"
 #include "common/splitmix64.h"
 #include "menos/batch.h"
+#include "menos/builder.h"
 #include "menos/bitstring.h"
 #include "menos/menos.h"
 #include "menos/mitigation.h"
@@ -72,6 +77,102 @@ nb::dict mitigated_to_hex_dict(const menos::MitigatedResult& result,
     return out;
 }
 
+
+// Operations cross to Python as tuples (docs/adr/0029 section 3.7):
+// ("gate", Opcode, qubits, params), ("unitary", qubits, matrix),
+// ("measure", qubit, clbit, readout_error or None), ("channel", qubits, kraus).
+// A builder gate's angle is a float when it is a constant and a
+// ParameterExpression otherwise.
+nb::object readout_to_py(const std::optional<menos::ReadoutError>& error) {
+    if (!error.has_value()) {
+        return nb::none();
+    }
+    return nb::cast(error->assignment);
+}
+
+nb::tuple operation_to_py(const menos::Operation& op) {
+    return std::visit(
+        [](const auto& o) -> nb::tuple {
+            using T = std::decay_t<decltype(o)>;
+            if constexpr (std::is_same_v<T, menos::GateOp>) {
+                return nb::make_tuple("gate", o.opcode, o.qubits, o.params);
+            } else if constexpr (std::is_same_v<T, menos::UnitaryOp>) {
+                return nb::make_tuple("unitary", o.qubits, o.matrix);
+            } else if constexpr (std::is_same_v<T, menos::MeasureOp>) {
+                return nb::make_tuple("measure", o.qubit, o.clbit, readout_to_py(o.readout_error));
+            } else {
+                return nb::make_tuple("channel", o.qubits, o.kraus);
+            }
+        },
+        op);
+}
+
+nb::tuple builder_operation_to_py(const menos::BuilderOperation& op) {
+    return std::visit(
+        [](const auto& o) -> nb::tuple {
+            using T = std::decay_t<decltype(o)>;
+            if constexpr (std::is_same_v<T, menos::BuilderGate>) {
+                nb::list params;
+                for (const menos::ParameterExpression& e : o.params) {
+                    if (e.is_constant()) {
+                        params.append(nb::cast(e.evaluate()));
+                    } else {
+                        params.append(nb::cast(e));
+                    }
+                }
+                return nb::make_tuple("gate", o.opcode, o.qubits, params);
+            } else {
+                return operation_to_py(menos::Operation{o});
+            }
+        },
+        op);
+}
+
+// bind()'s values: a dict keyed by parameter name or by Parameter.
+std::map<std::string, double, std::less<>> values_from_py(const nb::dict& values) {
+    std::map<std::string, double, std::less<>> out;
+    for (const auto& [key, value] : values) {
+        std::string name;
+        if (nb::isinstance<menos::Parameter>(key)) {
+            name = nb::cast<const menos::Parameter&>(key).name();
+        } else if (nb::isinstance<nb::str>(key)) {
+            name = nb::cast<std::string>(key);
+        } else {
+            throw nb::type_error("bind: keys must be str or Parameter");
+        }
+        out[name] = nb::cast<double>(value);
+    }
+    return out;
+}
+
+std::string expression_repr(const menos::ParameterExpression& e) {
+    std::string out;
+    for (const auto& term : e.terms()) {
+        out += std::string(out.empty() ? "" : " + ") +
+               nb::repr(nb::float_(term.coefficient)).c_str() + "*" + term.name;
+    }
+    if (e.constant().has_value()) {
+        out += (out.empty() ? "" : " + ") +
+               std::string(nb::repr(nb::float_(*e.constant())).c_str());
+    }
+    return "ParameterExpression(" + out + ")";
+}
+
+// Arithmetic on Parameter and ParameterExpression alike; the other operand
+// may be a float, a Parameter or a ParameterExpression.
+template <class Cls>
+void add_arithmetic(Cls& cls) {
+    using Self = typename Cls::Type;
+    using PE = menos::ParameterExpression;
+    cls.def("__add__", [](const Self& a, const PE& b) { return PE(a) + b; }, nb::is_operator())
+        .def("__radd__", [](const Self& a, const PE& b) { return b + PE(a); }, nb::is_operator())
+        .def("__sub__", [](const Self& a, const PE& b) { return PE(a) - b; }, nb::is_operator())
+        .def("__rsub__", [](const Self& a, const PE& b) { return b - PE(a); }, nb::is_operator())
+        .def("__mul__", [](const Self& a, const PE& b) { return PE(a) * b; }, nb::is_operator())
+        .def("__rmul__", [](const Self& a, const PE& b) { return b * PE(a); }, nb::is_operator())
+        .def("__neg__", [](const Self& a) { return -PE(a); });
+}
+
 }  // namespace
 
 NB_MODULE(_core, m) {
@@ -119,7 +220,15 @@ NB_MODULE(_core, m) {
              "param_offsets"_a)
         .def("num_qubits", &menos::Circuit::num_qubits)
         .def("num_clbits", &menos::Circuit::num_clbits)
-        .def_rw("global_phase", &menos::Circuit::global_phase);
+        .def_rw("global_phase", &menos::Circuit::global_phase)
+        // Read-only, as tuples (docs/adr/0029 section 3.7).
+        .def("operations", [](const menos::Circuit& circuit) {
+            nb::list out;
+            for (const menos::Operation& op : circuit.operations()) {
+                out.append(operation_to_py(op));
+            }
+            return out;
+        });
 
     nb::enum_<menos::Opcode>(m, "Opcode")
         .value("X", menos::Opcode::X)
@@ -146,6 +255,136 @@ NB_MODULE(_core, m) {
     // Unitary and Measure are deliberately not exposed here: Python reaches
     // them only via Circuit.append_unitary/append_measure, matching the
     // C++ API's own append surface (append_channel added in Phase 12).
+
+    // Phase 25 (docs/adr/0029): the circuit builder, a binding of
+    // include/menos/builder.h. Every gate method returns the builder itself.
+    nb::class_<menos::Parameter> parameter_cls(m, "Parameter");
+    parameter_cls.def(nb::init<std::string>(), "name"_a)
+        .def_prop_ro("name", &menos::Parameter::name)
+        .def("__repr__",
+             [](const menos::Parameter& p) { return "Parameter('" + p.name() + "')"; });
+
+    nb::class_<menos::ParameterExpression> expression_cls(m, "ParameterExpression");
+    expression_cls.def(nb::init<double>(), "constant"_a)
+        .def(nb::init<const menos::Parameter&>(), "parameter"_a)
+        .def_prop_ro("terms",
+                     [](const menos::ParameterExpression& e) {
+                         nb::list out;
+                         for (const auto& term : e.terms()) {
+                             out.append(nb::make_tuple(term.name, term.coefficient));
+                         }
+                         return out;
+                     })
+        .def_prop_ro("constant", &menos::ParameterExpression::constant)
+        .def("is_constant", &menos::ParameterExpression::is_constant)
+        .def(
+            "evaluate",
+            [](const menos::ParameterExpression& e, const nb::dict& values) {
+                return e.evaluate(values_from_py(values));
+            },
+            "values"_a = nb::dict())
+        .def("__repr__", &expression_repr);
+    nb::implicitly_convertible<double, menos::ParameterExpression>();
+    nb::implicitly_convertible<menos::Parameter, menos::ParameterExpression>();
+    add_arithmetic(parameter_cls);
+    add_arithmetic(expression_cls);
+
+    nb::class_<menos::QuantumRegister>(m, "QuantumRegister")
+        .def_ro("name", &menos::QuantumRegister::name)
+        .def_ro("offset", &menos::QuantumRegister::offset)
+        .def_ro("size", &menos::QuantumRegister::size)
+        .def("__len__", [](const menos::QuantumRegister& r) { return r.size; })
+        .def("__getitem__", &menos::QuantumRegister::operator[], "i"_a)
+        .def("__repr__", [](const menos::QuantumRegister& r) {
+            return "QuantumRegister('" + r.name + "', " + std::to_string(r.size) + ")";
+        });
+    nb::class_<menos::ClassicalRegister>(m, "ClassicalRegister")
+        .def_ro("name", &menos::ClassicalRegister::name)
+        .def_ro("offset", &menos::ClassicalRegister::offset)
+        .def_ro("size", &menos::ClassicalRegister::size)
+        .def("__len__", [](const menos::ClassicalRegister& r) { return r.size; })
+        .def("__getitem__", &menos::ClassicalRegister::operator[], "i"_a)
+        .def("__repr__", [](const menos::ClassicalRegister& r) {
+            return "ClassicalRegister('" + r.name + "', " + std::to_string(r.size) + ")";
+        });
+
+    using CB = menos::CircuitBuilder;
+    constexpr auto self = nb::rv_policy::reference_internal;
+    nb::class_<CB>(m, "CircuitBuilder")
+        .def(nb::init<std::uint32_t, std::uint32_t>(), "num_qubits"_a = 0, "num_clbits"_a = 0)
+        .def_static("from_circuit", &CB::from_circuit, "circuit"_a)
+        .def("add_qreg", &CB::add_qreg, "name"_a, "size"_a)
+        .def("add_creg", &CB::add_creg, "name"_a, "size"_a)
+        .def("qreg", &CB::qreg, "name"_a)
+        .def("creg", &CB::creg, "name"_a)
+        .def("qregs", &CB::qregs)
+        .def("cregs", &CB::cregs)
+        .def("num_qubits", &CB::num_qubits)
+        .def("num_clbits", &CB::num_clbits)
+        .def("x", &CB::x, "qubit"_a, self)
+        .def("y", &CB::y, "qubit"_a, self)
+        .def("z", &CB::z, "qubit"_a, self)
+        .def("h", &CB::h, "qubit"_a, self)
+        .def("s", &CB::s, "qubit"_a, self)
+        .def("sdg", &CB::sdg, "qubit"_a, self)
+        .def("t", &CB::t, "qubit"_a, self)
+        .def("tdg", &CB::tdg, "qubit"_a, self)
+        .def("sx", &CB::sx, "qubit"_a, self)
+        .def("sxdg", &CB::sxdg, "qubit"_a, self)
+        .def("rx", &CB::rx, "theta"_a, "qubit"_a, self)
+        .def("ry", &CB::ry, "theta"_a, "qubit"_a, self)
+        .def("rz", &CB::rz, "phi"_a, "qubit"_a, self)
+        .def("p", &CB::p, "theta"_a, "qubit"_a, self)
+        .def("u", &CB::u, "theta"_a, "phi"_a, "lam"_a, "qubit"_a, self)
+        .def("cx", &CB::cx, "control_qubit"_a, "target_qubit"_a, self)
+        .def("cz", &CB::cz, "control_qubit"_a, "target_qubit"_a, self)
+        .def("swap", &CB::swap, "qubit1"_a, "qubit2"_a, self)
+        .def("cp", &CB::cp, "theta"_a, "control_qubit"_a, "target_qubit"_a, self)
+        .def("rzz", &CB::rzz, "theta"_a, "qubit1"_a, "qubit2"_a, self)
+        .def("ccx", &CB::ccx, "control_qubit1"_a, "control_qubit2"_a, "target_qubit"_a, self)
+        .def("unitary", &CB::unitary, "matrix"_a, "qubits"_a, self)
+        .def(
+            "measure",
+            [](CB& b,
+               menos::QubitId qubit,
+               menos::ClbitId clbit,
+               std::optional<std::array<double, 4>> readout_error) -> CB& {
+                std::optional<menos::ReadoutError> error;
+                if (readout_error.has_value()) {
+                    error = menos::ReadoutError{*readout_error};
+                }
+                return b.measure(qubit, clbit, error);
+            },
+            "qubit"_a,
+            "clbit"_a,
+            "readout_error"_a = nb::none(),
+            self)
+        .def("measure_all", &CB::measure_all, self)
+        .def("channel", &CB::channel, "kraus"_a, "qubits"_a, self)
+        .def("compose",
+             &CB::compose,
+             "other"_a,
+             "qubits"_a = std::vector<menos::QubitId>{},
+             "clbits"_a = std::vector<menos::ClbitId>{},
+             self)
+        .def("inverse", &CB::inverse)
+        .def("repeat", &CB::repeat, "reps"_a)
+        .def("parameters", &CB::parameters)
+        .def("operations",
+             [](const CB& b) {
+                 nb::list out;
+                 for (const menos::BuilderOperation& op : b.operations()) {
+                     out.append(builder_operation_to_py(op));
+                 }
+                 return out;
+             })
+        .def(
+            "bind",
+            [](const CB& b, const nb::dict& values) { return b.bind(values_from_py(values)); },
+            "values"_a)
+        .def("to_circuit", &CB::to_circuit)
+        .def("to_qasm3", [](const CB& b) { return menos::qasm3::emit(b); })
+        .def_rw("global_phase", &CB::global_phase);
 
     // PauliString/Observable: fields only, no convenience constructors --
     // the bit-packing logic for building one from a qubit list already
@@ -292,7 +531,16 @@ NB_MODULE(_core, m) {
             })
         .def("explain", &menos::Result::explain);
 
-    m.def("run", &menos::run, "circuit"_a, "options"_a);
+    m.def("run",
+          nb::overload_cast<const menos::Circuit&, const menos::RunOptions&>(&menos::run),
+          "circuit"_a,
+          "options"_a);
+    // Phase 25: a builder with no parameters (InvalidCircuitError naming them
+    // otherwise).
+    m.def("run",
+          nb::overload_cast<const menos::CircuitBuilder&, const menos::RunOptions&>(&menos::run),
+          "circuit"_a,
+          "options"_a);
     m.def("plan_cache_stats", []() {
         const menos::PlanCacheStats s = menos::plan_cache_stats();
         nb::dict d;

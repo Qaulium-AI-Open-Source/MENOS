@@ -45,6 +45,7 @@ const sidebar = [
       { text: 'Readout Mitigation', link: '/build/readout-mitigation' },
       { text: 'PennyLane Device', link: '/build/pennylane' },
       { text: 'Native API', link: '/build/native-api' },
+      { text: 'Circuit Builder', link: '/build/circuit-builder' },
       { text: 'Command Line', link: '/build/command-line' },
     ],
   },

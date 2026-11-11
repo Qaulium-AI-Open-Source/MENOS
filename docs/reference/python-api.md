@@ -6,15 +6,16 @@ The native API, exported from the top-level `menos` package. It is the thin laye
 from menos import Circuit, NoiseMethod, Opcode, RunOptions, Result, run
 ```
 
-The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `release_device_memory`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
+The top-level module exports exactly: `Circuit`, `CircuitBuilder`, `Parameter`, `ParameterExpression`, `QuantumRegister`, `ClassicalRegister`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `release_device_memory`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
 
 ## `run`
 
 ```text
 run(circuit: Circuit, options: RunOptions) -> Result
+run(circuit: CircuitBuilder, options: RunOptions) -> Result
 ```
 
-Validates the circuit and the output request, plans the job, executes it, and returns the result. Raises [`InvalidCircuitError`, `UnsupportedFeatureError` or `ResourceExceededError`](/reference/exceptions). When `options.time_budget_seconds` is set, the run is [monitored](/runtime/monitoring) and may be [replanned](/runtime/replanning).
+Validates the circuit and the output request, plans the job, executes it, and returns the result. Raises [`InvalidCircuitError`, `UnsupportedFeatureError` or `ResourceExceededError`](/reference/exceptions). When `options.time_budget_seconds` is set, the run is [monitored](/runtime/monitoring) and may be [replanned](/runtime/replanning). A `CircuitBuilder` runs as its `to_circuit()`, so one that still has parameters raises `InvalidCircuitError` naming them (since Phase 25).
 
 ## `run_batch`
 
@@ -101,6 +102,7 @@ Circuit.append_batch(opcodes, qubits, qubit_offsets, params, param_offsets) -> N
 Circuit.num_qubits() -> int
 Circuit.num_clbits() -> int
 Circuit.global_phase: float          # read/write, default 0.0
+Circuit.operations() -> list[tuple]  # read-only
 ```
 
 | Member | Notes |
@@ -111,6 +113,31 @@ Circuit.global_phase: float          # read/write, default 0.0
 | `append_channel` | Adds a noise channel: each Kraus operator a flat, row-major `2ᵏ × 2ᵏ` list; 1 to 5 qubits; must be trace preserving within `1e-12`. See [Noise Models](/build/noise-models) |
 | `append_batch` | Bulk ingestion of named gates in compressed-sparse-row form (qubit and parameter offsets). Used by the Qiskit converter; equivalent to repeated `append` |
 | `global_phase` | Multiplies the statevector by `e^{i·phase}` |
+| `operations` | The operations in order, as tuples: `("gate", Opcode, qubits, params)`, `("unitary", qubits, matrix)`, `("measure", qubit, clbit, readout_error or None)`, `("channel", qubits, kraus)` (since Phase 25) |
+
+## `CircuitBuilder`
+
+Named gate methods, parameters, registers, `compose`, `inverse`, `repeat` and OpenQASM 3 export, producing ordinary `Circuit`s (since Phase 25). See [Circuit Builder](/build/circuit-builder).
+
+```text
+CircuitBuilder(num_qubits: int = 0, num_clbits: int = 0)   # registers q and c
+CircuitBuilder.from_circuit(circuit: Circuit) -> CircuitBuilder
+add_qreg(name, size) -> QuantumRegister;  add_creg(name, size) -> ClassicalRegister
+qreg(name), creg(name), qregs(), cregs(), num_qubits(), num_clbits()
+x y z h s sdg t tdg sx sxdg (qubit)        rx ry rz p (theta, qubit)
+u(theta, phi, lam, qubit)                    cx cz swap (q1, q2)
+cp(theta, control, target)                   rzz(theta, q1, q2)      ccx(c1, c2, target)
+unitary(matrix, qubits)   measure(qubit, clbit, readout_error=None)   measure_all()
+channel(kraus, qubits)    compose(other, qubits=[], clbits=[])        # each returns self
+inverse() -> CircuitBuilder               repeat(reps) -> CircuitBuilder
+parameters() -> list[str]                 operations() -> list[tuple]
+bind(values: dict[str | Parameter, float]) -> Circuit
+to_circuit() -> Circuit                   to_qasm3() -> str
+global_phase: float                       # read/write, default 0.0
+Parameter(name: str); Parameter.name
+ParameterExpression: + - * with floats and parameters; .terms, .constant, .is_constant(), .evaluate(values)
+QuantumRegister / ClassicalRegister: .name, .offset, .size, len(r), r[i] -> int
+```
 
 ## `Opcode`
 
@@ -240,7 +267,8 @@ assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX".split()
 )
 assert sorted(menos.__all__) == sorted(
-    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "Tier", "run", "run_batch", "ReadoutMitigationOptions",
+    ["Backend", "Circuit", "CircuitBuilder", "Parameter", "ParameterExpression", "QuantumRegister",
+     "ClassicalRegister", "NoiseMethod", "Opcode", "Result", "RunOptions", "Tier", "run", "run_batch", "ReadoutMitigationOptions",
      "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "release_device_memory", "MenosError",
      "InvalidCircuitError", "UnsupportedFeatureError", "ResourceExceededError", "InternalError"]
 )
