@@ -3,6 +3,7 @@ add_library(menos_ir STATIC
     circuit.cpp
     depth.cpp
     gate_table.cpp
+    inverse.cpp
     validate.cpp
     final_writes.cpp
     noise.cpp
