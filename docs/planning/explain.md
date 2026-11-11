@@ -64,11 +64,7 @@ That is usually all you need to understand why a large job was planned the way i
 
 ## Pruned candidates
 
-::: info Not in a published release yet
-Pruning is on the development branch (up to Phase 24, planner performance) and is not in a published release. A released version costs every candidate in full.
-:::
-
-Costing a tensor-network or cut-and-recombine candidate is itself a search. Once a cheaper feasible candidate is known, the planner stops such a search as soon as its running total passes that candidate's work units. A candidate stopped this way could never have won: the winner is the feasible candidate with the fewest work units. Its line shows where it was stopped instead of its full figures:
+Costing a tensor-network or cut-and-recombine candidate is itself a search. Once a cheaper feasible candidate is known, the planner stops such a search as soon as its running total passes that candidate's work units. A candidate stopped this way could never have won: without a time budget, the winner is the feasible candidate with the fewest work units. Its line shows where it was stopped instead of its full figures:
 
 ```text
 candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped before any elimination search: a lower bound of 20857968 work units over its 127 observable terms (from each term's network size) is already more than the 2105344 of a cheaper feasible alternative"
@@ -76,7 +72,7 @@ candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pr
 
 The same applies to the engine choice inside each `factorized` region. An engine stopped there is listed in the region's `why=` as `(tensor_network rejected: pruned by branch-and-bound: …)`.
 
-To give these searches a bound early, the cheaper candidates are costed first. The table still lists candidates in the [fixed order](/execution/plan#candidates-in-a-fixed-order). With a time budget, pruning works the same way on the CPU: only a candidate that is also within the budget can be the bound. When the CUDA backend can be chosen, every candidate is costed in full.
+To give these searches a bound early, the cheaper candidates are costed first. The table still lists candidates in the [fixed order](/execution/plan#candidates-in-a-fixed-order). With a time budget, every candidate is costed in full and none is reported as pruned, because the job is ranked by predicted seconds and a candidate above the bound in work units can still be the fastest (since Phase 24). When the CUDA backend can be chosen, or the disk tier is forced, every candidate is costed in full too.
 
 Pruning never changes the chosen plan or its estimate. It only shortens planning and changes the losing lines.
 

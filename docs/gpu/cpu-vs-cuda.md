@@ -1,11 +1,11 @@
 # CPU vs CUDA
 
-MENOS uses the GPU only when its own calibrated model says the GPU is **faster end to end**. You cannot force it, and you do not need to.
+MENOS uses the GPU only when its own calibrated model says the GPU is **faster end to end**. You do not need to choose. You can force a backend (`RunOptions.backend`, `MENOSBackend(backend=...)`, `--backend`), and a forced backend never falls back; see [Forcing a backend](/planning/backend-selection#forcing-a-backend).
 
 ## The decision in one line
 
 ```text
-algorithm:  cheapest feasible candidate by work units          (never depends on timing)
+algorithm:  cheapest feasible candidate by work units          (by predicted seconds under a time budget)
 backend:    for dense only, CUDA iff its estimated seconds < the CPU's    (ties go to the CPU)
 ```
 

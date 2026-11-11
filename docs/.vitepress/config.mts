@@ -85,6 +85,8 @@ const sidebar = [
       { text: 'Execution Plans', link: '/planning/execution-plans' },
       { text: 'Backend Selection', link: '/planning/backend-selection' },
       { text: 'Memory Constraints', link: '/planning/memory-constraints' },
+      { text: 'Memory Architecture', link: '/planning/memory-architecture' },
+      { text: 'How Planning Stays Fast', link: '/planning/planner-performance' },
       { text: 'Plan Explanation', link: '/planning/explain' },
     ],
   },

@@ -24,6 +24,16 @@ On a card with about 3.6 GiB free, **27 qubits is the arithmetic ceiling**. The 
 
 Host memory is typically larger, and by default half of it is available, so the CPU path can go further than a 4 GB card. Above the device ceiling the CUDA candidate is simply infeasible and the CPU wins by default.
 
+## The memory pool
+
+Every GPU state is allocated from one MENOS memory pool (`cudaMallocAsync`, since Phase 22). A finished job's state stays in the pool and serves the next job, region, replan or batch circuit of that size, instead of a `cudaMalloc` and `cudaFree` per execution. On the development GPU the allocation cycle went from 1–3 ms at 20 qubits and 9–23 ms at 24 to 1–6 µs. Results are unchanged, bit for bit.
+
+- The planner counts the pool's reusable bytes as available device memory, so no job is refused for memory that is only waiting in the pool. `explain()` prints it as `device_pool_bytes=` beside `device_available_bytes=`.
+- `release_device_memory()` (Python `menos.release_device_memory()`) gives the pool's memory back to the driver, for when another process needs the GPU.
+- A device without memory-pool support falls back to `cudaMalloc`, and `explain()` shows `pooled=false`.
+
+So after a large GPU job, `nvidia-smi` keeps showing that memory as used by the process until it exits or calls `release_device_memory()`.
+
 ## Refusal, then fallback
 
 A region that does not fit the device budget is refused **before any `cudaMalloc`**. The planner then keeps the region on the CPU instead of failing the job, so the plan report simply shows `backend=cpu` for that region. A hardware profile with a smaller device budget is honoured the same way, which is how the project's C++ tests exercise this behaviour.
@@ -48,4 +58,4 @@ An allocation that fails for memory even though the budget check passed is a `Re
 
 ## Related
 
-[Memory Constraints](/planning/memory-constraints) · [CPU vs CUDA](/gpu/cpu-vs-cuda) · [Troubleshooting CUDA](/gpu/troubleshooting-cuda)
+[Memory Architecture](/planning/memory-architecture) · [Memory Constraints](/planning/memory-constraints) · [CPU vs CUDA](/gpu/cpu-vs-cuda) · [Troubleshooting CUDA](/gpu/troubleshooting-cuda)

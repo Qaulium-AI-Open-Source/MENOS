@@ -6,8 +6,9 @@ MENOS integrates with Qiskit through two classes in `menos.qiskit`:
 |---|---|---|
 | `MENOSBackend` | `BackendV2` | Run circuits and get counts or a statevector |
 | `MENOSEstimator` | `BaseEstimatorV2` | Compute expectation values |
+| `MENOSSampler` | `BaseSamplerV2` | Sample measured circuits, one `BitArray` per classical register ([SamplerV2](/build/sampler)) |
 
-`MENOSJob` (a `JobV1`) is the object `run` returns. There is no provider class and no `SamplerV2` primitive.
+`MENOSJob` (a `JobV1`) is the object `run` returns. There is no provider class.
 
 ## Running circuits
 

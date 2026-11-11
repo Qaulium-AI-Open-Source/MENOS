@@ -14,7 +14,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 
 1. **Analyzes** the circuit: its structure, its entanglement, and what output you asked for;
 2. **Estimates** what each candidate strategy would cost, in a cost model shared by all engines;
-3. **Plans** by choosing the cheapest feasible strategy;
+3. **Plans** by choosing the cheapest feasible strategy (or, under a time budget, the one predicted to be fastest);
 4. **Executes** the plan, watching it against a time budget and replanning if reality disagrees with the estimate.
 
 ## Why MENOS?
@@ -31,8 +31,10 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 | | |
 |---|---|
 | Output | Counts, exact statevectors, exact Pauli expectation values, exact noisy simulation |
-| Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix |
-| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds; a disk tier for dense states beyond the memory budget, priced from measured bandwidth |
+| Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix, trajectory. The dense CPU engine fuses neighbouring gates and uses AVX2 kernels, bit for bit the generic kernel |
+| Planner | Cost model in work units with a calibrated time model per engine, automatic factorization, CPU/CUDA selection by calibrated seconds; branch-and-bound pruning of expensive searches and a plan cache for variational loops, so most jobs plan in milliseconds |
+| Memory | Every estimate an upper bound on use, checked by measurement; measured peaks in RAM, GPU memory and disk on every result; a GPU memory pool reused across jobs; a disk tier for dense states beyond the memory budget, bit for bit the in-memory result |
+| Circuits | `CircuitBuilder` in Python and C++: named gates, run-time parameters, registers, composition, exact inverse, OpenQASM 3 export |
 | Integration | Qiskit `BackendV2` (`MENOSBackend`), `EstimatorV2` (`MENOSEstimator`) and `SamplerV2` (`MENOSSampler`), with Qiskit Aer noise models; the PennyLane device `menos.qubit`; OpenQASM 3 import (`menos.from_qasm3`, static subset) and OpenQASM 2/3 on the command line |
 | Mitigation | Opt-in readout-error mitigation with calibrated, reported uncertainty; batch execution of several circuits (`run_batch`) |
 | GPU | NVIDIA CUDA dense backend, bitwise identical to the CPU |
@@ -41,12 +43,13 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 ## Architecture
 
 ```text
-Qiskit QuantumCircuit → KIR → light-cone reduction → analysis → cost model → planner
-        → execution plan → runtime → engines (dense · CUDA · stabilizer · Pauli · MPS · tensor network · cut)
+Qiskit · PennyLane · OpenQASM · CircuitBuilder → KIR → light-cone reduction → plan cache → analysis
+        → cost model (pruned) → planner → execution plan → runtime (memory ledger)
+        → engines (dense CPU · CUDA · disk tier · stabilizer · Pauli · MPS · tensor network · cut · density matrix · trajectory)
                                    ↘ monitoring → replanning
 ```
 
-The C++ layers depend on each other in one direction (`api → runtime → engines → kernels`; `api → planner → cost → analysis → ir → common`), enforced by the build. See the documentation's Architecture page, and `docs/adr/` for the recorded design decisions.
+The C++ layers depend on each other in one direction (`api → runtime → engines → kernels`; `api → planner → cost → analysis → ir → common`), enforced by the build. See the documentation's Architecture, Memory Architecture and How Planning Stays Fast pages, and `docs/adr/` for the recorded design decisions.
 
 ## Installation
 
@@ -192,7 +195,7 @@ print(run(circuit, options).statevector)
 
 In a process that also runs NumPy or SciPy work between MENOS calls (Qiskit does), OpenBLAS's own idle workers can compete with MENOS's threads. Setting `OPENBLAS_NUM_THREADS=1` before starting Python measured 1.8× faster at 16–18 qubits on the Phase 15 gate machine (`docs/adr/0019` section 10.9). MENOS does not set it, because the setting is process-wide.
 
-With `time_budget_seconds`, the planner's time estimate uses the calibrated single-threaded rate. That estimate is conservative for large threaded jobs, which can be refused when they would fit, and optimistic for a run capped at fewer threads, which the run-time monitor handles like any other overrun.
+With `time_budget_seconds`, the planner predicts seconds from a time model calibrated per engine on this machine, and picks the plan predicted to be fastest. The calibration runs once per process, the first time a job needs it (about 1.5–2 s on the development machine); later jobs in the same process reuse it. A CPU-only build never calibrates for a job without a time budget. A prediction that turns out wrong is handled by the run-time monitor like any other overrun.
 
 ## CUDA
 

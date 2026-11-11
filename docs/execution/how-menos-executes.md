@@ -3,13 +3,15 @@
 Every job goes through the same stages, whether it is a two-qubit circuit or a hundred-qubit one.
 
 ```text
-1. Convert     Qiskit QuantumCircuit  →  KIR                (Python, menos.qiskit.convert)
+1. Convert     Qiskit, PennyLane, OpenQASM, CircuitBuilder  →  KIR
 2. Validate    KIR well-formed, measurements terminal, output requested
 3. Reduce      light-cone reduction: drop operations outside the output's causal past
 4. Analyze     interaction graph → connected components; cut search (expectation only)
-5. Estimate    each candidate engine prices the job: feasible?, peak bytes, work units
-6. Plan        cheapest feasible candidate wins; dense then chooses CPU or CUDA by seconds
-7. Execute     run each region on its engine; recombine exactly
+5. Estimate    each candidate engine prices the job: feasible?, peak bytes, work units, time counts
+               (a repeated structure with new angles reuses its cached plan; expensive searches are pruned)
+6. Plan        cheapest feasible candidate wins (predicted seconds under a time budget);
+               dense then chooses CPU or CUDA, and the disk tier only if the state does not fit
+7. Execute     run each region on its engine under a memory ledger; recombine exactly
 8. Monitor     (only with a time budget) compare elapsed time with the budget at safe boundaries
 9. Replan      (only on an overrun) observe → same planner → restart, or refuse
 10. Report     Result, with explain()
@@ -37,8 +39,11 @@ Take the 100-qubit brickwork circuit from the [MPS example](/examples/mps), aske
 | you request only an expectation value | Pauli, tensor-network and cut strategies become candidates |
 | you request a statevector | only the dense engine is feasible |
 | a memory budget is too small for every candidate | planning fails with `ResourceExceeded` before any allocation |
-| a time budget is set | the run is monitored and may be replanned |
+| a time budget is set | candidates are ranked by predicted seconds instead of work units, and the run is monitored and may be replanned |
 | a CUDA device is usable and faster by the calibrated model | the dense region runs on it |
+| a backend is forced (`RunOptions.backend`) | the dense region runs there or the job is refused; it never falls back |
+| the dense state does not fit the memory budget, and you asked for counts or an expectation value | the [disk tier](/planning/memory-architecture#tiers-where-the-dense-state-lives) runs it from a scratch file |
+| the same circuit structure runs again with new angles | the cached plan is reused |
 
 ## Next
 

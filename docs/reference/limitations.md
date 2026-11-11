@@ -24,11 +24,11 @@ Every entry here is a real limitation of this release. None is speculative, and 
 
 ## Python surface
 
-- No `SamplerV2` primitive and no provider class.
-- **No way to choose an engine or backend.** Both are always the planner's choice.
+- No provider class.
+- **No way to choose an engine.** The engine is always the planner's choice. A backend can be forced (`RunOptions.backend`, `MENOSBackend(backend=...)`), and a dense state can be forced onto or off the disk tier (`RunOptions.tier`).
 - **No accuracy policy**: Python runs are always exact.
-- **No structured plan or `replans()`**: only the `explain()` text.
-- **Time and memory budgets are available only through the native API**, not through `MENOSBackend`.
+- **No structured plan**: only the `explain()` text. Replans are available as `Result.replans`, a list of dicts.
+- **A memory budget is available only through the native API.** `MENOSBackend` accepts `time_budget_seconds` but not `memory_budget_bytes`.
 - **`Observable` and `PauliString` are importable only from `menos._core`.**
 - Native counts are hexadecimal-keyed.
 - **An observable whose terms are all the identity raises `InternalError`.**

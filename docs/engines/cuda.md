@@ -32,7 +32,7 @@ On the development GPU (an RTX 3050 Laptop, 4 GB) the measured end-to-end crosso
 
 ## Memory
 
-Device memory is budgeted **separately** from host memory, from the free memory the driver reports rather than the marketing capacity. A region that does not fit is refused before any `cudaMalloc`, and the plan falls back to the CPU. See [GPU Memory](/gpu/gpu-memory).
+Device memory is budgeted **separately** from host memory, from the free memory the driver reports rather than the marketing capacity. A region that does not fit is refused before any allocation, and the plan falls back to the CPU (unless CUDA is forced, which then raises instead). States come from MENOS's own device memory pool, which keeps a finished job's memory for the next one; `release_device_memory()` returns it to the driver. See [GPU Memory](/gpu/gpu-memory) and [Memory Architecture](/planning/memory-architecture).
 
 ## Scope
 

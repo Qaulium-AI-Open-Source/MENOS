@@ -4,7 +4,7 @@ Planning turns the estimates into one decision.
 
 ## Candidates, in a fixed order
 
-The planner considers these strategies, in this order. The order matters because ties go to the earlier candidate. It is the order `explain()` lists them in. The tensor network is *costed* after the cheaper candidates (dense through factorized), so that its search can be stopped early (development branch, not yet released); see [Pruned candidates](/planning/explain#pruned-candidates).
+The planner considers these strategies, in this order. The order matters because ties go to the earlier candidate. It is the order `explain()` lists them in. The tensor network is *costed* after the cheaper candidates (dense through factorized), so that its search can be stopped early; see [Pruned candidates](/planning/explain#pruned-candidates).
 
 | # | Strategy | Enumerated when |
 |---|---|---|
@@ -21,17 +21,19 @@ Candidates that cannot be useful for the request (for example Pauli propagation 
 ## Selection
 
 1. Apply the memory budget and, if one was set, the time budget. Candidates that fail are marked infeasible with a reason.
-2. Among the feasible candidates, choose the one with the **fewest work units**.
+2. Among the feasible candidates, choose the one with the **fewest work units**. A job with a time budget instead chooses the **fewest predicted seconds**, from each engine's calibrated time model (since Phase 24).
 3. **Ties go to the earlier candidate** in the table above.
 4. If no candidate is feasible, planning throws `ResourceExceeded` and the message lists every candidate's reason.
 
-A tensor-network or cut-and-recombine candidate whose costing passes a cheaper feasible candidate's work units is stopped and reported as pruned (development branch, not yet released). It could not have won, so the choice is the same as if it had been costed in full.
+A tensor-network or cut-and-recombine candidate whose costing passes a cheaper feasible candidate's work units is stopped and reported as pruned. It could not have won, so the choice is the same as if it had been costed in full. A job with a time budget, a forced or compared CUDA backend, or a forced disk tier costs every candidate in full. See [How Planning Stays Fast](/planning/planner-performance).
+
+A budgeted job may run a different exact plan than the same job without a budget, and so draw different counts for the same seed.
 
 There is no special rule such as "Clifford circuits use the stabilizer engine". A 200-qubit Clifford GHZ circuit is planned onto MPS because MPS costs 3,400 work units against the stabilizer engine's 361,000.
 
 ## Backend selection
 
-Only after the algorithm is chosen, and only for dense, the planner chooses CPU or CUDA by calibrated estimated *seconds*. See [Backend Selection](/planning/backend-selection).
+Only after the algorithm is chosen, and only for dense, the planner chooses CPU or CUDA by calibrated estimated *seconds*, unless a backend is forced. See [Backend Selection](/planning/backend-selection). A dense state that does not fit in memory may then be placed on the disk tier; see [Memory Architecture](/planning/memory-architecture).
 
 ## The plan
 
@@ -39,8 +41,8 @@ The result is a `Plan`: the strategy, whether it is exact, its regions (each wit
 
 ## Determinism
 
-Planning is deterministic. The same circuit, options and (for time budgets) calibrated profile produce the same plan. The choice of *algorithm* depends only on the circuit and the request, never on timing; only the backend and the time-budget check depend on measured speed.
+Planning is deterministic. The same circuit, options and (for time budgets) calibrated profile produce the same plan. Without a time budget, the choice of *algorithm* depends only on the circuit and the request, never on timing; only the backend depends on measured speed. With a time budget, the ranking uses this process's calibration, so two candidates predicted close can be chosen differently in another process.
 
 ## Planning cost
 
-Planning is cheap next to running the job. With the Phase 24 planner (development branch, not yet released), on one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again.
+Planning is cheap next to running the job. With the Phase 24 planner, on one developer machine (one core, the fixed planner benchmark corpus), planning a job takes from about 0.014 ms for a small noisy circuit to about 33 ms for a 2,000-gate expectation job with many observable terms; most jobs take well under 11 ms. Repeating a job with new gate angles reuses its cached plan, which costs less than planning it again. Every result reports its planning time as `plan_seconds` (`plan_s=` in `explain()`). See [How Planning Stays Fast](/planning/planner-performance).
