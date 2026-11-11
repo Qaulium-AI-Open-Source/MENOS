@@ -349,7 +349,9 @@ CircuitBuilder CircuitBuilder::inverse() const {
                                          kind_of(op) + ", which has no inverse");
         }
     }
-    out.global_phase = -global_phase;
+    // 0.0 - x is exactly -x for every x except a zero phase, which stays +0.0
+    // (so a phase-free circuit's inverse is phase-free, and exports as such).
+    out.global_phase = 0.0 - global_phase;
     return out;
 }
 

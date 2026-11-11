@@ -1,6 +1,7 @@
 add_library(menos_qasm3 STATIC
     lexer.cpp
     modifiers.cpp
+    emitter.cpp
     parser.cpp
     stdgates.cpp
 )

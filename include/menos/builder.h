@@ -203,7 +203,8 @@ public:
     // The exact inverse: the operations in reverse order, each inverted by
     // menos::ir::inverse_gate (angles negated, U(t, p, l) -> U(-t, -l, -p),
     // s <-> sdg, ...), a unitary by its conjugate transpose, and the global
-    // phase negated. Same registers. Throws, naming the operation's index, if
+    // phase negated (computed as 0.0 - phase, so a zero phase stays +0.0).
+    // Same registers. Throws, naming the operation's index, if
     // the circuit contains a measurement or a channel.
     [[nodiscard]] CircuitBuilder inverse() const;
     // k copies of the operations in order (k = 0 gives none), the global
