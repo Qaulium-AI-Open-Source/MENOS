@@ -84,8 +84,11 @@ ParameterExpression operator*(const ParameterExpression& a, const ParameterExpre
     const ParameterExpression& other = a.is_constant() ? b : a;
     // A constant expression always has a constant (it was built from a
     // double, or from sums and products of constants).
-    common::ensure(scalar.constant_.has_value(),
-                   "ParameterExpression: a constant expression has no constant");
+    // An explicit if/throw rather than ensure(), so clang-tidy sees the check
+    // (bugprone-unchecked-optional-access).
+    if (!scalar.constant_.has_value()) {
+        throw common::InternalError("ParameterExpression: a constant expression has no constant");
+    }
     const double k = *scalar.constant_;
     ParameterExpression out = other;
     for (ParameterExpression::Term& term : out.terms_) {

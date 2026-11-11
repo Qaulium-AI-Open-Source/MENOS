@@ -22,6 +22,12 @@
 namespace menos {
 namespace {
 
+// Results requested by a test always carry the optional it reads (the run
+// would have thrown otherwise), and the constant is guarded by an assertion,
+// but clang-tidy cannot trace either. Suppressed once for the file, following
+// tests/analysis/cut_test.cpp.
+// NOLINTBEGIN(bugprone-unchecked-optional-access)
+
 using Complex = std::complex<double>;
 using Matrix = std::vector<Complex>;
 
@@ -210,6 +216,7 @@ CircuitBuilder ansatz(std::uint32_t n) {
     return b;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the ansatz's (n, theta, phi)
 Circuit ansatz_by_hand(std::uint32_t n, double theta, double phi) {
     Circuit c(n, n);
     for (QubitId q = 0; q < n; ++q) {
@@ -225,6 +232,7 @@ Circuit ansatz_by_hand(std::uint32_t n, double theta, double phi) {
     return c;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (width, qubit)
 Observable z_on(std::uint32_t n, QubitId q) {
     PauliString p;
     p.num_qubits = n;
@@ -345,6 +353,8 @@ TEST(BuilderRunTest, RebindingLoopReusesThePlan) {
     EXPECT_EQ(after.misses - before.misses, 1U);
     EXPECT_EQ(after.hits - before.hits, 4U);
 }
+
+// NOLINTEND(bugprone-unchecked-optional-access)
 
 }  // namespace
 }  // namespace menos

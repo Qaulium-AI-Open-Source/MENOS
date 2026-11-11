@@ -55,6 +55,9 @@ ClbitId ClassicalRegister::operator[](std::uint32_t i) const {
     return offset + i;
 }
 
+// (qubits, clbits) is the order of Circuit's constructor and Qiskit's
+// QuantumCircuit(n, m); ADR 0029 Q7 keeps it.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 CircuitBuilder::CircuitBuilder(std::uint32_t num_qubits, std::uint32_t num_clbits) {
     if (num_qubits > 0) {
         add_qreg("q", num_qubits);
@@ -217,6 +220,9 @@ CircuitBuilder& CircuitBuilder::cx(QubitId control, QubitId target) {
 CircuitBuilder& CircuitBuilder::cz(QubitId control, QubitId target) {
     return gate(Opcode::CZ, {control, target});
 }
+// The SWAP gate method (Qiskit's name, ADR 0029 Q7), not an object swap: it
+// throws InvalidCircuit for a qubit outside the circuit, by design.
+// NOLINTNEXTLINE(bugprone-exception-escape)
 CircuitBuilder& CircuitBuilder::swap(QubitId a, QubitId b) {
     return gate(Opcode::SWAP, {a, b});
 }

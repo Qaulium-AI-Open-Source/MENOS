@@ -11,6 +11,12 @@
 namespace menos {
 namespace {
 
+// Results requested by a test always carry the optional it reads (the run
+// would have thrown otherwise), and the constant is guarded by an assertion,
+// but clang-tidy cannot trace either. Suppressed once for the file, following
+// tests/analysis/cut_test.cpp.
+// NOLINTBEGIN(bugprone-unchecked-optional-access)
+
 std::uint64_t bits(double x) {
     return std::bit_cast<std::uint64_t>(x);
 }
@@ -81,6 +87,7 @@ TEST(ParameterExpressionTest, ScalingScalesConstantToo) {
     const Parameter a("a");
     const ParameterExpression e = (a + 1.0) * 3.0;
     EXPECT_EQ(e.terms()[0].coefficient, 3.0);
+    ASSERT_TRUE(e.constant().has_value());
     EXPECT_EQ(*e.constant(), 3.0);
 }
 
@@ -89,6 +96,8 @@ TEST(ParameterExpressionTest, MissingValueIsAnInternalError) {
     EXPECT_THROW((void)e.evaluate({}), common::InternalError);
     EXPECT_THROW((void)e.evaluate({{"b", 1.0}}), common::InternalError);
 }
+
+// NOLINTEND(bugprone-unchecked-optional-access)
 
 }  // namespace
 }  // namespace menos
