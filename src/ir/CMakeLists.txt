@@ -4,6 +4,8 @@ add_library(menos_ir STATIC
     depth.cpp
     gate_table.cpp
     inverse.cpp
+    parameter.cpp
+    builder.cpp
     validate.cpp
     final_writes.cpp
     noise.cpp
