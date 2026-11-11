@@ -130,8 +130,8 @@ int pauli_product_phase_exponent(const PauliRow& a, const PauliRow& b) {
         const std::uint64_t x2 = b.x[w];
         const std::uint64_t z2 = b.z[w];
         const std::uint64_t anti = (x1 & z2) ^ (z1 & x2);
-        const std::uint64_t cyclic = (x1 & ~z1 & x2 & z2)     // X*Y
-                                     | (x1 & z1 & ~x2 & z2)   // Y*Z
+        const std::uint64_t cyclic = (x1 & ~z1 & x2 & z2)      // X*Y
+                                     | (x1 & z1 & ~x2 & z2)    // Y*Z
                                      | (~x1 & z1 & x2 & ~z2);  // Z*X
         plus += static_cast<std::uint64_t>(std::popcount(cyclic));
         minus += static_cast<std::uint64_t>(std::popcount(anti & ~cyclic));

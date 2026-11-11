@@ -115,7 +115,8 @@ int per_qubit_phase(const PauliRow& a, const PauliRow& b, std::uint32_t n) {
 
 PauliRow empty_row(std::uint32_t n) {
     const std::size_t words = (static_cast<std::size_t>(n) + 63) / 64;
-    return PauliRow{std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0), false};
+    return PauliRow{
+        std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0), false};
 }
 
 // docs/adr/0028 section 22: every ordered pair of single-qubit Paulis, at
