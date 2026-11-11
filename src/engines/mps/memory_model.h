@@ -38,11 +38,15 @@ struct MemoryModel {
     // (splits and centre shifts); their flops, m * n * min(m, n) for an
     // m x n matrix, plus each expectation term's environment contractions;
     // the tensor elements built or touched (theta, new sites, 1-qubit gates);
-    // and the elements each shot's per-site vectors touch, over all shots.
+    // the elements each shot's per-site vectors touch, over all shots; and
+    // the sites the sampler visits over all shots, n per shot, each of which
+    // allocates its candidate vectors whatever the bonds (docs/adr/0028
+    // section 22).
     double svd_count = 0.0;
     double linalg_flops = 0.0;
     double elements = 0.0;
     double sampled_elements = 0.0;
+    double sampled_sites = 0.0;
 };
 
 // Throws common::ResourceExceeded when a figure overflows 64 bits.

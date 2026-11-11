@@ -1,51 +1,36 @@
 #include "common/pauli_row.h"
 
+#include <bit>
+#include <cstddef>
+
 #include "common/error.h"
 
 namespace menos::common {
 
-bool get_bit(const std::vector<std::uint64_t>& words, std::uint32_t q) {
-    return ((words[q / 64] >> (q % 64)) & std::uint64_t{1}) != 0;
+// Every rule below flips the sign with a branch-free XOR (docs/adr/0028
+// section 22): `flip` is the rule's condition on the row's bits.
+namespace {
+void flip_sign(PauliRow& row, bool flip) {
+    row.r = row.r != flip;
 }
-
-void set_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value) {
-    if (value) {
-        words[q / 64] |= (std::uint64_t{1} << (q % 64));
-    } else {
-        words[q / 64] &= ~(std::uint64_t{1} << (q % 64));
-    }
-}
-
-void xor_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value) {
-    if (value) {
-        words[q / 64] ^= (std::uint64_t{1} << (q % 64));
-    }
-}
+}  // namespace
 
 void apply_x(PauliRow& row, std::uint32_t a) {
-    if (get_bit(row.z, a)) {
-        row.r = !row.r;
-    }
+    flip_sign(row, get_bit(row.z, a));
 }
 
 void apply_z(PauliRow& row, std::uint32_t a) {
-    if (get_bit(row.x, a)) {
-        row.r = !row.r;
-    }
+    flip_sign(row, get_bit(row.x, a));
 }
 
 void apply_y(PauliRow& row, std::uint32_t a) {
-    if (get_bit(row.x, a) != get_bit(row.z, a)) {
-        row.r = !row.r;
-    }
+    flip_sign(row, get_bit(row.x, a) != get_bit(row.z, a));
 }
 
 void apply_h(PauliRow& row, std::uint32_t a) {
     const bool xa = get_bit(row.x, a);
     const bool za = get_bit(row.z, a);
-    if (xa && za) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & za);
     set_bit(row.x, a, za);
     set_bit(row.z, a, xa);
 }
@@ -53,36 +38,28 @@ void apply_h(PauliRow& row, std::uint32_t a) {
 void apply_s(PauliRow& row, std::uint32_t a) {
     const bool xa = get_bit(row.x, a);
     const bool za = get_bit(row.z, a);
-    if (xa && za) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & za);
     xor_bit(row.z, a, xa);
 }
 
 void apply_sdg(PauliRow& row, std::uint32_t a) {
     const bool xa = get_bit(row.x, a);
     const bool za = get_bit(row.z, a);
-    if (xa && !za) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & !za);
     xor_bit(row.z, a, xa);
 }
 
 void apply_sx(PauliRow& row, std::uint32_t a) {
     const bool xa = get_bit(row.x, a);
     const bool za = get_bit(row.z, a);
-    if (!xa && za) {
-        row.r = !row.r;
-    }
+    flip_sign(row, !xa & za);
     xor_bit(row.x, a, za);
 }
 
 void apply_sxdg(PauliRow& row, std::uint32_t a) {
     const bool xa = get_bit(row.x, a);
     const bool za = get_bit(row.z, a);
-    if (xa && za) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & za);
     xor_bit(row.x, a, za);
 }
 
@@ -92,9 +69,7 @@ void apply_cx(PauliRow& row, std::uint32_t control, std::uint32_t target) {
     const bool za = get_bit(row.z, control);
     const bool xb = get_bit(row.x, target);
     const bool zb = get_bit(row.z, target);
-    if (xa && zb && (xb == za)) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & zb & (xb == za));
     xor_bit(row.x, target, xa);
     xor_bit(row.z, control, zb);
 }
@@ -105,9 +80,7 @@ void apply_cz(PauliRow& row, std::uint32_t a, std::uint32_t b) {
     const bool za = get_bit(row.z, a);
     const bool xb = get_bit(row.x, b);
     const bool zb = get_bit(row.z, b);
-    if (xa && xb && (za != zb)) {
-        row.r = !row.r;
-    }
+    flip_sign(row, xa & xb & (za != zb));
     xor_bit(row.z, a, xb);
     xor_bit(row.z, b, xa);
 }
@@ -142,6 +115,28 @@ int pauli_phase_exponent(bool x1, bool z1, bool x2, bool z2) {
     }
     // sigma1 = Y, sigma2 in {X, Z}
     return x2 ? 3 : 1;
+}
+
+int pauli_product_phase_exponent(const PauliRow& a, const PauliRow& b) {
+    ensure(a.x.size() == b.x.size() && a.z.size() == b.z.size() && a.x.size() == a.z.size(),
+           "pauli_product_phase_exponent: rows of different widths");
+    // Per qubit, pauli_phase_exponent is 0 unless the factors anticommute,
+    // then 1 for the cyclic pairs X*Y, Y*Z, Z*X and 3 for the others.
+    std::uint64_t plus = 0;
+    std::uint64_t minus = 0;
+    for (std::size_t w = 0; w < a.x.size(); ++w) {
+        const std::uint64_t x1 = a.x[w];
+        const std::uint64_t z1 = a.z[w];
+        const std::uint64_t x2 = b.x[w];
+        const std::uint64_t z2 = b.z[w];
+        const std::uint64_t anti = (x1 & z2) ^ (z1 & x2);
+        const std::uint64_t cyclic = (x1 & ~z1 & x2 & z2)     // X*Y
+                                     | (x1 & z1 & ~x2 & z2)   // Y*Z
+                                     | (~x1 & z1 & x2 & ~z2);  // Z*X
+        plus += static_cast<std::uint64_t>(std::popcount(cyclic));
+        minus += static_cast<std::uint64_t>(std::popcount(anti & ~cyclic));
+    }
+    return static_cast<int>((plus + (3 * minus)) % 4);
 }
 
 std::array<std::complex<double>, 4> pauli_matrix_2x2(bool x, bool z) {

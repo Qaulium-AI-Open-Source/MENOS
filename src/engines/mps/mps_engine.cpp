@@ -155,12 +155,16 @@ CostEstimate MPSEngine::estimate(const EngineEstimateRequest& request) const {
         // prediction, section 16.10.1); component 1 their flops and the
         // expectation contractions; component 2 the tensor elements built or
         // touched; component 3 the elements the counts sampler touches over
-        // all shots, a vector-matrix product per site per shot.
+        // all shots, a vector-matrix product per site per shot; component 4
+        // the sites it visits over all shots, each with a fixed cost (its
+        // candidate vectors are allocated at every site of every shot,
+        // section 22).
         auto& mps = estimate.time.counts[static_cast<std::size_t>(Engine::MPS)];
         mps[0] = model.svd_count;
         mps[1] = model.linalg_flops;
         mps[2] = model.elements;
         mps[3] = model.sampled_elements;
+        mps[4] = model.sampled_sites;
         return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};

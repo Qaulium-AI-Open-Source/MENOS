@@ -35,12 +35,13 @@ double predict(const Counts& counts, const Counts& rates) {
 }
 
 TEST(TimeModelFitTest, RecoversTheRatesThatProducedTheTimes) {
-    const Counts rates{1.0e-6, 2.0e-9, 0.0, 5.0e-8};
+    const Counts rates{1.0e-6, 2.0e-9, 0.0, 5.0e-8, 3.0e-7};
     const std::vector<Counts> rows = {
-        {1000.0, 1.0e6, 0.0, 10.0},
-        {10.0, 1.0e9, 0.0, 100.0},
-        {5000.0, 1.0e5, 0.0, 1.0e5},
-        {200.0, 5.0e7, 0.0, 1.0e4},
+        {1000.0, 1.0e6, 0.0, 10.0, 50.0},
+        {10.0, 1.0e9, 0.0, 100.0, 1.0},
+        {5000.0, 1.0e5, 0.0, 1.0e5, 20.0},
+        {200.0, 5.0e7, 0.0, 1.0e4, 7.0e3},
+        {30.0, 2.0e6, 0.0, 5.0, 1.0e5},
     };
     std::vector<double> seconds;
     for (const Counts& r : rows) {
@@ -57,7 +58,7 @@ TEST(TimeModelFitTest, NeverReturnsANegativeRate) {
     // Times that an unconstrained fit would explain with a negative second
     // component: more of component 1 makes a run faster.
     const std::vector<Counts> rows = {
-        {1.0, 0.0, 0.0, 0.0}, {1.0, 1.0, 0.0, 0.0}, {1.0, 2.0, 0.0, 0.0}};
+        {1.0, 0.0, 0.0, 0.0, 0.0}, {1.0, 1.0, 0.0, 0.0, 0.0}, {1.0, 2.0, 0.0, 0.0, 0.0}};
     const std::vector<double> seconds = {3.0, 2.0, 1.0};
     const Counts fitted = fit_seconds_per_count(rows, seconds);
     for (const double v : fitted) {
@@ -150,6 +151,55 @@ TEST(TimeTermsTest, EveryCpuEngineReportsItsOwnTermsAndNoOtherEngines) {
             }
         }
     }
+}
+
+// docs/adr/0028 section 22: the stabilizer's pivot scans, the Pauli
+// engine's rotation visits and the MPS sampler's site visits, each its own
+// structural count.
+TEST(TimeTermsTest, TheSection22ComponentsCountScansRotationVisitsAndSampledSites) {
+    Circuit clifford(3, 3);
+    clifford.append(Opcode::H, {0});
+    clifford.append(Opcode::CX, {0, 1});
+    const CostEstimate stabilizer =
+        cpu_engine(Engine::Stabilizer)
+            ->estimate(EngineEstimateRequest{.num_qubits = 3,
+                                             .operations = &clifford.operations(),
+                                             .want_counts = true,
+                                             .shots = 10,
+                                             .bitstring_width = 3});
+    ASSERT_TRUE(stabilizer.feasible) << stabilizer.infeasible_reason;
+    EXPECT_EQ(stabilizer.time.counts[static_cast<std::size_t>(Engine::Stabilizer)][3], 9.0)
+        << "one elimination of 3 x 3 pivot scans";
+
+    Circuit rotations(3, 3);
+    rotations.append(Opcode::H, {0});
+    rotations.append(Opcode::RZ, {0}, {0.2});
+    rotations.append(Opcode::RX, {1}, {0.3});
+    rotations.append(Opcode::U, {2}, {0.1, 0.2, 0.3});
+    const Observable two_terms{{{z0(3), {1.0, 0.0}}, {z0(3), {0.5, 0.0}}}};
+    const CostEstimate pauli =
+        cpu_engine(Engine::Pauli)
+            ->estimate(EngineEstimateRequest{.num_qubits = 3,
+                                             .operations = &rotations.operations(),
+                                             .want_expectation = true,
+                                             .observable = &two_terms});
+    ASSERT_TRUE(pauli.feasible) << pauli.infeasible_reason;
+    EXPECT_EQ(pauli.time.counts[static_cast<std::size_t>(Engine::Pauli)][3], 6.0)
+        << "two terms through three rotations";
+    EXPECT_EQ(pauli.time.counts[static_cast<std::size_t>(Engine::Pauli)][4], 2.0)
+        << "two observable terms";
+
+    const CostEstimate mps =
+        cpu_engine(Engine::MPS)
+            ->estimate(EngineEstimateRequest{.num_qubits = 3,
+                                             .operations = &rotations.operations(),
+                                             .want_counts = true,
+                                             .shots = 100,
+                                             .bitstring_width = 3,
+                                             .is_sole_region = true});
+    ASSERT_TRUE(mps.feasible) << mps.infeasible_reason;
+    EXPECT_EQ(mps.time.counts[static_cast<std::size_t>(Engine::MPS)][4], 300.0)
+        << "three sites in each of 100 shots";
 }
 
 // Two disjoint Bell pairs, measured: a Factorized plan of two regions.

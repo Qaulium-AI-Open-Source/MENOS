@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "common/memory_ledger.h"
 #include "menos/circuit.h"
 #include "menos/observable.h"
 #include "menos/simulation_engine.h"
@@ -95,6 +96,15 @@ Observable random_terms(std::uint32_t n, std::uint32_t t) {
             p.z_words[w] = mix(((row + 1) * words) + w) & mask;
         }
         o.terms.emplace_back(std::move(p), std::complex<double>{1.0, 0.0});
+    }
+    return o;
+}
+
+// t terms, each Z on qubit 0.
+Observable z0_terms(std::uint32_t n, std::uint32_t t) {
+    Observable o;
+    for (std::uint32_t i = 0; i < t; ++i) {
+        o.terms.emplace_back(pauli_z(n, 0), std::complex<double>{1.0, 0.0});
     }
     return o;
 }
@@ -189,6 +199,15 @@ Circuit ising_trotter(std::uint32_t n, std::uint32_t steps) {
     return c;
 }
 
+// `gates` RZ rotations on qubits 1..n-1 in turn, none on qubit 0.
+Circuit rz_off_qubit_0(std::uint32_t n, std::uint32_t gates) {
+    Circuit c(n, n);
+    for (std::uint32_t g = 0; g < gates; ++g) {
+        c.append(Opcode::RZ, {1 + (g % (n - 1))}, {0.1 + (0.01 * static_cast<double>(g % 50))});
+    }
+    return c;
+}
+
 // circuit followed by `gates` one-qubit rotations spread over the register.
 Circuit then_one_qubit_gates(Circuit c, std::uint32_t gates) {
     const std::uint32_t n = c.num_qubits();
@@ -259,6 +278,11 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(clifford(8, 30000), 1));
             cases.push_back(counts_case(clifford(512, 6000), 1));
             cases.push_back(counts_case(clifford(512, 512), 20000));
+            // Mixed tableaux of 1 and 16 words a row, whose eliminations
+            // carry a share of the time: the pivot scans (n^2) and the
+            // rowsum words (n^2 * words) apart (docs/adr/0028 section 22).
+            cases.push_back(counts_case(clifford(64, 768), 1));
+            cases.push_back(counts_case(clifford(1024, 8192), 1));
             break;
         case Engine::Pauli:
             // One RZ makes the circuit non-Clifford, which the Pauli engine
@@ -267,6 +291,17 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(expectation_case(with_rz(clifford(8, 30000)), z_on(8, 0)));
             cases.push_back(expectation_case(with_rz(clifford(40, 300)), random_terms(40, 300)));
             cases.push_back(expectation_case(with_rz(clifford(256, 300)), random_terms(256, 300)));
+            // Rotations only, on qubits the observable's Z0 terms leave alone:
+            // no term branches, so this is the cost of a rotation visit beside
+            // the first case's Clifford update (section 22). Many terms
+            // through few rotations, because the estimate's worst-case
+            // branching bound, t0 * 2^rotations, must stay finite.
+            cases.push_back(expectation_case(rz_off_qubit_0(8, 30), z0_terms(8, 5000)));
+            // The same updates as the second case through four times the
+            // gates per term: without it a term's fixed cost and its updates
+            // move together (300 gates per term in both cases above), and
+            // the fit can trade one for the other.
+            cases.push_back(expectation_case(with_rz(clifford(40, 1200)), random_terms(40, 75)));
             break;
         case Engine::MPS:
             // Bonds at most 2: the per-update cost. Bonds up to 64: chi^3.
@@ -276,6 +311,11 @@ std::vector<Case> cases_for(Engine engine) {
             cases.push_back(counts_case(then_one_qubit_gates(ry_cx_layers(10, 4), 3000), 1));
             cases.push_back(counts_case(ising_trotter(12, 3), 1));
             cases.push_back(counts_case(ry_cx_layers(10, 3), 20000));
+            // The sampler on bonds of at most 2 and on bonds up to 64: the
+            // fixed cost of a site visit and the cost of an element apart
+            // (section 22).
+            cases.push_back(counts_case(paired_gates(16, 40), 20000));
+            cases.push_back(counts_case(ry_cx_layers(12, 7), 300));
             break;
         case Engine::TensorNetwork:
             cases.push_back(expectation_case(h_cx_layers(10, 2), all_z(10)));
@@ -352,12 +392,21 @@ std::optional<std::pair<Counts, double>> measure(const SimulationEngine& engine,
         .trajectories = c.trajectories,
         .max_threads = 1,
     };
-    static_cast<void>(engine.execute(request));  // discarded
+    // Each run under its own memory ledger, as Runtime::execute runs every
+    // attempt: with no ledger installed an engine's charges are no-ops, and
+    // an engine that recharges per gate (Pauli propagation, per term per
+    // gate) ran 1.5x faster here than in a job (docs/adr/0028 section 22).
+    const auto run_once = [&engine, &request] {
+        common::MemoryLedger ledger;
+        const common::MemoryLedger::Scope scope(ledger);
+        static_cast<void>(engine.execute(request));
+    };
+    run_once();  // discarded
     int repetitions = 0;
     const Clock::time_point start = Clock::now();
     double seconds = 0.0;
     do {
-        static_cast<void>(engine.execute(request));
+        run_once();
         ++repetitions;
         seconds = std::chrono::duration<double>(Clock::now() - start).count();
     } while (seconds < kDeadlineSeconds || repetitions < kMinRepetitions);
@@ -422,7 +471,7 @@ std::array<double, kTimeComponents> fit_seconds_per_count(const std::vector<Coun
     }
     // Non-negative least squares by enumerating the column subsets: the
     // best fit with every coefficient non-negative is the least-squares fit
-    // on one of them. kTimeComponents columns at most, so at most 15 subsets.
+    // on one of them. kTimeComponents columns at most, so at most 31 subsets.
     std::array<double, kTimeComponents> best{};
     double best_residual = -1.0;
     for (std::size_t mask = 1; mask < (std::size_t{1} << live.size()); ++mask) {

@@ -405,6 +405,7 @@ MemoryModel model_execution(const EngineEstimateRequest& request) {
                             static_cast<double>(replay.right(i));
             }
             model.sampled_elements = static_cast<double>(request.shots) * per_shot;
+            model.sampled_sites = static_cast<double>(request.shots) * static_cast<double>(n);
             // Per shot: the running left vector (with its old buffer while it
             // grows), each site's two candidate vectors, the outcome bits and
             // the drawn BitString.

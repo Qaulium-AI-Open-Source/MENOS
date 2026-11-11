@@ -614,7 +614,11 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         // the observable's own terms through every gate, the cost of a run in
         // which no term branches: component 0 the gates; component 1 the term
         // updates, t0 per gate, each with a fixed cost; component 2 their
-        // words, n/64 per term update. It is a lower bound on a run that
+        // words, n/64 per term update; component 3 the rotation visits, t0
+        // per RZ/RX/RY/P/U, each of which builds its split's terms afresh
+        // even when the term does not branch (docs/adr/0028 section 22);
+        // component 4 the observable's own terms, each with a fixed cost. It
+        // is a lower bound on a run that
         // branches heavily; such a run overruns its prediction and is caught
         // by the Phase 11 monitor like any other. For the same reason the
         // bandwidth floor is taken from the term list a run allocates when
@@ -626,6 +630,10 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         pauli[0] = static_cast<double>(num_gates);
         pauli[1] = term_updates;
         pauli[2] = term_updates * words;
+        pauli[3] = static_cast<double>(t0) * static_cast<double>(single_axis_count + u_count);
+        // Component 4: the observable's terms, each propagated on its own
+        // (a term list, its ledger charge and the final evaluation).
+        pauli[4] = static_cast<double>(t0);
         estimate.time.floor_bytes = static_cast<double>(peak_bytes_of(t0, request.num_qubits, t0));
         return estimate;
     } catch (const ResourceExceeded& e) {

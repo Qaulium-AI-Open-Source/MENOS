@@ -4,6 +4,9 @@
 
 #include <array>
 #include <complex>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace menos::common {
 namespace {
@@ -97,6 +100,65 @@ TEST(PauliRowTest, PauliPhaseExponentMatchesTheDocumentedTable) {
     EXPECT_EQ(pauli_phase_exponent(true, true, false, true), 1);   // Y,Z
     EXPECT_EQ(pauli_phase_exponent(false, false, true, true), 0);  // I,Y
     EXPECT_EQ(pauli_phase_exponent(true, true, true, true), 0);    // Y,Y
+}
+
+// The per-qubit sum the stabilizer's rowsum computed until Phase 24: the
+// oracle for the word-parallel pauli_product_phase_exponent.
+int per_qubit_phase(const PauliRow& a, const PauliRow& b, std::uint32_t n) {
+    int total = 0;
+    for (std::uint32_t q = 0; q < n; ++q) {
+        total += pauli_phase_exponent(
+            get_bit(a.x, q), get_bit(a.z, q), get_bit(b.x, q), get_bit(b.z, q));
+    }
+    return total % 4;
+}
+
+PauliRow empty_row(std::uint32_t n) {
+    const std::size_t words = (static_cast<std::size_t>(n) + 63) / 64;
+    return PauliRow{std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0), false};
+}
+
+// docs/adr/0028 section 22: every ordered pair of single-qubit Paulis, at
+// the first, a middle and the last bit of a word and past a word boundary.
+TEST(PauliRowTest, ProductPhaseExponentMatchesThePerQubitTableOnEveryPair) {
+    for (const std::uint32_t q : {0U, 17U, 63U, 64U, 100U}) {
+        for (int p1 = 0; p1 < 4; ++p1) {
+            for (int p2 = 0; p2 < 4; ++p2) {
+                PauliRow a = empty_row(101);
+                PauliRow b = empty_row(101);
+                set_bit(a.x, q, (p1 & 1) != 0);
+                set_bit(a.z, q, (p1 & 2) != 0);
+                set_bit(b.x, q, (p2 & 1) != 0);
+                set_bit(b.z, q, (p2 & 2) != 0);
+                EXPECT_EQ(pauli_product_phase_exponent(a, b), per_qubit_phase(a, b, 101))
+                    << "qubit " << q << " pair " << p1 << "," << p2;
+            }
+        }
+    }
+}
+
+TEST(PauliRowTest, ProductPhaseExponentMatchesThePerQubitSumOnRandomRows) {
+    std::uint64_t state = 0x243F6A8885A308D3ULL;
+    const auto next = [&state] {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return state;
+    };
+    for (const std::uint32_t n : {1U, 63U, 64U, 65U, 200U}) {
+        for (int trial = 0; trial < 200; ++trial) {
+            PauliRow a = empty_row(n);
+            PauliRow b = empty_row(n);
+            for (std::uint32_t q = 0; q < n; ++q) {
+                const std::uint64_t r = next();
+                set_bit(a.x, q, (r & 1) != 0);
+                set_bit(a.z, q, (r & 2) != 0);
+                set_bit(b.x, q, (r & 4) != 0);
+                set_bit(b.z, q, (r & 8) != 0);
+            }
+            EXPECT_EQ(pauli_product_phase_exponent(a, b), per_qubit_phase(a, b, n)) << "n " << n;
+        }
+    }
 }
 
 // docs/BUILD_PLAN.md Phase 8: pauli_matrix_2x2 is now a shared function

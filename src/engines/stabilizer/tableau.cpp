@@ -11,20 +11,18 @@ namespace menos::engines::stabilizer {
 namespace {
 
 using common::get_bit;
-using common::pauli_phase_exponent;
 using common::PauliRow;
 using common::set_bit;
 
 // row_h <- row_h * row_i (Pauli operator product), docs/adr/0006's
 // rowsum: XOR the bits, correct the sign via the accumulated i-power
-// (must reduce to a real +-1, enforced below).
-void rowsum(PauliRow& h, const PauliRow& i, std::uint32_t n) {
-    int total = (h.r ? 2 : 0) + (i.r ? 2 : 0);
-    for (std::uint32_t q = 0; q < n; ++q) {
-        total += pauli_phase_exponent(
-            get_bit(h.x, q), get_bit(h.z, q), get_bit(i.x, q), get_bit(i.z, q));
-    }
-    total = ((total % 4) + 4) % 4;
+// (must reduce to a real +-1, enforced below). The phase is summed a word
+// at a time (docs/adr/0028 section 22): until Phase 24 it was summed one
+// qubit at a time, which made a rowsum O(n) rather than O(n / 64) and the
+// eliminations O(n^3) on a dense tableau.
+void rowsum(PauliRow& h, const PauliRow& i) {
+    int total = (h.r ? 2 : 0) + (i.r ? 2 : 0) + common::pauli_product_phase_exponent(h, i);
+    total %= 4;
     common::ensure(total == 0 || total == 2,
                    "Tableau::rowsum: accumulated phase is not real -- internal invariant violated");
     h.r = (total == 2);
@@ -231,7 +229,7 @@ Tableau::AffineSubspace Tableau::reduce() const {
         std::swap(work[pivot_row], work[sel]);
         for (std::size_t cand = 0; cand < n; ++cand) {
             if (cand != pivot_row && get_bit(work[cand].x, col)) {
-                rowsum(work[cand], work[pivot_row], n);
+                rowsum(work[cand], work[pivot_row]);
             }
         }
         ++pivot_row;
@@ -267,7 +265,7 @@ Tableau::AffineSubspace Tableau::reduce() const {
         std::swap(fixed[fp_row], fixed[sel]);
         for (std::size_t cand = 0; cand < num_fixed; ++cand) {
             if (cand != fp_row && get_bit(fixed[cand].z, col)) {
-                rowsum(fixed[cand], fixed[fp_row], n);
+                rowsum(fixed[cand], fixed[fp_row]);
             }
         }
         fixed_pivot_col[fp_row] = col;
@@ -351,7 +349,7 @@ std::optional<bool> Tableau::expectation_sign(const PauliString& query) const {
         std::swap(masks[pivot_row], masks[sel]);
         for (std::size_t cand = 0; cand < n; ++cand) {
             if (cand != pivot_row && get_bit(work[cand].x, col)) {
-                rowsum(work[cand], work[pivot_row], n);
+                rowsum(work[cand], work[pivot_row]);
                 for (std::size_t w = 0; w < words; ++w) {
                     masks[cand][w] ^= masks[pivot_row][w];
                 }
@@ -375,7 +373,7 @@ std::optional<bool> Tableau::expectation_sign(const PauliString& query) const {
         std::swap(masks[pivot_row], masks[sel]);
         for (std::size_t cand = 0; cand < n; ++cand) {
             if (cand != pivot_row && get_bit(work[cand].z, col)) {
-                rowsum(work[cand], work[pivot_row], n);
+                rowsum(work[cand], work[pivot_row]);
                 for (std::size_t w = 0; w < words; ++w) {
                     masks[cand][w] ^= masks[pivot_row][w];
                 }
@@ -417,7 +415,7 @@ std::optional<bool> Tableau::expectation_sign(const PauliString& query) const {
         std::vector<std::uint64_t>(words, 0), std::vector<std::uint64_t>(words, 0), false};
     for (std::uint32_t j = 0; j < n; ++j) {
         if (get_bit(combo, j)) {
-            rowsum(product, rows_[j], n);
+            rowsum(product, rows_[j]);
         }
     }
     common::ensure(product.x == query.x_words && product.z == query.z_words,
