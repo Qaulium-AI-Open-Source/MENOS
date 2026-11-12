@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted design; implemented 2026-11-11; verification pending (section 10).** The owner answered section 9 on 2026-11-11, taking every recommended option (see "Owner answers"), and approved the implementation plan the same day. The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24. No code is written until the owner has approved the implementation plan.
+**Accepted design; implemented 2026-11-11; verified on `61ecf46`; gate recorded passed on 2026-11-13 (section 10.3).** The owner answered section 9 on 2026-11-11, taking every recommended option (see "Owner answers"), and approved the implementation plan the same day. The owner started Phase 25 on 2026-11-11, while Phase 24's verification and gate are still open (`docs/adr/0028`). Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`, so it merges after Phase 24.
 
 Labels follow `docs/adr/0014`–`0028`: **[MEASURED]** (here: read from the source at `5d074e8`), **[DERIVED]**, **[MENOS]** (a proposed design decision) and **[OPEN]** (an owner decision, section 9).
 
@@ -194,4 +194,15 @@ The owner took the recommended option, (a), for every question:
 
 ### 10.3 Gate evidence
 
-Recorded when `scripts/verify.sh` and `scripts/verify-windows.ps1` have run on the final commit.
+Phases 24 and 25 were verified together on `61ecf46`, the final code commit of both. It adds to this phase's code the fixes the verification needed: `44980e2` (12 clang-tidy errors in the builder code), `e27de2c` (a designated `RunOptions` initializer without `.seed`, a GCC `-Wmissing-field-initializers` error) and `61ecf46` (the CUDA side of the planner's backend comparison, `docs/adr/0028` section 23).
+
+- `scripts/verify.sh` (WSL): every stage passed, with `dev` and `release` 977/977, `cuda-dev`, `cuda-release`, `cuda12-dev` and `cuda12-release` 1067/1067 each (GPU tests executing in `cuda12-*`), and Python, wheel and smoke tests. The `cuda12` stages were re-run alone after a system shutdown cut off the full run.
+- `scripts/verify-windows.ps1`: exit 0, "verify-windows: all stages passed": `windows-dev` (ASan) and `windows-release` 978/978, pytest 637 passed (2 deselected), wheel smoke 2 passed, with ctest at 4 tests at a time after two runs at 22 and 8 hit AddressSanitizer allocator failures.
+
+The full record of both runs, including the failed attempts, is `docs/adr/0028` section 23.5.
+
+Q9 criteria: the builder's tests (C++ `tests/ir/builder_test.cpp`, `tests/api/builder_run_test.cpp`, `tests/qasm3/emitter_test.cpp`; Python `python/tests/test_builder.py`, `test_builder_qiskit.py`) run in every preset above and pass.
+
+### 10.4 Gate (2026-11-13)
+
+**The gate is recorded passed on 2026-11-13** on the owner's instruction to verify Phases 24 and 25 together and close both gates if the verification passed.

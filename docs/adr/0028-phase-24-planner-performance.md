@@ -3364,3 +3364,25 @@ This changes the CUDA calibration method, which Phase 16 requires an ADR for (`d
 The same test asserted that a 20-qubit dense statevector circuit is planned onto the GPU. On this machine the benchmark above measures the CPU faster at 20 qubits and a tie at 22, so the assertion was not true here and passed only while the model's error happened to agree.
 
 The owner first moved the large case to 24 qubits, still a statevector. There the GPU is measured 1.23× faster, but the release build then planned it on the CPU: the model predicted 0.59 s on the CPU against a measured 0.74 s, an error of about 1.25×, inside the 2× target but larger than the margin. The owner then made it a 24-qubit expectation, Z on every qubit, where no state is copied back and the GPU is measured 1.64× faster. The assertion is on the `direct_dense` candidate's backend, the one the CPU/CUDA comparison decides. The small case, 3 qubits on the CPU, is unchanged.
+
+### 23.5 Final verification of Phases 24 and 25 on `61ecf46` (2026-11-12/13)
+
+`61ecf46` is the final code commit of both phases (branch `phase-25-circuit-builder`, which contains Phase 24's `phase-24-simd-kernels`). Both scripts ran on it, never at the same time.
+
+| Script | Where | Result |
+|---|---|---|
+| `scripts/verify.sh` | WSL clone `~/MENOS`, `UV_PYTHON_PREFERENCE=only-managed` | every stage passed: format; clang-tidy; `dev` and `release` 977/977; benchmarks build and tidy; Python (editable install, pytest, wheel, wheel smoke); `cuda-dev` and `cuda-release` 1067/1067 each; CUDA benchmark builds and tidy; `cuda12-dev` and `cuda12-release` 1067/1067 each, with the GPU tests executing; the docs stage skipped (no Node in the clone) |
+| `scripts/verify-windows.ps1` | native Windows, detached worktree `C:/Users/janak/menos-verify` | exit 0, "verify-windows: all stages passed": `windows-dev` (ASan) 978/978, `windows-release` 978/978, benchmarks build, pytest 637 passed (2 deselected), wheel smoke 2 passed |
+
+How the runs went, all recorded rather than hidden:
+
+- **WSL.** The full run on `61ecf46` passed every stage up to `cuda12-dev`, and was then cut off at test 997 of 1067 of `cuda12-dev` by a system shutdown, with no failure up to that point. On the owner's instruction the two `cuda12` stages were run again alone, with the commands `verify.sh` uses (`cmake --preset`, `cmake --build --preset`, `ctest --preset` for `cuda12-dev` then `cuda12-release`), and both passed 1067/1067. The four tests of 23.1 pass in both.
+- **Windows, first run.** It stalled overnight in `windows-dev` at test 896 of 978 while the laptop slept: one test process (`TrajectoryRunTest.CountsPassAChiSquareTestAgainstTheDensityMatrix`) used no CPU for 1 h 40 min. The same test, run alone in the script's environment, passed in 281 s. The run was stopped and restarted.
+- **Windows, second and third runs.** `windows-dev` failed 17 tests with the script's `ctest -j 22`, then 8 tests with `-j 8`. Every failure was MSVC AddressSanitizer's allocator failing to reserve memory ("out of memory: allocator is trying to allocate …", "internal allocator is out of memory", "Failed to mmap") while the machine had 16–20 GB of RAM and about 47 GB of commit free; no test reported a wrong value. The 8 tests of the second failure, run one at a time in the script's environment, all passed (920 s). They are the heavy tests: the disk tier, calibration, the time model, trajectories, replanning and the tensor-network scale tests. Windows had last passed on `195fc0b` (17.8, 918 tests); items 8, 4 and the model fixes and Phase 25 were added since, and the calibrations of section 20 make more of the tests heavy at once.
+- **Windows, the passing run.** The unchanged script with `NUMBER_OF_PROCESSORS=4` in its environment, so that ctest runs 4 tests at a time. No script, test or threshold was changed.
+
+Logs: `~/verify-logs/verify-61ecf46.log` and `~/verify-logs/verify-61ecf46-cuda12.log` in WSL; `verify-win-61ecf46.log` (passing), `-hung.log`, `-oom.log` and `-oom-j8.log` in the Windows worktree.
+
+### 23.6 Gate (2026-11-13)
+
+The owner asked for Phases 24 and 25 to be verified together and both gates closed if the verification passed. On the evidence in 23.5, **Phase 24's gate is recorded passed on 2026-11-13**, on the owner's instruction. Closing the gate accepts the two items left for the owner: the Windows method of 22.5 (one-thread engines pinned to a performance core) and the calibration cost of 1.0–2.5 s per process (BUILD_PLAN, "The model fixes and item 4"). The owner may still object to either. Also left for the owner: the Windows ASan stage passed with ctest at 4 tests at a time, not the script's 22 (23.5).
