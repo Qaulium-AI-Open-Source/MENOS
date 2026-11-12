@@ -3313,3 +3313,54 @@ Stabilizer n = 1000 shows the same: 4.5× unpinned, 1.12× pinned.
 **Linux, in the WSL clone, showed none of this,** and runs unpinned as before.
 
 **What this means for a user.** On a hybrid CPU, a one-thread engine's runtime depends on which core Windows gives it, by up to 10× here. The time model predicts the runtime on the core the calibration ran on. The model cannot see where the operating system will place the thread, and this is not fixed here.
+
+## 23. The CUDA side of the backend comparison: what it did not see (owner, 2026-11-12) — [MENOS] / [MEASURED]
+
+### 23.1 What the verification found
+
+The `scripts/verify.sh` run on `e27de2c` (Phases 24 and 25 together) passed `dev`, `release`, `cuda-dev` and `cuda-release`, then failed four tests in `cuda12-dev`, the only preset on this machine whose tests reach the GPU:
+
+- `CliGoldenTest.ExplainProducesExactDeterministicOutput`, `RunProducesExactOutputAfterNormalizingTimings` and `ExplainWithBackendCpuAddsOnlyTheRequestLine`: the 2-qubit Bell circuit's dense candidate was moved to CUDA, which adds `device_bytes=` and the device figures to `explain()`;
+- `CudaBackendSelectionTest.TheCalibratedProfileKeepsTinyCircuitsOnTheCpuAndLargeOnesOnTheGpu`: a 3-qubit circuit was planned onto the GPU.
+
+The last GPU verification before this, on 2026-11-10 (17.8), predates the time model of section 20.
+
+### 23.2 Cause — [MEASURED]
+
+When no backend is forced, the dense candidate goes to CUDA if its predicted seconds are lower. Section 20 prices the CPU side with the dense engine's measured components, including a cost per shot sampled. The CUDA engine draws its counts the same way, with the CPU sampler on the copied-back state, but `cuda_seconds` had no term for it. Under ASan the per-shot cost is large, about 2.3 µs, so the CPU estimate grew with the shots and the CUDA estimate did not (`cuda12-dev`, Bell circuit, predicted seconds):
+
+| Shots | CPU | CUDA (before the fix) |
+|---|---|---|
+| 1 | 0.15 ms | 0.14 ms |
+| 100 | 0.38 ms | 0.20 ms |
+| 1000 | 2.54 ms | 0.17 ms |
+
+In a release build sampling is cheap enough that the missing term did not change any decision.
+
+A first attempt, timing the launch cost through the engine instead of on the bare kernel, did not change the outcome and was reverted.
+
+**The crossover, measured** (`menos_cuda_crossover_benchmark`, `cuda12-release`, median of 5, RTX 4060 Laptop GPU, statevector output, end to end):
+
+| Qubits | CPU | CUDA |
+|---|---|---|
+| 4 | 0.008 ms | 0.94 ms |
+| 12 | 0.13 ms | 3.0 ms |
+| 18 | 14.4 ms | 11.2 ms |
+| 20 | 29 ms | 40 ms |
+| 22 | 143 ms | 146 ms |
+| 24 | 743 ms | 602 ms |
+
+### 23.3 The fix
+
+- **Host sampling on the CUDA side.** `CudaDenseEngine::estimate` reports the counts work it does on the host in the CPU dense engine's own time components: one pass, the 2^n amplitudes of the cumulative distribution, and the shots. `cuda_seconds` prices them at that engine's measured rates, beside the device terms. The planner carries a CUDA candidate's terms when it moves the dense candidate to the device.
+- **A fixed cost per execution.** `CudaCalibration::execution_seconds` and `HardwareProfile::cuda_execution_seconds`: the CUDA engine's time on a one-qubit circuit with no gates, minus its launches, measured once per process with the rest of the CUDA calibration (`src/plan/cuda_calibration.cpp`). It measured 0.19 ms in `cuda12-release` (launch 50 µs). `cuda_seconds` adds it once per execution, so once per Factorized region. The device work rate's probe subtracts it as well as the launches, and the plan cache's key carries it. The crossover benchmark prints it beside the launch cost.
+
+This changes the CUDA calibration method, which Phase 16 requires an ADR for (`docs/adr/0020`); this section is that record. A profile built by hand (every test that sets the CUDA figures itself) leaves the execution term at zero and has no dense time figures, so it plans as before.
+
+**Evidence before the full verification.** After the fix, in WSL: format and clang-tidy clean; `dev`, `cuda12-dev` and `cuda12-release` build; the planner, CUDA, golden and backend suites pass (`dev` 97/97, `cuda12-dev` 166/166, `cuda12-release` 166/166); the three CLI golden tests and test 731 pass three times out of three on both GPU presets; and eight fresh `cuda12-dev` processes, two at a time, all keep the Bell circuit's dense candidate on the CPU. In the ASan build the two predictions for that circuit are close (0.64 ms and 0.63 ms under a time budget), because the CPU's per-pass cost there is comparable to a launch.
+
+### 23.4 Test 731's large case (owner, 2026-11-12)
+
+The same test asserted that a 20-qubit dense statevector circuit is planned onto the GPU. On this machine the benchmark above measures the CPU faster at 20 qubits and a tie at 22, so the assertion was not true here and passed only while the model's error happened to agree.
+
+The owner first moved the large case to 24 qubits, still a statevector. There the GPU is measured 1.23× faster, but the release build then planned it on the CPU: the model predicted 0.59 s on the CPU against a measured 0.74 s, an error of about 1.25×, inside the 2× target but larger than the margin. The owner then made it a 24-qubit expectation, Z on every qubit, where no state is copied back and the GPU is measured 1.64× faster. The assertion is on the `direct_dense` candidate's backend, the one the CPU/CUDA comparison decides. The small case, 3 qubits on the CPU, is unchanged.

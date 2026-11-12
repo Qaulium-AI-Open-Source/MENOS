@@ -294,10 +294,11 @@ void report() {
     std::printf("calibration      : host %.4g work_units/s, device %.4g work_units/s\n",
                 hw.work_units_per_second,
                 hw.cuda_device_work_units_per_second);
-    std::printf("                   H2D %.4g B/s, D2H %.4g B/s, launch %.4g s\n",
+    std::printf("                   H2D %.4g B/s, D2H %.4g B/s, launch %.4g s, execution %.4g s\n",
                 hw.cuda_host_to_device_bytes_per_second,
                 hw.cuda_device_to_host_bytes_per_second,
-                hw.cuda_kernel_launch_seconds);
+                hw.cuda_kernel_launch_seconds,
+                hw.cuda_execution_seconds);
     std::printf(
         "circuit          : %d layers of (H on all qubits, T on q0, CX on alternating "
         "pairs)\n",
@@ -315,6 +316,7 @@ void report() {
         {"h2d_bytes_per_second", hw.cuda_host_to_device_bytes_per_second},
         {"d2h_bytes_per_second", hw.cuda_device_to_host_bytes_per_second},
         {"kernel_launch_seconds", hw.cuda_kernel_launch_seconds},
+        {"execution_seconds", hw.cuda_execution_seconds},
     };
     document["circuit"] = {
         {"layers", kCrossoverLayers},

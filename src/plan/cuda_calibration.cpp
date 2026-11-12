@@ -1,5 +1,7 @@
 #include "plan/cuda_calibration.h"
 
+#include <algorithm>
+
 #include "engines/dense_cuda/cuda_dense_engine.h"
 #include "kernels/cuda/device_benchmarks.h"
 #include "kernels/cuda/device_info.h"
@@ -57,6 +59,48 @@ CudaCalibration measure_cuda_calibration() {
     calibration.device_to_host_bytes_per_second = rates.device_to_host_bytes_per_second;
     calibration.kernel_launch_seconds = kernels::cuda::measure_kernel_launch_seconds();
 
+    // --- fixed cost per execution --------------------------------------------
+    // What every execution pays beyond its launches: allocating the state,
+    // the synchronisations and the engine's setup. Timed through the engine
+    // on one qubit with no gates, so nothing else is in it. Measured at
+    // 0.19 ms on the development GPU, where a whole 4-qubit circuit takes 8 us
+    // on the CPU (docs/adr/0028 section 23).
+    {
+        const Circuit circuit(1, 0);
+        const engines::dense_cuda::CudaDenseEngine engine;
+        const EngineEstimateRequest estimate_request{
+            circuit.num_qubits(),
+            &circuit.operations(),
+            /*want_statevector=*/false,
+            /*want_counts=*/false,
+            /*want_expectation=*/false,
+            /*observable=*/nullptr,
+        };
+        const CostEstimate estimate = engine.estimate(estimate_request);
+        if (estimate.feasible) {
+            const EngineExecutionRequest request{
+                .num_qubits = circuit.num_qubits(),
+                .operations = circuit.operations(),
+                .want_statevector = false,
+                .want_counts = false,
+                .want_expectation = false,
+                .shots = 0,
+                .measure_targets = {},
+                .bitstring_width = 0,
+                .seed = 0,
+                .global_phase = 0.0,
+                .budget_bytes = estimate.estimated_peak_bytes,
+                .is_sole_region = true,
+                .observable = nullptr,
+            };
+            const double seconds =
+                seconds_per_repetition([&] { static_cast<void>(engine.execute(request)); });
+            const double launch_time = static_cast<double>(estimate.device.kernel_launches) *
+                                       calibration.kernel_launch_seconds;
+            calibration.execution_seconds = std::max(0.0, seconds - launch_time);
+        }
+    }
+
     // --- marginal device work rate ----------------------------------------
     {
         const Circuit circuit = make_probe_circuit();
@@ -89,15 +133,15 @@ CudaCalibration measure_cuda_calibration() {
             const double seconds =
                 seconds_per_repetition([&] { static_cast<void>(engine.execute(request)); });
 
-            // Subtract the launch term so the two do not double-count. If the
-            // launch term already explains the whole measurement, the probe was
+            // Subtract the fixed and launch terms so they do not double-count. If
+            // those already explain the whole measurement, the probe was
             // launch-bound and no meaningful throughput can be extracted from
             // it: leaving the rate at zero makes the profile uncalibrated,
             // which the planner refuses to plan a time budget against rather
             // than silently using a wrong number.
             const double launch_time = static_cast<double>(estimate.device.kernel_launches) *
                                        calibration.kernel_launch_seconds;
-            const double work_time = seconds - launch_time;
+            const double work_time = seconds - calibration.execution_seconds - launch_time;
             if (work_time > 0.0) {
                 calibration.device_work_units_per_second =
                     static_cast<double>(estimate.estimated_work_units) / work_time;

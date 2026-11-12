@@ -69,6 +69,10 @@ struct HardwareProfile {
     // Fixed cost per kernel launch. The term that correctly makes a small
     // circuit slower on the GPU than on the CPU.
     double cuda_kernel_launch_seconds = 0.0;
+    // Fixed cost per execution on the device beyond its launches: the state's
+    // allocation, the synchronisations and the engine's own setup. Measured at
+    // 0.19 ms on the development GPU (docs/adr/0028 section 23).
+    double cuda_execution_seconds = 0.0;
     // Marginal device throughput, launch overhead already subtracted out.
     double cuda_device_work_units_per_second = 0.0;
 

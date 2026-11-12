@@ -268,6 +268,7 @@ HardwareProfile calibrate_hardware() {
     profile.cuda_host_to_device_bytes_per_second = cuda.host_to_device_bytes_per_second;
     profile.cuda_device_to_host_bytes_per_second = cuda.device_to_host_bytes_per_second;
     profile.cuda_kernel_launch_seconds = cuda.kernel_launch_seconds;
+    profile.cuda_execution_seconds = cuda.execution_seconds;
     profile.cuda_device_work_units_per_second = cuda.device_work_units_per_second;
 #endif
     return profile;

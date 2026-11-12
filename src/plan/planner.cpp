@@ -403,8 +403,24 @@ Plan plan_job(const JobSpec& job_spec,
                 "tier=disk was requested with backend=cuda, but the disk tier runs on the CPU");
         }
     }
-    const auto cuda_seconds = [&](std::uint64_t work_units, const DeviceCost& device) {
-        return static_cast<double>(device.kernel_launches) *
+    // The execution term is the fixed cost every run on the device pays beyond
+    // its launches (docs/adr/0028 section 23); a Factorized region pays it
+    // once per region, since each region is its own execution.
+    // The host terms are the work the CUDA engine does on the CPU, reported
+    // in the CPU dense engine's own time components and priced at its
+    // measured rates: drawing counts from the copied-back state (docs/adr/0028
+    // section 23). Zero when the time model has no dense figures.
+    const auto cuda_seconds = [&](std::uint64_t work_units,
+                                  const DeviceCost& device,
+                                  const TimeTerms& host) {
+        double host_seconds = 0.0;
+        for (std::size_t e = 0; e < kTimeEngineCount; ++e) {
+            for (std::size_t c = 0; c < kTimeComponents; ++c) {
+                host_seconds += host.counts[e][c] * hardware_profile.seconds_per_time_count[e][c];
+            }
+        }
+        return host_seconds + hardware_profile.cuda_execution_seconds +
+               static_cast<double>(device.kernel_launches) *
                    hardware_profile.cuda_kernel_launch_seconds +
                static_cast<double>(device.host_to_device_bytes) /
                    hardware_profile.cuda_host_to_device_bytes_per_second +
@@ -460,11 +476,12 @@ Plan plan_job(const JobSpec& job_spec,
         }
         bool from_observation = false;
         if (calibrated) {
-            double seconds = candidate.backend == Backend::Cuda
-                                 ? cuda_seconds(candidate.estimated_work_units, candidate.device)
-                                 : cpu_seconds(candidate.estimated_work_units,
-                                               candidate.estimated_peak_bytes,
-                                               candidate.time);
+            double seconds =
+                candidate.backend == Backend::Cuda
+                    ? cuda_seconds(candidate.estimated_work_units, candidate.device, candidate.time)
+                    : cpu_seconds(candidate.estimated_work_units,
+                                  candidate.estimated_peak_bytes,
+                                  candidate.time);
             if (candidate.strategy == Strategy::Factorized &&
                 factorized_mixed_seconds.has_value()) {
                 seconds = *factorized_mixed_seconds;
@@ -1062,6 +1079,7 @@ Plan plan_job(const JobSpec& job_spec,
                 dense_candidate.device = cuda_estimate.device;
                 dense_candidate.estimated_peak_bytes = cuda_estimate.estimated_peak_bytes;
                 dense_candidate.estimated_work_units = cuda_estimate.estimated_work_units;
+                dense_candidate.time = cuda_estimate.time;
             }
         }
     } else if (job_spec.backend != Backend::Cpu && cuda_calibrated && calibrated) {
@@ -1116,17 +1134,19 @@ Plan plan_job(const JobSpec& job_spec,
                                                         dense_candidate.time))
                         .seconds;
                 const double on_cuda =
-                    raise_to_observed_floor(
-                        Engine::Dense,
-                        Backend::Cuda,
-                        Tier::InMemory,
-                        cuda_seconds(cuda_estimate.estimated_work_units, cuda_estimate.device))
+                    raise_to_observed_floor(Engine::Dense,
+                                            Backend::Cuda,
+                                            Tier::InMemory,
+                                            cuda_seconds(cuda_estimate.estimated_work_units,
+                                                         cuda_estimate.device,
+                                                         cuda_estimate.time))
                         .seconds;
                 if (on_cuda < on_cpu) {
                     dense_candidate.backend = Backend::Cuda;
                     dense_candidate.device = cuda_estimate.device;
                     dense_candidate.estimated_peak_bytes = cuda_estimate.estimated_peak_bytes;
                     dense_candidate.estimated_work_units = cuda_estimate.estimated_work_units;
+                    dense_candidate.time = cuda_estimate.time;
                 }
             }
         }
@@ -1213,7 +1233,9 @@ Plan plan_job(const JobSpec& job_spec,
                 cuda_key.backend = Backend::Cuda;
                 cuda_key.tier = Tier::InMemory;
                 const double on_cuda = std::max(
-                    timed ? cuda_seconds(on_device.estimated_work_units, on_device.device) : 0.0,
+                    timed ? cuda_seconds(
+                                on_device.estimated_work_units, on_device.device, on_device.time)
+                          : 0.0,
                     observations.region_floor_for(cuda_key).value_or(0.0));
                 if (forced_cuda) {
                     if (!fits) {
@@ -1518,8 +1540,8 @@ Plan plan_job(const JobSpec& job_spec,
                         .is_sole_region = false,
                         .fuse_gates = job_spec.fuse_gates,
                     });
-                    region.estimated_seconds =
-                        cuda_seconds(on_device.estimated_work_units, on_device.device);
+                    region.estimated_seconds = cuda_seconds(
+                        on_device.estimated_work_units, on_device.device, on_device.time);
                 } else {
                     region.estimated_seconds = cpu_seconds(
                         region.estimated_work_units, region.estimated_state_bytes, region.time);

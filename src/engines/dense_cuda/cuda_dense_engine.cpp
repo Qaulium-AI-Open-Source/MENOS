@@ -281,6 +281,19 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                               work,
                               /*infeasible_reason=*/"",
                               DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
+        // Counts are drawn on the HOST, by the CPU dense engine's sampler on
+        // the copied-back state (execute() below), so that work is reported in
+        // the CPU dense engine's own time components, as DenseEngine reports
+        // it: one pass (the cumulative distribution), its 2^n amplitudes and
+        // the shots. The planner prices them at that engine's measured rates
+        // beside the device terms (docs/adr/0028 section 23). Without them a
+        // job with many shots looked as cheap on the GPU as one with none.
+        if (request.want_counts) {
+            auto& dense = estimate.time.counts[static_cast<std::size_t>(Engine::Dense)];
+            dense[0] = 1.0;
+            dense[1] = static_cast<double>(checked_pow2(request.num_qubits));
+            dense[2] = static_cast<double>(request.shots);
+        }
         if (plan.has_value()) {
             estimate.fusion = FusionSummary{plan->fused_blocks, plan->gates_absorbed};
         }

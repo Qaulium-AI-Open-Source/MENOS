@@ -27,11 +27,18 @@ struct CudaCalibration {
     // without it the cost model would pick CUDA for circuits where it loses.
     double kernel_launch_seconds = 0.0;
 
+    // The fixed cost of one execution beyond its launches: allocating the
+    // state, the synchronisations and the engine's setup. Timed through
+    // CudaDenseEngine on a one-qubit circuit with no gates, minus its
+    // launches (docs/adr/0028 section 23).
+    double execution_seconds = 0.0;
+
     // Marginal device throughput in cost-model work units per second, with the
     // launch overhead already subtracted out so the two terms do not
     // double-count:
     //
-    //     measured_time = launches * kernel_launch_seconds
+    //     measured_time = execution_seconds
+    //                     + launches * kernel_launch_seconds
     //                     + work_units / device_work_units_per_second
     //
     // Calibrated at a qubit count where the GPU is genuinely saturated, not at

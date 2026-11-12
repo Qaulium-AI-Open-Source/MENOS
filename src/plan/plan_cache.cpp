@@ -120,6 +120,7 @@ void put_profile(std::string& key, const HardwareProfile& profile) {
     put(key, profile.cuda_host_to_device_bytes_per_second);
     put(key, profile.cuda_device_to_host_bytes_per_second);
     put(key, profile.cuda_kernel_launch_seconds);
+    put(key, profile.cuda_execution_seconds);
     put(key, profile.cuda_device_work_units_per_second);
 }
 
