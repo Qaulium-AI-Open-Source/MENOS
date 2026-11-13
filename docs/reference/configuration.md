@@ -25,6 +25,8 @@ See [Qiskit Backend](/reference/qiskit-backend) and [Estimator](/reference/estim
 | `memory_budget_bytes` | `None` (50% of physical memory) |
 | `expectation` | `None` |
 | `time_budget_seconds` | `None` (unmonitored) |
+| `tier` | `None` (the disk tier only when the dense state does not fit the budget) |
+| `scratch_directory` | `None` (the system's temporary directory) |
 
 See [Python API](/reference/python-api#runoptions).
 

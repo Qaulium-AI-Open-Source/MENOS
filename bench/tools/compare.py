@@ -7,7 +7,7 @@ Each side's per-repetition real times are pooled across its files (runs made
 alternately, before/after/before/after, so that drift in the machine's state
 falls on both sides). Prints, per benchmark: the pooled median of each side,
 the speed-up (before / after), the before side's spread (max/min - 1 over its
-repetitions) and the regression threshold of the Phase 21 gate,
+repetitions) and the regression threshold of the Phase 24 gate,
 max(5%, 2 x spread) (owner, 2026-11-03), flagging any job slower than that.
 """
 import json

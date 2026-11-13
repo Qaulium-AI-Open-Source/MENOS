@@ -1,5 +1,5 @@
 // Targeted tests for the Schmidt-rank cache (src/analysis/schmidt_rank_internal.h;
-// docs/adr/0025 sections 10.4 and 12).
+// docs/adr/0028 sections 10.4 and 12).
 //
 // The cache's one promise is that a hit returns exactly the integer a fresh
 // operator_schmidt_rank would return. These tests check that on gate

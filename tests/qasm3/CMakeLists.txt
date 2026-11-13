@@ -1,4 +1,5 @@
 add_executable(menos_qasm3_tests
+    emitter_test.cpp
     equivalence_test.cpp
     modifiers_test.cpp
     parser_test.cpp

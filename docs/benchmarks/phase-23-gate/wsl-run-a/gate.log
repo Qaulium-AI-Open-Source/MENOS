@@ -1,0 +1,9 @@
+== overlap at n = 29
+   in memory...
+   61.6594 s
+   disk tier (forced)...
+   72.9032 s
+== reach at n = 30
+   155.604 s, predicted 439.445 s, tier disk
+report: build/phase23-gate/wsl-run-a/gate.json
+gate driver exit 1

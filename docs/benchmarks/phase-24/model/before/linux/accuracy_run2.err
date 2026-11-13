@@ -1,0 +1,2 @@
+environment: os=Linux arch=x86_64 compiler=GCC 13.4.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+calibrated: work_units_per_second=5.14488e+09 memory_bandwidth_bytes_per_second=3.23761e+10 cuda_device_work_units_per_second=8.2985e+09 threads=22

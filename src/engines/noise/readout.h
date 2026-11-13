@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <utility>
 #include <vector>
@@ -29,6 +30,10 @@ struct ReadoutTarget {
 [[nodiscard]] std::vector<ReadoutTarget> readout_targets(
     std::span<const Operation> operations,
     std::span<const std::pair<QubitId, ClbitId>> measure_targets);
+
+// The heap bytes readout_targets() returns for up to num_targets targets: it
+// grows its vector one target at a time (docs/adr/0025 section 3.4).
+[[nodiscard]] std::uint64_t readout_targets_bytes(std::uint64_t num_targets);
 
 // Records each readout-errored bit of a true outcome through its assignment
 // matrix: one uniform per target, in order; the bit flips when the uniform is

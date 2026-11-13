@@ -1,4 +1,4 @@
-// The fixed planner corpus for Phase 21 (docs/adr/0025 section 5).
+// The fixed planner corpus for Phase 24 (docs/adr/0028 section 5).
 //
 // One list of plan_job inputs, shared by the planner benchmark
 // (benchmarks/planner_benchmark.cpp) and the golden explain() test

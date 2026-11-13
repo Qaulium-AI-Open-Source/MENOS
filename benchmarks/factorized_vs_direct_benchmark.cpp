@@ -98,7 +98,8 @@ void run_factorized(benchmark::State& state, const Circuit& circuit) {
                                                                  /*want_expectation=*/false,
                                                                  /*observable=*/nullptr,
                                                                  /*budget_bytes=*/1'000'000'000ULL,
-                                                                 /*accuracy_policy=*/{});
+                                                                 /*accuracy_policy=*/{},
+                                                                 /*shots=*/0);
         factorized_plan.reduced_circuit = circuit;
         std::uint64_t peak = 0;
         for (const Region& region : factorized_plan.regions) {

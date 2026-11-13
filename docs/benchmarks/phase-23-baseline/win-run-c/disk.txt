@@ -1,0 +1,2 @@
+wsl vhd before: 57993592832 bytes; C: free 268325666816 bytes
+wsl vhd after: 57993592832 bytes; C: free 268023296000 bytes

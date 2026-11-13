@@ -1,6 +1,6 @@
 // Internal to the min-fill search (treewidth.cpp); exposed in this header
 // only so tests/analysis/bit_adjacency_test.cpp and the planner structure
-// microbenchmarks can exercise it alone (docs/adr/0025 section 12). Not public
+// microbenchmarks can exercise it alone (docs/adr/0028 section 12). Not public
 // API.
 
 #pragma once
@@ -42,7 +42,7 @@ public:
           degree_(n, 0) {}
 
     // Every row's WordRange is kept exact as bits change, so nonzero_range is
-    // a lookup rather than a scan of the row (docs/adr/0025 section 12.3): a
+    // a lookup rather than a scan of the row (docs/adr/0028 section 12.3): a
     // set can only widen it, and a reset that empties the word at either end
     // narrows it past every empty word there.
     // Sets bit b of a's row; the search keeps the graph symmetric by always

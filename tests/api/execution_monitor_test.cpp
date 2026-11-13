@@ -9,6 +9,7 @@
 #include "engines/pauli/pauli_propagation_engine.h"
 #include "engines/stabilizer/stabilizer_engine.h"
 #include "engines/tensor_network/tensor_network_engine.h"
+#include "ir/fuse_gates.h"
 #include "menos/circuit.h"
 #include "menos/observable.h"
 #include "menos/simulation_engine.h"
@@ -139,13 +140,29 @@ EngineExecutionRequest make_request(const Circuit& circuit,
     };
 }
 
-TEST(ExecutionMonitorTest, DenseCallsTheMonitorOncePerOperation) {
+// With gate fusion (the default since Phase 24 item 7, docs/adr/0028
+// section 17) the dense engine's safe boundary is the gap between two fused
+// blocks, so it reports once per block; with fusion off, once per operation
+// as before.
+TEST(ExecutionMonitorTest, DenseCallsTheMonitorOncePerBlockOrOncePerOperation) {
     const engines::dense::DenseEngine engine;
     const Circuit circuit = non_clifford_circuit(6);
-    const CountingMonitor monitor;
-    static_cast<void>(engine.execute(make_request(circuit, true, false, nullptr, &monitor)));
-    EXPECT_EQ(monitor.calls(), circuit.operations().size());
-    EXPECT_EQ(monitor.last(), circuit.operations().size());
+    const std::size_t blocks = ir::plan_fusion(circuit.operations()).block_count();
+    ASSERT_LT(blocks, circuit.operations().size()) << "the circuit must fuse something";
+    {
+        const CountingMonitor monitor;
+        static_cast<void>(engine.execute(make_request(circuit, true, false, nullptr, &monitor)));
+        EXPECT_EQ(monitor.calls(), blocks);
+        EXPECT_EQ(monitor.last(), blocks);
+    }
+    {
+        const CountingMonitor monitor;
+        EngineExecutionRequest request = make_request(circuit, true, false, nullptr, &monitor);
+        request.fuse_gates = false;
+        static_cast<void>(engine.execute(request));
+        EXPECT_EQ(monitor.calls(), circuit.operations().size());
+        EXPECT_EQ(monitor.last(), circuit.operations().size());
+    }
 }
 
 TEST(ExecutionMonitorTest, StabilizerCallsTheMonitorOncePerOperation) {

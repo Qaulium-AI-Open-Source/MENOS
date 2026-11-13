@@ -1,1 +1,0 @@
-THROWS ResourceExceeded: plan_job: no feasible candidate -- direct dense simulation requires 68719476736 bytes, budget is 8589934592 bytes; operation 0 (rx) is not a Clifford gate; direct mps simulation requires 183251937920 bytes, budget is 8589934592 bytes

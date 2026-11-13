@@ -49,6 +49,15 @@ BitString& BitString::operator|=(const BitString& other) {
     return *this;
 }
 
+BitString& BitString::operator^=(const BitString& other) {
+    common::ensure(other.num_bits_ == num_bits_,
+                   "BitString::operator^=: operands must have the same width");
+    for (std::size_t i = 0; i < words_.size(); ++i) {
+        words_[i] ^= other.words_[i];
+    }
+    return *this;
+}
+
 bool operator==(const BitString& lhs, const BitString& rhs) {
     return lhs.num_bits_ == rhs.num_bits_ && lhs.words_ == rhs.words_;
 }

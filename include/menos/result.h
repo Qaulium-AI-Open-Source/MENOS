@@ -41,6 +41,21 @@ namespace menos {
 // superseded_plan is the complete abandoned Plan, not a summary, so a caller
 // can call explain() on it. Result::explain() prints only a one-line summary of
 // it, to keep the report readable.
+// One region of an abandoned Factorized plan (Phase 24, docs/adr/0028 section
+// 16.4): its qubits, the implementation that ran it, its own prediction
+// (Region::estimated_seconds, -1 when not calibrated) and the time it was
+// observed to take -- the whole region if it completed, up to the crossing if
+// it was the one running.
+struct RegionObservation {
+    std::vector<QubitId> qubits;
+    Engine engine;
+    Backend backend;
+    Tier tier;
+    double estimated_seconds;
+    double observed_seconds;
+    bool completed;
+};
+
 struct ReplanEvent {
     std::size_t sequence;
     double threshold_seconds;
@@ -51,12 +66,21 @@ struct ReplanEvent {
     Backend backend;
     std::string reason;
     Plan superseded_plan;
+    // Wall-clock seconds the planner took to produce the plan that replaced
+    // superseded_plan (Phase 24, docs/adr/0028 section 16.7 Q3). Measured,
+    // never estimated; not charged against the time budget.
+    double plan_seconds = 0.0;
+    // Every region of the superseded plan that started running, in order,
+    // when it was a Factorized plan; empty for a single-region plan, whose
+    // one observation is observed_seconds above.
+    std::vector<RegionObservation> regions = {};
 };
 
 // counts (ordered by key -- std::map -- so output is deterministic),
 // optional statevector, exact, the Plan, actual state bytes as tracked by
 // the engine (not process RSS), wall-clock seconds for execute and
-// sample.
+// sample, and the peak host memory, device memory and disk space the
+// execution held.
 class Result {
 public:
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -69,7 +93,10 @@ public:
            double execute_seconds,
            double sample_seconds,
            std::vector<ReplanEvent> replans = {},
-           std::optional<double> expectation_standard_error = std::nullopt);
+           std::optional<double> expectation_standard_error = std::nullopt,
+           std::uint64_t peak_host_bytes = 0,
+           std::uint64_t peak_device_bytes = 0,
+           std::uint64_t peak_disk_bytes = 0);
     // NOLINTEND(bugprone-easily-swappable-parameters)
 
     [[nodiscard]] const std::map<BitString, std::uint64_t>& counts() const;
@@ -90,8 +117,36 @@ public:
     [[nodiscard]] bool exact() const;
     [[nodiscard]] const Plan& plan() const;
     [[nodiscard]] std::uint64_t actual_state_bytes() const;
+    // The most memory the successful attempt's execution held at once, in
+    // bytes, on the host and on the CUDA device (Phase 21, docs/adr/0025
+    // section 3.2). Measured, not estimated: the runtime's memory ledger
+    // adds up every buffer whose size grows with the problem -- states,
+    // workspace, samplers, histograms, tensors -- as it is allocated and
+    // freed. Allocations that do not grow with the problem, and the
+    // allocator's own overhead, are left out, so the figure is at most what
+    // the process allocated and at most the plan's estimate. Planning is not
+    // included. peak_device_bytes() is 0 for a plan with no CUDA region.
+    [[nodiscard]] std::uint64_t peak_host_bytes() const;
+    [[nodiscard]] std::uint64_t peak_device_bytes() const;
+    // The most scratch-file space the successful attempt held at once, in
+    // bytes (Phase 23, docs/adr/0027): the disk tier's state file, measured
+    // by the same ledger. 0 for a plan with no disk-tier region, which is
+    // every plan whose state fits in memory; explain() appends
+    // peak_disk_bytes= to its actual line only when it is not 0.
+    [[nodiscard]] std::uint64_t peak_disk_bytes() const;
     [[nodiscard]] double execute_seconds() const;
     [[nodiscard]] double sample_seconds() const;
+    // Wall-clock seconds the initial plan took to produce (Phase 24,
+    // docs/adr/0028 section 16.7 Q3): the planner call menos::run made before
+    // the first execution attempt. On a plan-cache hit it is the cost of the
+    // lookup and the re-parameterisation, which is all that ran. 0 for a
+    // Result built by the runtime alone, outside menos::run.
+    [[nodiscard]] double plan_seconds() const;
+    // Wall-clock seconds spent replanning: the sum of every
+    // ReplanEvent::plan_seconds in replans(). 0 for a job that never replanned.
+    // Kept apart from plan_seconds() so the cost of an overrun is visible on
+    // its own.
+    [[nodiscard]] double replan_seconds() const;
 
     // Every plan that was abandoned before this Result was produced, oldest
     // first. Empty for a run that never crossed its time budget, which is
@@ -114,8 +169,14 @@ public:
     // supposed to be nearly free.
     [[nodiscard]] Result with_replans(std::vector<ReplanEvent> replans) &&;
 
+    // Attaches the initial plan's planning time, which only the api layer
+    // measures (it is the layer that calls the planner). Rvalue-qualified for
+    // the same reason as with_replans().
+    [[nodiscard]] Result with_plan_seconds(double plan_seconds) &&;
+
     // A deterministic text report. Byte-identical across runs of the same
-    // circuit, except for the two wall-clock fields (execute_s, sample_s),
+    // circuit, except for the wall-clock fields (execute_s, sample_s, plan_s,
+    // and, after a replan, replan_s and each replan line's replanned_in),
     // which are, by construction, not deterministic.
     [[nodiscard]] std::string explain() const;
 
@@ -130,6 +191,10 @@ private:
     double sample_seconds_;
     std::vector<ReplanEvent> replans_;
     std::optional<double> expectation_standard_error_;
+    std::uint64_t peak_host_bytes_;
+    std::uint64_t peak_device_bytes_;
+    std::uint64_t peak_disk_bytes_;
+    double plan_seconds_ = 0.0;
 };
 
 }  // namespace menos

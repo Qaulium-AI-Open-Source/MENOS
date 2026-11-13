@@ -20,6 +20,23 @@ else()
 endif()
 target_compile_options(menos_kernels_cpu PRIVATE ${MENOS_WARNING_FLAGS} ${menos_no_fp_contract})
 
+# The AVX2 table (Phase 24 item 8, docs/adr/0028 section 19): one translation
+# unit compiled for AVX2 and chosen at run time by cpuid, so the library still
+# runs on any x86-64. -mavx2 does not enable FMA (that is -mfma, never passed);
+# MSVC's /arch:AVX2 allows FMA instructions but /fp:precise above forbids
+# contracting a*b+c into one, and the kernels write every multiply and add as
+# its own intrinsic. tests/engines/dense/simd_kernels_test.cpp pins both tables
+# to the generic kernel bitwise.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|x64)$")
+    target_sources(menos_kernels_cpu PRIVATE cpu/dense_kernels_avx2.cpp)
+    target_compile_definitions(menos_kernels_cpu PRIVATE MENOS_HAVE_AVX2_KERNELS=1)
+    if(MSVC)
+        set_source_files_properties(cpu/dense_kernels_avx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    else()
+        set_source_files_properties(cpu/dense_kernels_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+    endif()
+endif()
+
 if(MENOS_ENABLE_CUDA)
     add_subdirectory(cuda)
 endif()

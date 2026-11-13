@@ -2,11 +2,18 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <vector>
 
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <immintrin.h>
+#include <intrin.h>
+#endif
+
 #include "common/error.h"
+#include "kernels/cpu/dense_kernel_table.h"
 #include "kernels/cpu/thread_pool.h"
 
 namespace menos::kernels::cpu {
@@ -37,13 +44,28 @@ std::size_t insert_zero_bit(std::size_t i, std::uint32_t pos) {
     return ((i & ~low) << 1) | (i & low);
 }
 
+// ---------------------------------------------------------------------------
+// The baseline table: plain x86-64, scalar. These are the loops the kernels
+// ran before item 8 (docs/adr/0028 section 19.1), unchanged in arithmetic;
+// they serve every CPU without AVX2, and the tests force them on the AVX2
+// machines that verify the build so both tables stay pinned to the oracle.
+// ---------------------------------------------------------------------------
+
+std::complex<double>* as_complex(double* p) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<std::complex<double>*>(p);
+}
+
+std::complex<double> load_complex(const double* p) {
+    return {p[0], p[1]};
+}
+
 // (a.r*b.r - a.i*b.i) + i (a.r*b.i + a.i*b.r): the products and sums of
-// std::complex<double>'s operator* in its order, written out so the loops
-// below vectorise. operator* (C99 Annex G) computes exactly this and only
-// then, if the result is NaN, recovers through __muldc3; for the finite
-// amplitudes and matrices the kernels are specified for the two are bitwise
-// identical, and the generic kernel keeps operator* so that it stays the
-// oracle.
+// std::complex<double>'s operator* in its order. operator* (C99 Annex G)
+// computes exactly this and only then, if the result is NaN, recovers through
+// __muldc3; for the finite amplitudes and matrices the kernels are specified
+// for the two are bitwise identical, and the generic kernel keeps operator*
+// so that it stays the oracle.
 inline std::complex<double> cmul(std::complex<double> a, std::complex<double> b) {
     return {a.real() * b.real() - a.imag() * b.imag(), a.real() * b.imag() + a.imag() * b.real()};
 }
@@ -54,34 +76,16 @@ inline std::complex<double> from_zero(std::complex<double> p) {
     return {0.0 + p.real(), 0.0 + p.imag()};
 }
 
-// The two unit-stride inner loops, as free functions so that
-// target_clones applies to the loop itself (a lambda handed to parallel_for
-// is compiled separately and would not be cloned). "avx2" is dispatched at
-// load time where the CPU has it, "default" is baseline x86-64; neither
-// enables FMA, and the target is built with -ffp-contract=off, so the vector
-// and scalar clones perform the same IEEE multiplies and adds in the same
-// order: bitwise identical (measured: the same bytes, ~3x faster, docs
-// pending). MSVC has no target_clones; it compiles the plain loop.
-#if defined(__GNUC__) && !defined(__clang__)
-#define MENOS_KERNEL_CLONES [[gnu::target_clones("avx2", "default")]]
-#else
-#define MENOS_KERNEL_CLONES
-#endif
-
-// lo[i], hi[i] <- m * (lo[i], hi[i]) for i in [0, n): one 1-qubit gate on n
-// pairs whose two members are n apart.
-// The (lo, hi) pointers and the four matrix entries follow the fixed
-// row-major order of every gate kernel in this file; NOLINT for the two
-// kernels below only.
+// The (lo, hi) pointers and the matrix follow the fixed row-major order of
+// every gate kernel in this file.
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-MENOS_KERNEL_CLONES
-void pair_run(std::complex<double>* lo,
-              std::complex<double>* hi,
-              std::size_t n,
-              std::complex<double> m00,
-              std::complex<double> m01,
-              std::complex<double> m10,
-              std::complex<double> m11) {
+void baseline_pair_run(double* lo_d, double* hi_d, std::size_t n, const double* m) {
+    std::complex<double>* const lo = as_complex(lo_d);
+    std::complex<double>* const hi = as_complex(hi_d);
+    const std::complex<double> m00 = load_complex(m);
+    const std::complex<double> m01 = load_complex(m + 2);
+    const std::complex<double> m10 = load_complex(m + 4);
+    const std::complex<double> m11 = load_complex(m + 6);
     for (std::size_t i = 0; i < n; ++i) {
         const std::complex<double> a0 = lo[i];
         const std::complex<double> a1 = hi[i];
@@ -90,17 +94,14 @@ void pair_run(std::complex<double>* lo,
     }
 }
 
-// The same gate for a low operand q (< kRunKernelMinQubit): the runs are
-// too short to amortise a call per run, so this walks whole blocks of
-// 2^(q+1) amplitudes with a compile-time inner trip count instead.
+// Whole blocks of 2^(Q+1) amplitudes with a compile-time inner trip count.
 template <std::uint32_t Q>
-MENOS_KERNEL_CLONES void pair_blocks(std::complex<double>* amps,
-                                     std::size_t total,
-                                     std::complex<double> m00,
-                                     std::complex<double> m01,
-                                     std::complex<double> m10,
-                                     std::complex<double> m11) {
-    // NOLINTEND(bugprone-easily-swappable-parameters)
+void baseline_pair_blocks_q(double* amps_d, std::size_t total, const double* m) {
+    std::complex<double>* const amps = as_complex(amps_d);
+    const std::complex<double> m00 = load_complex(m);
+    const std::complex<double> m01 = load_complex(m + 2);
+    const std::complex<double> m10 = load_complex(m + 4);
+    const std::complex<double> m11 = load_complex(m + 6);
     constexpr std::size_t kHalf = std::size_t{1} << Q;
     for (std::size_t base = 0; base < total; base += 2 * kHalf) {
         std::complex<double>* const lo = amps + base;
@@ -114,35 +115,114 @@ MENOS_KERNEL_CLONES void pair_blocks(std::complex<double>* amps,
     }
 }
 
-// Runs shorter than 2^kRunKernelMinQubit are not worth a call each.
-inline constexpr std::uint32_t kRunKernelMinQubit = 3;
+void baseline_pair_blocks(double* amps, std::size_t total, std::uint32_t q, const double* m) {
+    switch (q) {
+        case 0:
+            baseline_pair_blocks_q<0>(amps, total, m);
+            return;
+        case 1:
+            baseline_pair_blocks_q<1>(amps, total, m);
+            return;
+        case 2:
+            baseline_pair_blocks_q<2>(amps, total, m);
+            return;
+        default:
+            baseline_pair_blocks_q<3>(amps, total, m);
+            return;
+    }
+}
 
-// a[i] <- scale * a[i] for i in [0, n), as `(+0, +0) += scale * a[i]`.
-MENOS_KERNEL_CLONES
-void scale_run(std::complex<double>* a, std::size_t n, std::complex<double> scale) {
+void baseline_scale_run(double* a_d, std::size_t n, const double* s_d) {
+    std::complex<double>* const a = as_complex(a_d);
+    const std::complex<double> scale = load_complex(s_d);
     for (std::size_t i = 0; i < n; ++i) {
         a[i] = from_zero(cmul(scale, a[i]));
     }
 }
 
-// amps[i] <- d[local(i)] * amps[i] for i in [begin, end), local(i) assembled
-// from the operand bits of i: the diagonal kernel for a block whose lowest
-// operand is below kRunKernelMinQubit.
-MENOS_KERNEL_CLONES
-void scale_elements(std::complex<double>* amps,
-                    std::size_t begin,
-                    std::size_t end,
-                    const std::uint32_t* operands,
-                    std::size_t k,
-                    const std::complex<double>* d) {
+void baseline_scale_elements(double* amps_d,
+                             std::size_t begin,
+                             std::size_t end,
+                             const std::uint32_t* operands,
+                             std::size_t k,
+                             const double* d_d) {
+    std::complex<double>* const amps = as_complex(amps_d);
     for (std::size_t i = begin; i < end; ++i) {
         std::size_t local = 0;
         for (std::size_t j = 0; j < k; ++j) {
             local |= ((i >> operands[j]) & std::size_t{1}) << j;
         }
-        amps[i] = from_zero(cmul(d[local], amps[i]));
+        amps[i] = from_zero(cmul(load_complex(d_d + 2 * local), amps[i]));
     }
 }
+
+void baseline_two_qubit(double* amps_d,
+                        std::size_t begin,
+                        std::size_t end,
+                        std::uint32_t q0,
+                        std::uint32_t q1,
+                        const double* m) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
+    std::complex<double>* const state = as_complex(amps_d);
+    const std::uint32_t lo = q0 < q1 ? q0 : q1;
+    const std::uint32_t hi = q0 < q1 ? q1 : q0;
+    const std::size_t b0 = std::size_t{1} << q0;
+    const std::size_t b1 = std::size_t{1} << q1;
+    std::array<std::complex<double>, 16> matrix{};
+    for (std::size_t e = 0; e < 16; ++e) {
+        matrix[e] = load_complex(m + 2 * e);
+    }
+    for (std::size_t i = begin; i < end; ++i) {
+        const std::size_t base = insert_zero_bit(insert_zero_bit(i, lo), hi);
+        const std::array<std::size_t, 4> idx = {base, base | b0, base | b1, base | b0 | b1};
+        const std::array<std::complex<double>, 4> a = {
+            state[idx[0]], state[idx[1]], state[idx[2]], state[idx[3]]};
+        for (std::size_t out = 0; out < 4; ++out) {
+            std::complex<double> sum{0.0, 0.0};
+            for (std::size_t in = 0; in < 4; ++in) {
+                sum += matrix[out * 4 + in] * a[in];
+            }
+            state[idx[out]] = sum;
+        }
+    }
+}
+
+constexpr DenseKernelTable kBaselineTable{
+    .pair_run = baseline_pair_run,
+    .pair_blocks = baseline_pair_blocks,
+    .scale_run = baseline_scale_run,
+    .scale_elements = baseline_scale_elements,
+    .two_qubit = baseline_two_qubit,
+};
+
+// A test's forced table, or nullptr for the detected one.
+std::atomic<const DenseKernelTable*> g_forced_table{nullptr};
+
+const DenseKernelTable* detected_table() {
+    static const DenseKernelTable* const table =
+        (avx2_dense_kernels() != nullptr && cpu_supports_avx2()) ? avx2_dense_kernels()
+                                                                 : &kBaselineTable;
+    return table;
+}
+
+const double* as_doubles(const std::complex<double>* p) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const double*>(p);
+}
+
+double* as_doubles(std::complex<double>* p) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<double*>(p);
+}
+
+// Runs shorter than 2^kRunKernelMinQubit are not worth a call each.
+inline constexpr std::uint32_t kRunKernelMinQubit = 3;
+// A 1-qubit gate on an operand up to this walks whole blocks, one call per
+// thread's chunk (pair_blocks), instead of one call per run of 2^q pairs:
+// measured in item 8's gate run, operand 3's 8-pair runs on one thread, and
+// operands 0-2 on every thread, lost much of the AVX2 gain to the per-call
+// setup (docs/adr/0028 section 19.8).
+inline constexpr std::uint32_t kPairBlocksMaxQubit = 3;
 
 // k = 1. For each pair (i0, i1) differing only in bit q, the generic kernel
 // gathers {state[i0], state[i1]} as local indices 0 and 1 and computes
@@ -150,7 +230,7 @@ void scale_elements(std::complex<double>* amps,
 // same expression in the same order, so the result is bitwise identical;
 // only the loop shape differs: the pairs are walked as contiguous runs of
 // 2^q indices with bit q clear, each paired with the run 2^q above it, so
-// the inner loop has unit stride and vectorises.
+// the inner loop has unit stride.
 // q is the operand and num_threads the team cap; both named at the one call site.
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 void apply_matrix_1q(std::span<std::complex<double>> state,
@@ -158,25 +238,21 @@ void apply_matrix_1q(std::span<std::complex<double>> state,
                      std::uint32_t q,
                      std::uint32_t num_threads) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
+    const DenseKernelTable& kernels = active_dense_kernels();
     const std::size_t bit = std::size_t{1} << q;
-    const std::complex<double> m00 = matrix[0];
-    const std::complex<double> m01 = matrix[1];
-    const std::complex<double> m10 = matrix[2];
-    const std::complex<double> m11 = matrix[3];
+    const double* const m = as_doubles(matrix.data());
     const std::size_t pairs = state.size() >> 1;
     std::complex<double>* const amps = state.data();
-    if (q < kRunKernelMinQubit && team_size(pairs, num_threads) == 1) {
-        switch (q) {
-            case 0:
-                pair_blocks<0>(amps, state.size(), m00, m01, m10, m11);
-                return;
-            case 1:
-                pair_blocks<1>(amps, state.size(), m00, m01, m10, m11);
-                return;
-            default:
-                pair_blocks<2>(amps, state.size(), m00, m01, m10, m11);
-                return;
-        }
+    if (q <= kPairBlocksMaxQubit) {
+        // Whole blocks of 2^(q+1) amplitudes, one call per thread's chunk of
+        // blocks: a call per run of 2^q pairs would cost a table call and the
+        // matrix broadcasts every one to eight pairs.
+        const std::size_t block = std::size_t{2} << q;
+        auto blocks = [&](std::size_t begin, std::size_t end) {
+            kernels.pair_blocks(as_doubles(amps + (begin * block)), (end - begin) * block, q, m);
+        };
+        parallel_for(state.size() / block, team_size(pairs, num_threads), blocks);
+        return;
     }
     // Pair p lives at i0 = insert_zero_bit(p, q) = (p >> q) * 2 * bit + (p & (bit - 1)).
     auto sweep = [&](std::size_t begin, std::size_t end) {
@@ -189,7 +265,7 @@ void apply_matrix_1q(std::span<std::complex<double>> state,
             std::complex<double>* const hi = lo + bit;
             const std::size_t from = p - run_start;
             const std::size_t to = run_end - run_start;
-            pair_run(lo + from, hi + from, to - from, m00, m01, m10, m11);
+            kernels.pair_run(as_doubles(lo + from), as_doubles(hi + from), to - from, m);
             p = run_end;
         }
     };
@@ -198,9 +274,8 @@ void apply_matrix_1q(std::span<std::complex<double>> state,
 
 // k = 2. Local index bit j is operand j (operands[0] is local bit 0), exactly
 // as in the generic kernel, so a reversed or non-adjacent operand pair keeps
-// the generic kernel's local ordering. Zero bits are inserted at the lower
-// operand position first, then the higher, which leaves both positions clear.
-// Each output sums in = 0..3 in order from zero: bitwise identical.
+// the generic kernel's local ordering. Each output sums in = 0..3 in order
+// from zero: bitwise identical.
 // q0 and q1 keep operands[0] and operands[1]'s order, which is the kernel's
 // local-bit order; num_threads is the team cap. One call site passes them in
 // that order.
@@ -211,25 +286,12 @@ void apply_matrix_2q(std::span<std::complex<double>> state,
                      std::uint32_t q1,
                      std::uint32_t num_threads) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
-    const std::uint32_t lo = q0 < q1 ? q0 : q1;
-    const std::uint32_t hi = q0 < q1 ? q1 : q0;
-    const std::size_t b0 = std::size_t{1} << q0;
-    const std::size_t b1 = std::size_t{1} << q1;
+    const DenseKernelTable& kernels = active_dense_kernels();
     const std::size_t groups = state.size() >> 2;
+    double* const amps = as_doubles(state.data());
+    const double* const m = as_doubles(matrix.data());
     auto sweep = [&](std::size_t begin, std::size_t end) {
-        for (std::size_t i = begin; i < end; ++i) {
-            const std::size_t base = insert_zero_bit(insert_zero_bit(i, lo), hi);
-            const std::array<std::size_t, 4> idx = {base, base | b0, base | b1, base | b0 | b1};
-            const std::array<std::complex<double>, 4> a = {
-                state[idx[0]], state[idx[1]], state[idx[2]], state[idx[3]]};
-            for (std::size_t out = 0; out < 4; ++out) {
-                std::complex<double> sum{0.0, 0.0};
-                for (std::size_t in = 0; in < 4; ++in) {
-                    sum += matrix[out * 4 + in] * a[in];
-                }
-                state[idx[out]] = sum;
-            }
-        }
+        kernels.two_qubit(amps, begin, end, q0, q1, m);
     };
     parallel_for(groups, team_size(groups, num_threads), sweep);
 }
@@ -265,6 +327,7 @@ void apply_diagonal(std::span<std::complex<double>> state,
                     std::span<const std::complex<double>> matrix,
                     std::span<const std::uint32_t> operands,
                     std::uint32_t num_threads) {
+    const DenseKernelTable& kernels = active_dense_kernels();
     const std::size_t k = operands.size();
     const std::size_t dim = std::size_t{1} << k;
     std::vector<std::complex<double>> d(dim);
@@ -277,10 +340,11 @@ void apply_diagonal(std::span<std::complex<double>> state,
     }
     const std::size_t run = std::size_t{1} << q_min;
     const std::size_t runs = state.size() >> q_min;
-    std::complex<double>* const amps = state.data();
+    double* const amps = as_doubles(state.data());
+    const double* const entries = as_doubles(d.data());
     if (q_min < kRunKernelMinQubit) {
         auto elements = [&](std::size_t begin, std::size_t end) {
-            scale_elements(amps, begin, end, operands.data(), k, d.data());
+            kernels.scale_elements(amps, begin, end, operands.data(), k, entries);
         };
         parallel_for(state.size(), team_size(state.size() >> k, num_threads), elements);
         return;
@@ -292,13 +356,73 @@ void apply_diagonal(std::span<std::complex<double>> state,
             for (std::size_t j = 0; j < k; ++j) {
                 local |= ((base >> operands[j]) & std::size_t{1}) << j;
             }
-            scale_run(amps + base, run, d[local]);
+            kernels.scale_run(amps + 2 * base, run, entries + 2 * local);
         }
     };
     parallel_for(runs, team_size(state.size() >> k, num_threads), sweep);
 }
 
 }  // namespace
+
+const DenseKernelTable& baseline_dense_kernels() {
+    return kBaselineTable;
+}
+
+#if !defined(MENOS_HAVE_AVX2_KERNELS)
+const DenseKernelTable* avx2_dense_kernels() {
+    return nullptr;
+}
+#endif
+
+bool cpu_supports_avx2() {
+#if defined(_MSC_VER) && defined(_M_X64)
+    // CPUID.1:ECX.OSXSAVE[27] and AVX[28], XCR0 bits 1 and 2 (the OS saves
+    // XMM and YMM state), then CPUID.(7,0):EBX.AVX2[5].
+    std::array<int, 4> r{};
+    __cpuid(r.data(), 0);
+    if (r[0] < 7) {
+        return false;
+    }
+    __cpuid(r.data(), 1);
+    const bool osxsave = (r[2] & (1 << 27)) != 0;
+    const bool avx = (r[2] & (1 << 28)) != 0;
+    if (!osxsave || !avx || (_xgetbv(0) & 0x6U) != 0x6U) {
+        return false;
+    }
+    __cpuidex(r.data(), 7, 0);
+    return (r[1] & (1 << 5)) != 0;
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
+    // The compiler runtime's CPU model, which reports AVX2 only when the OS
+    // has enabled YMM state (it reads XCR0 itself).
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx2") != 0;
+#else
+    return false;
+#endif
+}
+
+const DenseKernelTable& active_dense_kernels() {
+    const DenseKernelTable* const forced = g_forced_table.load(std::memory_order_acquire);
+    return forced != nullptr ? *forced : *detected_table();
+}
+
+KernelIsa active_dense_kernel_isa() {
+    return &active_dense_kernels() == &kBaselineTable ? KernelIsa::Baseline : KernelIsa::Avx2;
+}
+
+void force_dense_kernel_isa(KernelIsa isa) {
+    if (isa == KernelIsa::Baseline) {
+        g_forced_table.store(&kBaselineTable, std::memory_order_release);
+        return;
+    }
+    common::ensure(avx2_dense_kernels() != nullptr && cpu_supports_avx2(),
+                   "force_dense_kernel_isa: AVX2 is not available on this build or CPU");
+    g_forced_table.store(avx2_dense_kernels(), std::memory_order_release);
+}
+
+void reset_dense_kernel_isa() {
+    g_forced_table.store(nullptr, std::memory_order_release);
+}
 
 void apply_matrix(std::span<std::complex<double>> state,
                   std::span<const std::complex<double>> matrix,
@@ -417,53 +541,31 @@ std::complex<double> i_power(int k) {
 
 }  // namespace
 
+void expectation_of_term_accumulate(std::span<const std::complex<double>> chunk,
+                                    std::span<const std::complex<double>> partner,
+                                    std::uint64_t x_local,
+                                    std::uint64_t z_local,
+                                    bool global_negative,
+                                    std::complex<double>& acc) {
+    for (std::size_t j = 0; j < chunk.size(); ++j) {
+        const std::uint64_t k = j ^ x_local;
+        const bool negative = ((std::popcount(z_local & k) & 1) != 0) != global_negative;
+        const std::complex<double> term = std::conj(chunk[j]) * partner[k];
+        acc += negative ? -term : term;
+    }
+}
+
+std::complex<double> expectation_term_phase(std::uint64_t x_mask, std::uint64_t z_mask) {
+    return i_power(std::popcount(x_mask & z_mask));
+}
+
 std::complex<double> expectation_of_term(std::span<const std::complex<double>> state,
                                          std::uint64_t x_mask,
                                          std::uint64_t z_mask) {
-    const int y_count = std::popcount(x_mask & z_mask);
-
+    // The whole state is one chunk: no high bits, so no global sign.
     std::complex<double> sum{0.0, 0.0};
-    for (std::size_t m = 0; m < state.size(); ++m) {
-        const std::uint64_t k = m ^ x_mask;
-        const bool negative = (std::popcount(z_mask & k) & 1) != 0;
-        const std::complex<double> term = std::conj(state[m]) * state[k];
-        sum += negative ? -term : term;
-    }
-    return i_power(y_count) * sum;
-}
-
-std::vector<std::complex<double>> expectation_of_diagonal_terms(
-    std::span<std::complex<double>> state, std::span<const std::uint64_t> z_masks) {
-    const std::size_t total = state.size();
-    common::ensure(total > 0 && (total & (total - 1)) == 0,
-                   "expectation_of_diagonal_terms: state size must be a power of two");
-    // Probabilities p[m] = re^2 + im^2, written over the state in place. The
-    // double view of a std::complex<double> array is standard-blessed, and
-    // p[m] lands in complex slot m / 2, which was read at iteration m / 2 <= m.
-    double* p = reinterpret_cast<double*>(state.data());
-    for (std::size_t m = 0; m < total; ++m) {
-        const double re = state[m].real();
-        const double im = state[m].imag();
-        p[m] = re * re + im * im;
-    }
-    // In-place Walsh-Hadamard transform: afterwards p[z] = sum over m of
-    // p[m] * (-1)^popcount(z & m), which is <Z-string z> for every z at once.
-    for (std::size_t len = 1; len < total; len <<= 1) {
-        for (std::size_t i = 0; i < total; i += len << 1) {
-            for (std::size_t j = i; j < i + len; ++j) {
-                const double a = p[j];
-                const double b = p[j + len];
-                p[j] = a + b;
-                p[j + len] = a - b;
-            }
-        }
-    }
-    std::vector<std::complex<double>> out;
-    out.reserve(z_masks.size());
-    for (const std::uint64_t z : z_masks) {
-        out.emplace_back(p[z], 0.0);
-    }
-    return out;
+    expectation_of_term_accumulate(state, state, x_mask, z_mask, /*global_negative=*/false, sum);
+    return expectation_term_phase(x_mask, z_mask) * sum;
 }
 
 }  // namespace menos::kernels::cpu

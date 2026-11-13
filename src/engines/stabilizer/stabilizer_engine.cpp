@@ -1,5 +1,6 @@
 #include "engines/stabilizer/stabilizer_engine.h"
 
+#include <algorithm>
 #include <complex>
 #include <map>
 #include <optional>
@@ -9,6 +10,8 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "engines/stabilizer/tableau.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -124,7 +127,10 @@ BitString project(const std::vector<bool>& full,
 class StabilizerCountsSampler : public RegionCountsSampler {
 public:
     StabilizerCountsSampler(BitString base, std::vector<BitString> generators)
-        : base_(std::move(base)), generators_(std::move(generators)) {}
+        : base_(std::move(base)), generators_(std::move(generators)) {
+        charge_.set(common::buffer_bytes(generators_) +
+                    generators_.size() * common::bitstring_words_bytes(base_.num_bits()));
+    }
 
     [[nodiscard]] BitString sample_one(common::Rng& rng) const override {
         BitString outcome = base_;
@@ -136,7 +142,12 @@ public:
                 bits_left = 64;
             }
             if ((word & std::uint64_t{1}) != 0) {
-                outcome |= generator;
+                // XOR, never OR: a generator flips the base outcome's bits,
+                // so a base bit that is 1 becomes 0. OR left it at 1, which
+                // made a qubit whose base bit was set come out 1 in every
+                // shot that selected a generator flipping it (the Phase 24
+                // stabilizer sampler bug, docs/adr/0028 section 18).
+                outcome ^= generator;
             }
             word >>= 1;
             --bits_left;
@@ -147,7 +158,51 @@ public:
 private:
     BitString base_;
     std::vector<BitString> generators_;
+    common::MemoryLedger::Charge charge_;
 };
+
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4): the tableau, plus the largest of
+//   * reduce(), with its working copies and the subspace it returns;
+//   * sampling: the subspace, its projection to the measured clbits, the
+//     sampler, each shot's outcome and (a sole region) the histogram;
+//   * expectation: what sampling left behind (the histogram, or the sampler
+//     a Factorized region returns), one complex per term, and
+//     expectation_sign()'s working state for one term.
+std::uint64_t peak_bytes_of(const EngineEstimateRequest& request) {
+    const std::uint32_t n = request.num_qubits;
+    const std::uint32_t width = request.bitstring_width;
+    std::uint64_t transient = 0;
+    std::uint64_t left_by_counts = 0;
+    if (request.want_counts) {
+        // The projected base and up to n generators (one reserved list), each
+        // with its own words, held by the sampler.
+        const std::uint64_t projected =
+            checked_add(common::heap_block_bytes(checked_mul(n, sizeof(BitString))),
+                        checked_mul(std::uint64_t{n} + 1, common::bitstring_heap_bytes(width)));
+        const std::uint64_t sampler =
+            checked_add(projected, common::heap_block_bytes(sizeof(StabilizerCountsSampler)));
+        const std::uint64_t histogram =
+            request.is_sole_region
+                ? common::counts_map_bytes(
+                      common::distinct_outcomes_bound(request.shots, std::min(n, width)), width)
+                : 0;
+        const std::uint64_t sampling =
+            checked_add(checked_add(Tableau::subspace_bytes(n), sampler),
+                        checked_add(histogram, common::bitstring_heap_bytes(width)));
+        transient = std::max(Tableau::reduce_peak_bytes(n), sampling);
+        left_by_counts = request.is_sole_region ? histogram : sampler;
+    }
+    if (request.want_expectation) {
+        const std::uint64_t terms = common::heap_block_bytes(
+            checked_mul(static_cast<std::uint64_t>(request.observable->terms.size()),
+                        sizeof(std::complex<double>)));
+        transient = std::max(
+            transient,
+            checked_add(checked_add(left_by_counts, terms), Tableau::expectation_peak_bytes(n)));
+    }
+    return checked_add(Tableau::rows_bytes(n), transient);
+}
 
 }  // namespace
 
@@ -212,11 +267,37 @@ CostEstimate StabilizerEngine::estimate(const EngineEstimateRequest& request) co
                 static_cast<std::uint64_t>(request.observable->terms.size());
             work = checked_add(work, checked_mul(num_terms, elimination));
         }
-        const std::uint64_t row_bytes =
-            checked_mul(std::uint64_t{2}, checked_mul(words, std::uint64_t{8}));
-        const std::uint64_t peak_bytes =
-            checked_add(checked_mul(num_qubits, row_bytes), checked_mul(words, std::uint64_t{8}));
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{
+            /*feasible=*/true, peak_bytes_of(request), work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20): component 0 counts the gates,
+        // each with a fixed dispatch cost; component 1 the tableau updates,
+        // n rows per gate; component 2 the word operations of the
+        // eliminations and of sampling, n words per shot; component 3 the
+        // eliminations' pivot scans, a bit test per (column, row). A rowsum
+        // is a word operation since its phase is summed a word at a time
+        // (docs/adr/0028 section 22); before, it cost n bit steps, so a dense
+        // tableau's elimination was n^3 while this counted n^2 words.
+        const double n = static_cast<double>(num_qubits);
+        const double w = static_cast<double>(words);
+        const double gates = static_cast<double>(num_gates);
+        double word_ops = 0.0;
+        double eliminations = 0.0;
+        const double one_elimination = 2.0 * n * n * w;
+        if (request.want_counts) {
+            word_ops += one_elimination + (static_cast<double>(request.shots) * n * w);
+            eliminations += 1.0;
+        }
+        if (request.want_expectation) {
+            const double terms = static_cast<double>(request.observable->terms.size());
+            word_ops += terms * one_elimination;
+            eliminations += terms;
+        }
+        auto& stabilizer = estimate.time.counts[static_cast<std::size_t>(Engine::Stabilizer)];
+        stabilizer[0] = gates;
+        stabilizer[1] = gates * n;
+        stabilizer[2] = word_ops;
+        stabilizer[3] = eliminations * n * n;
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
@@ -224,6 +305,7 @@ CostEstimate StabilizerEngine::estimate(const EngineEstimateRequest& request) co
 
 EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& request) const {
     Tableau tableau(request.num_qubits);
+    const common::MemoryLedger::Charge tableau_charge(tableau.held_bytes());
     // Between two gates the tableau is a complete, valid stabilizer state, so
     // this is a safe boundary to abandon at (Phase 11, docs/adr/0015). This is
     // also the engine with the cheapest work per boundary (~1.3 us at n=200),
@@ -265,6 +347,11 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
 
     if (request.want_counts) {
         const Tableau::AffineSubspace subspace = tableau.reduce();
+        // The subspace's n-bit vectors, held while they are projected; a
+        // std::vector<bool> asks for at least one byte per 8 bits.
+        const common::MemoryLedger::Charge subspace_charge(
+            common::buffer_bytes(subspace.generators) +
+            (subspace.generators.size() + 1) * ((std::uint64_t{request.num_qubits} + 7) / 8));
         BitString base = project(subspace.base, request.measure_targets, request.bitstring_width);
         std::vector<BitString> generators;
         generators.reserve(subspace.generators.size());
@@ -272,7 +359,6 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
             generators.push_back(
                 project(generator, request.measure_targets, request.bitstring_width));
         }
-
         if (request.is_sole_region) {
             common::Rng rng(request.seed);
             const StabilizerCountsSampler sampler(std::move(base), std::move(generators));
@@ -287,6 +373,8 @@ EngineExecutionResult StabilizerEngine::execute(const EngineExecutionRequest& re
                     request.monitor->at_safe_boundary(completed);
                 }
             }
+            const common::MemoryLedger::Charge histogram_charge(
+                common::histogram_bytes(counts.size(), request.bitstring_width));
             result.counts = std::move(counts);
         } else {
             result.counts_sampler =

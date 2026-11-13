@@ -1,0 +1,11 @@
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.52981
+time_model engine=0 1.76708e-06 2.45597e-10 1.23855e-07 0 0
+time_model engine=1 0 2.51741e-09 3.2067e-10 1.56285e-10 0
+time_model engine=2 0 5.97226e-09 2.34376e-10 1.81359e-07 1.94539e-07
+time_model engine=3 1.66262e-06 7.37023e-09 3.62878e-09 1.18756e-09 8.94579e-08
+time_model engine=4 0 8.87517e-10 3.60918e-06 0 0
+time_model engine=5 1.26576e-07 2.23964e-10 1.09788e-07 0 0
+time_model engine=6 8.62773e-08 6.02028e-10 6.39809e-07 0 0
+calibrated: work_units_per_second=4.6984e+09 memory_bandwidth_bytes_per_second=3.67391e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0

@@ -1,11 +1,11 @@
 // Targeted tests for the min-fill vertex choice (src/analysis/min_fill_queue.h;
-// docs/adr/0025 sections 10.2 and 12).
+// docs/adr/0028 sections 10.2 and 12).
 //
 // The oracle is the scan the queue replaced: over every remaining vertex in
 // increasing index order, replace the best only on a strictly smaller fill,
 // so ties go to the lowest index. Fills are drawn from a handful of values,
 // so most choices are ties; making ties go to any other vertex fails these
-// tests (docs/adr/0025 section 12.2 records that mutation check).
+// tests (docs/adr/0028 section 12.2 records that mutation check).
 
 #include "analysis/min_fill_queue.h"
 

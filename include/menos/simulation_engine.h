@@ -1,7 +1,9 @@
 #pragma once
 
 #include <complex>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -100,6 +102,17 @@ public:
 
     // Returns normally to continue; throws to abandon the run.
     virtual void at_safe_boundary(std::uint64_t boundaries_crossed) const = 0;
+
+    // Called by the runtime's Factorized executor immediately before
+    // (starting = true) and after (starting = false) it runs region `region`
+    // of the plan on its engine; never for an idle region, which runs on no
+    // engine (Phase 24, docs/adr/0028 sections 16.4 and 16.8). It reports, it
+    // never decides: the default does nothing, and the api layer's monitor
+    // uses it to attribute elapsed time per region. Engines never call it.
+    virtual void at_region_boundary(std::size_t region, bool starting) const {
+        static_cast<void>(region);
+        static_cast<void>(starting);
+    }
 };
 
 // One region's execution request. operations are this region's own
@@ -164,6 +177,24 @@ struct EngineExecutionRequest {
     // CPU dense engine only; every other engine applies the operations as
     // given. Off unless the job asked for it.
     bool fuse_diagonal_gates = false;
+    // Where the disk tier creates its scratch file (Phase 23, docs/adr/0027
+    // section 3.3); empty means the system's temporary directory. Read only
+    // by the disk-tier engine.
+    std::filesystem::path scratch_directory = {};
+    // The chunked executor's chunk and window sizes, as qubit counts, for
+    // tests that run the tier on a small state (docs/adr/0027 section 9
+    // Q10: an internal seam, not public API). 0 lets the engine choose, which
+    // every job does; a set chunk with an unset window takes the smallest
+    // window that fits the gates. Read only by the disk-tier engine.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
+    // RunOptions::fuse_gates (Phase 24 item 7, docs/adr/0028 section 17,
+    // src/ir/fuse_gates.h): the dense engines (CPU, CUDA and the disk tier)
+    // sweep the state once per fused block instead of once per gate, with
+    // the plan their estimate() charged. On by default, as RunOptions' own
+    // default, so a request built directly runs the configuration jobs run
+    // in; off, every operation is applied on its own exactly as before.
+    bool fuse_gates = true;
 };
 
 // counts is populated iff request.want_counts && request.is_sole_region;
@@ -244,6 +275,23 @@ struct EngineEstimateRequest {
     // 0 for every other engine, and the trajectory engine reports 0 as
     // infeasible rather than costing an empty run.
     std::uint64_t trajectories = 0;
+    // The counts request's shape, which the peak-byte figure depends on (Phase
+    // 21, docs/adr/0025 section 3.4): shots sizes the sampling buffers and
+    // bounds the histogram, bitstring_width sizes every outcome key, and
+    // is_sole_region says whether the engine returns a histogram (true) or a
+    // RegionCountsSampler that the caller draws from (false, a Factorized
+    // region). They match EngineExecutionRequest's fields of the same names.
+    // The defaults describe a request with no counts; a caller that asks for
+    // counts and leaves shots at 0 is costed for an empty histogram.
+    std::uint64_t shots = 0;
+    std::uint32_t bitstring_width = 0;
+    bool is_sole_region = true;
+    // The chunked executor's chunk and window sizes, as EngineExecutionRequest
+    // takes them (Phase 23, docs/adr/0027): 0, the default, lets the engine
+    // choose. Read only by the disk-tier engine, whose estimate() reports the
+    // plan it will execute.
+    std::uint32_t tier_chunk_qubits = 0;
+    std::uint32_t tier_window_qubits = 0;
     // Branch-and-bound bound (planning speed only, never a result change).
     // When set below its default, the caller already holds a feasible
     // alternative costing exactly this many work units, so an engine whose
@@ -255,6 +303,12 @@ struct EngineEstimateRequest {
     // and ties already go to the earlier-enumerated candidate. An engine may
     // ignore the field; the default never prunes.
     std::uint64_t prune_above_work_units = std::numeric_limits<std::uint64_t>::max();
+    // Whether the dense engines fuse gates (Phase 24 item 7, docs/adr/0028
+    // section 17): their work units then count one pass per fused block and
+    // their peak bytes carry the fusion plan and the block transients, exactly
+    // what execute() with the same flag does. Matches
+    // EngineExecutionRequest::fuse_gates, on by default.
+    bool fuse_gates = true;
 };
 
 // Prefix of every infeasible_reason produced by the bound above.
@@ -282,6 +336,14 @@ public:
     // runtime resolve a Region's (engine, backend) pair to exactly one
     // implementation.
     [[nodiscard]] virtual Backend backend() const = 0;
+    // Where this implementation keeps the region's state (Phase 23,
+    // docs/adr/0027). Defaulted, unlike backend(), because every engine before
+    // Phase 23 keeps its state in one in-memory buffer and only the tiered
+    // dense engines say otherwise; the runtime resolves a Region's (engine,
+    // backend, tier) triple to exactly one implementation.
+    [[nodiscard]] virtual Tier tier() const {
+        return Tier::InMemory;
+    }
     [[nodiscard]] virtual EngineCapabilities capabilities() const = 0;
 
     // The work-unit/peak-byte cost of running request.operations on an

@@ -141,6 +141,17 @@ TEST_F(CudaBackendSelectionTest, AnUncalibratedProfileNeverSelectsTheDevice) {
 // measurements, reproduces the fact that small circuits belong on the CPU and
 // large ones on the GPU. The qubit counts are far apart on purpose so the
 // assertion does not depend on exactly where the crossover falls.
+//
+// The large case (owner, 2026-11-12, docs/adr/0028 section 23) is a 24-qubit
+// expectation. On the development machine's RTX 4060 the crossover benchmark
+// measured, for a statevector, the CPU faster at 20 qubits (29 ms against
+// 40 ms), a tie at 22 and the GPU 1.23x faster at 24: a margin inside the
+// time model's error, so a statevector case asserted either what was not
+// true there or what the model cannot resolve. An expectation copies no state
+// back, and the GPU is measured 1.64x faster at 24. Z on every qubit keeps
+// the whole circuit in the light cone. The check is on the dense candidate,
+// the one the CPU/CUDA comparison decides; which engine then wins the plan is
+// another question.
 TEST_F(CudaBackendSelectionTest,
        TheCalibratedProfileKeepsTinyCircuitsOnTheCpuAndLargeOnesOnTheGpu) {
     const HardwareProfile& hw = calibrated_hardware_profile();
@@ -153,10 +164,20 @@ TEST_F(CudaBackendSelectionTest,
     EXPECT_EQ(small.regions[0].backend, Backend::Cpu)
         << "a 3-qubit circuit is dominated by launch overhead and belongs on the CPU";
 
-    const Plan large = plan_job(dense_job(20), hw);
-    ASSERT_EQ(large.regions.size(), 1U);
-    EXPECT_EQ(large.regions[0].backend, Backend::Cuda)
-        << "a 20-qubit dense circuit should be faster on this GPU";
+    constexpr std::uint32_t kLarge = 24;
+    JobSpec large_job = dense_job(kLarge);
+    large_job.want_statevector = false;
+    PauliString all_z{.num_qubits = kLarge, .x_words = {0}, .z_words = {(1ULL << kLarge) - 1}};
+    large_job.expectation = Observable{.terms = {{all_z, {1.0, 0.0}}}};
+    const Plan large = plan_job(large_job, hw);
+    const auto dense = std::find_if(
+        large.candidates.begin(), large.candidates.end(), [](const CandidateSummary& c) {
+            return c.strategy == Strategy::DirectDense;
+        });
+    ASSERT_NE(dense, large.candidates.end());
+    ASSERT_TRUE(dense->feasible) << dense->infeasible_reason;
+    EXPECT_EQ(dense->backend, Backend::Cuda)
+        << "a 24-qubit dense expectation should be faster on this GPU";
 }
 
 // ---------------------------------------------------------------------------

@@ -6,15 +6,16 @@ The native API, exported from the top-level `menos` package. It is the thin laye
 from menos import Circuit, NoiseMethod, Opcode, RunOptions, Result, run
 ```
 
-The top-level module exports exactly: `Circuit`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
+The top-level module exports exactly: `Circuit`, `CircuitBuilder`, `Parameter`, `ParameterExpression`, `QuantumRegister`, `ClassicalRegister`, `NoiseMethod`, `Opcode`, `Result`, `RunOptions`, `run`, `run_batch`, `ReadoutMitigationOptions`, `MitigatedResult`, `readout_calibration_circuits`, `run_readout_mitigated`, `from_qasm3`, `release_device_memory`, `MenosError`, `InvalidCircuitError`, `UnsupportedFeatureError`, `ResourceExceededError`, `InternalError`. `Observable` and `PauliString` are available only from `menos._core`.
 
 ## `run`
 
 ```text
 run(circuit: Circuit, options: RunOptions) -> Result
+run(circuit: CircuitBuilder, options: RunOptions) -> Result
 ```
 
-Validates the circuit and the output request, plans the job, executes it, and returns the result. Raises [`InvalidCircuitError`, `UnsupportedFeatureError` or `ResourceExceededError`](/reference/exceptions). When `options.time_budget_seconds` is set, the run is [monitored](/runtime/monitoring) and may be [replanned](/runtime/replanning).
+Validates the circuit and the output request, plans the job, executes it, and returns the result. Raises [`InvalidCircuitError`, `UnsupportedFeatureError` or `ResourceExceededError`](/reference/exceptions). When `options.time_budget_seconds` is set, the run is [monitored](/runtime/monitoring) and may be [replanned](/runtime/replanning). A `CircuitBuilder` runs as its `to_circuit()`, so one that still has parameters raises `InvalidCircuitError` naming them (since Phase 25).
 
 ## `run_batch`
 
@@ -55,6 +56,14 @@ options.seed = 1
 assert sum(menos.run(circuit, options).counts.values()) == 100
 ```
 
+## `release_device_memory`
+
+```text
+release_device_memory() -> None
+```
+
+Gives back to the CUDA driver the device memory MENOS keeps between jobs (Phase 22). MENOS allocates every GPU state from one memory pool and keeps a finished job's state memory in the pool, so the next job of the same size pays no allocation; the planner counts that memory as available, and `explain()` shows it as `device_pool_bytes` beside `device_available_bytes`. Call this when another process needs the GPU. A no-op in a build without CUDA, on a machine without a GPU, or when the pool is already empty.
+
 ## Readout mitigation
 
 ```text
@@ -93,6 +102,7 @@ Circuit.append_batch(opcodes, qubits, qubit_offsets, params, param_offsets) -> N
 Circuit.num_qubits() -> int
 Circuit.num_clbits() -> int
 Circuit.global_phase: float          # read/write, default 0.0
+Circuit.operations() -> list[tuple]  # read-only
 ```
 
 | Member | Notes |
@@ -103,6 +113,31 @@ Circuit.global_phase: float          # read/write, default 0.0
 | `append_channel` | Adds a noise channel: each Kraus operator a flat, row-major `2ᵏ × 2ᵏ` list; 1 to 5 qubits; must be trace preserving within `1e-12`. See [Noise Models](/build/noise-models) |
 | `append_batch` | Bulk ingestion of named gates in compressed-sparse-row form (qubit and parameter offsets). Used by the Qiskit converter; equivalent to repeated `append` |
 | `global_phase` | Multiplies the statevector by `e^{i·phase}` |
+| `operations` | The operations in order, as tuples: `("gate", Opcode, qubits, params)`, `("unitary", qubits, matrix)`, `("measure", qubit, clbit, readout_error or None)`, `("channel", qubits, kraus)` (since Phase 25) |
+
+## `CircuitBuilder`
+
+Named gate methods, parameters, registers, `compose`, `inverse`, `repeat` and OpenQASM 3 export, producing ordinary `Circuit`s (since Phase 25). Every member is described in the [Circuit Builder API](/reference/circuit-builder-api); the guide is [Writing Circuits](/build/circuit-builder).
+
+```text
+CircuitBuilder(num_qubits: int = 0, num_clbits: int = 0)   # registers q and c
+CircuitBuilder.from_circuit(circuit: Circuit) -> CircuitBuilder
+add_qreg(name, size) -> QuantumRegister;  add_creg(name, size) -> ClassicalRegister
+qreg(name), creg(name), qregs(), cregs(), num_qubits(), num_clbits()
+x y z h s sdg t tdg sx sxdg (qubit)        rx ry rz p (theta, qubit)
+u(theta, phi, lam, qubit)                    cx cz swap (q1, q2)
+cp(theta, control, target)                   rzz(theta, q1, q2)      ccx(c1, c2, target)
+unitary(matrix, qubits)   measure(qubit, clbit, readout_error=None)   measure_all()
+channel(kraus, qubits)    compose(other, qubits=[], clbits=[])        # each returns self
+inverse() -> CircuitBuilder               repeat(reps) -> CircuitBuilder
+parameters() -> list[str]                 operations() -> list[tuple]
+bind(values: dict[str | Parameter, float]) -> Circuit
+to_circuit() -> Circuit                   to_qasm3() -> str
+global_phase: float                       # read/write, default 0.0
+Parameter(name: str); Parameter.name
+ParameterExpression: + - * with floats and parameters; .terms, .constant, .is_constant(), .evaluate(values)
+QuantumRegister / ClassicalRegister: .name, .offset, .size, len(r), r[i] -> int
+```
 
 ## `Opcode`
 
@@ -119,14 +154,17 @@ RunOptions()
 | `shots` | `int` | `0` | Samples to draw. `0` requests no counts |
 | `want_statevector` | `bool` | `False` | Return the exact statevector |
 | `seed` | `int` | `0` | Seed for sampling |
-| `memory_budget_bytes` | `int` or `None` | `None` | Memory budget; `None` means 50% of physical memory |
+| `memory_budget_bytes` | `int` or `None` | `None` | The budget the planner checks each candidate's estimated peak against; `None` means 50% of physical memory. It selects plans and refuses jobs; it is not a process cap |
 | `expectation` | `Observable` or `None` | `None` | Observable to evaluate |
 | `time_budget_seconds` | `float` or `None` | `None` | Wall-clock budget for one execution attempt. Must be finite and > 0, otherwise `run` raises `InvalidCircuitError` |
 | `noise_method` | `NoiseMethod` | `NoiseMethod.Exact` | `Auto` lets a noisy counts request be sampled by [trajectories](/build/noise-models#trajectory-simulation) when cheaper; `Exact` keeps the density matrix |
 | `expectation_precision` | `float` or `None` | `None` | Target standard error of the expectation value. Finite and `> 0`, and requires `expectation`. Lets a noisy expectation be sampled by trajectories |
 | `max_threads` | `int` or `None` | `None` | Most CPU threads for gate application. `None` means every hardware thread; a value above the hardware count is treated as it; `0` raises `InvalidCircuitError`. Results are bit-for-bit identical for every value |
 | `fuse_diagonal_gates` | `bool` | `False` | Fuse each run of consecutive diagonal gates (`rz rzz cp cz s t ...`) into one diagonal unitary per block of at most 5 qubits before the CPU dense engine applies them. Exact up to rounding (within `1e-12`), but not bit-for-bit identical to the unfused run, and a CUDA run never fuses; off by default |
+| `fuse_gates` | `bool` | `True` | Gate fusion by containment in the dense engines (CPU, CUDA and the disk tier, Phase 24): a gate joins the newest block that shares a qubit with it when one qubit set contains the other, so the state is swept once per block instead of once per gate and no pass gets wider. Exact up to rounding (within `1e-12` of the gate-by-gate run); the fused run keeps every bit-for-bit identity the unfused one has (every thread count, CPU and CUDA, in memory and on the disk tier). `False` applies every gate on its own: results and `explain()` are then byte-identical to a run from before fusion existed |
 | `backend` | `Backend` or `None` | `None` | `None`: the planner chooses. `Backend.Cpu` or `Backend.Cuda` forces one (Phase 17); see [Forcing a backend](/planning/backend-selection#forcing-a-backend). A CUDA request that cannot be honoured raises `UnsupportedFeatureError` or `ResourceExceededError`, never runs on the CPU |
+| `tier` | `Tier` or `None` | `None` | `None`: the planner reaches for the disk tier only when the dense state does not fit `memory_budget_bytes` and no statevector is wanted (Phase 23). `Tier.Disk` forces it and never falls back: a statevector request, a noisy circuit or `Backend.Cuda` raises `UnsupportedFeatureError`, too little scratch space or a window over the budget raises `ResourceExceededError`. `Tier.InMemory` never uses it. Counts and expectation values on the disk tier are bit-for-bit the in-memory engine's |
+| `scratch_directory` | `pathlib.Path` or `None` | `None` | Where the disk tier keeps its scratch file (16 × 2ⁿ bytes, removed when the run ends). `None` means the system's temporary directory. The planner leaves 5% of the volume or 8 GiB, whichever is larger, untouched |
 
 At least one of counts (`shots > 0` with a measured circuit), a statevector, or an expectation must be requested. All fields are read/write.
 
@@ -143,6 +181,10 @@ menos._core.plan_cache_clear() -> None
 
 `Backend.Cpu` and `Backend.Cuda`, for `RunOptions.backend` (Phase 17).
 
+## `Tier`
+
+`Tier.InMemory`, `Tier.Disk` and `Tier.HostOffloaded`, for `RunOptions.tier` (Phase 23). `Tier.HostOffloaded` was measured and not built; requesting it raises `UnsupportedFeatureError`. See [Memory Constraints](/planning/memory-constraints).
+
 ## `Result`
 
 | Property | Type | Meaning |
@@ -152,10 +194,15 @@ menos._core.plan_cache_clear() -> None
 | `expectation_value` | `complex` or `None` | The expectation value |
 | `expectation_standard_error` | `float` or `None` | The measured standard error of a sampled expectation value; `None` for an exact one |
 | `exact` | `bool` | Whether nothing was approximated or sampled. `False` for a trajectory result |
-| `actual_state_bytes` | `int` | Peak bytes the engine actually used |
+| `actual_state_bytes` | `int` | The state bytes the engine reports for the run |
+| `peak_host_bytes` | `int` | The most host memory the execution held at once, measured by the runtime's memory ledger (Phase 21). Execution buffers only, not process memory: see [Memory Constraints](/planning/memory-constraints#what-the-budget-governs-and-what-the-peak-measures) |
+| `peak_device_bytes` | `int` | The same for CUDA device memory; `0` for a plan with no CUDA region (Phase 21) |
+| `peak_disk_bytes` | `int` | The same for the disk tier's scratch file; `0` for a plan with no disk-tier region (Phase 23) |
 | `execute_seconds` | `float` | Seconds executing the attempt that succeeded |
 | `sample_seconds` | `float` | Seconds sampling |
-| `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend` and `reason`. Empty if the job never replanned (Phase 17) |
+| `plan_seconds` | `float` | Seconds the initial plan took to produce, measured around the planner call; on a plan-cache hit, the cost of the lookup (Phase 24) |
+| `replan_seconds` | `float` | Seconds spent replanning, the sum of every replan's `plan_seconds`; `0.0` if the job never replanned (Phase 24) |
+| `replans` | `list[dict]` | One dict per abandoned attempt of a job run under `time_budget_seconds`, in order, with `sequence`, `threshold_seconds`, `observed_seconds`, `predicted_seconds`, `boundaries_crossed`, `engine`, `backend`, `reason`, `plan_seconds` (that replan's planning time) and `regions`. For a factorized plan, `regions` lists each region that started: `qubits`, `engine`, `backend`, `tier`, `estimated_seconds`, `observed_seconds` and `completed`; it is empty for a single-region plan (Phase 17; `plan_seconds` and `regions` since Phase 24). Empty if the job never replanned |
 
 ```text
 Result.explain() -> str
@@ -208,18 +255,21 @@ assert sig(core.from_qasm3) == (
 
 assert sorted(n for n in dir(RunOptions) if not n.startswith("_")) == sorted(
     ["shots", "want_statevector", "seed", "memory_budget_bytes", "expectation", "time_budget_seconds",
-     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "backend"]
+     "noise_method", "expectation_precision", "max_threads", "fuse_diagonal_gates", "fuse_gates", "backend",
+     "tier", "scratch_directory"]
 )
 assert sorted(n for n in dir(core.Result) if not n.startswith("_")) == sorted(
     ["counts", "statevector", "expectation_value", "expectation_standard_error", "exact",
-     "actual_state_bytes", "execute_seconds", "sample_seconds", "replans", "explain"]
+     "actual_state_bytes", "peak_host_bytes", "peak_device_bytes", "peak_disk_bytes",
+     "execute_seconds", "sample_seconds", "plan_seconds", "replan_seconds", "replans", "explain"]
 )
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(
     "X Y Z H S Sdg T Tdg SX SXdg RX RY RZ P U CX CZ SWAP CP RZZ CCX".split()
 )
 assert sorted(menos.__all__) == sorted(
-    ["Backend", "Circuit", "NoiseMethod", "Opcode", "Result", "RunOptions", "run", "run_batch", "ReadoutMitigationOptions",
-     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "MenosError",
+    ["Backend", "Circuit", "CircuitBuilder", "Parameter", "ParameterExpression", "QuantumRegister",
+     "ClassicalRegister", "NoiseMethod", "Opcode", "Result", "RunOptions", "Tier", "run", "run_batch", "ReadoutMitigationOptions",
+     "MitigatedResult", "readout_calibration_circuits", "run_readout_mitigated", "from_qasm3", "release_device_memory", "MenosError",
      "InvalidCircuitError", "UnsupportedFeatureError", "ResourceExceededError", "InternalError"]
 )
 assert sorted(n for n in dir(core.MitigatedResult) if not n.startswith("_")) == sorted(
@@ -235,4 +285,6 @@ assert defaults.expectation is None
 assert defaults.noise_method == menos.NoiseMethod.Exact and defaults.expectation_precision is None
 assert defaults.max_threads is None
 assert defaults.fuse_diagonal_gates is False
+assert defaults.fuse_gates is True
+assert defaults.backend is None and defaults.tier is None and defaults.scratch_directory is None
 ```

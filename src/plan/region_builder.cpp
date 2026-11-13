@@ -75,7 +75,7 @@ Operation remap(const Operation& op, const std::vector<QubitId>& global_to_local
 // `estimates` is what pick_cheapest_engine costed for each engine, reported
 // as it is. An engine stopped by its prune bound is listed with the pruned
 // reason, not costed again without the bound to find its full figures
-// (docs/adr/0025 section 13, D.2): re-costing it was the larger part of
+// (docs/adr/0028 section 13, D.2): re-costing it was the larger part of
 // planning a Factorized job, only to say why an engine that lost on work
 // units either way also lost.
 std::string describe_engine_choice(std::span<const SimulationEngine* const> engines,
@@ -121,6 +121,8 @@ Region build_direct_region(const Circuit& circuit,
         .observable = observable == nullptr ? std::nullopt : std::optional(*observable),
         .estimated_state_bytes = estimate.estimated_peak_bytes,
         .estimated_work_units = estimate.estimated_work_units,
+        .fusion = estimate.fusion,
+        .time = estimate.time,
     };
 }
 
@@ -132,7 +134,9 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
                                              bool want_expectation,
                                              const Observable* observable,
                                              std::uint64_t budget_bytes,
-                                             const AccuracyPolicy& accuracy_policy) {
+                                             const AccuracyPolicy& accuracy_policy,
+                                             std::uint64_t shots,
+                                             bool fuse_gates) {
     const std::uint32_t n = circuit.num_qubits();
     const std::size_t num_components = graph.components.size();
 
@@ -183,14 +187,20 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
         // clang-tidy's local static analysis.
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         const Observable* region_observable = want_expectation ? &*region.observable : nullptr;
-        const EngineEstimateRequest request{m,
-                                            &region.operations,
-                                            want_statevector,
-                                            want_counts,
-                                            want_expectation,
-                                            region_observable,
-                                            accuracy_policy,
-                                            budget_bytes};
+        // The same request cost::estimate_factorized costs this component
+        // with, so the region's figures are the winning candidate's.
+        const EngineEstimateRequest request{.num_qubits = m,
+                                            .operations = &region.operations,
+                                            .want_statevector = want_statevector,
+                                            .want_counts = want_counts,
+                                            .want_expectation = want_expectation,
+                                            .observable = region_observable,
+                                            .accuracy_policy = accuracy_policy,
+                                            .budget_bytes = budget_bytes,
+                                            .shots = want_counts ? shots : 0,
+                                            .bitstring_width = circuit.num_clbits(),
+                                            .is_sole_region = false,
+                                            .fuse_gates = fuse_gates};
         std::vector<CostEstimate> estimates;
         const cost::EngineChoice choice = cost::pick_cheapest_engine(engines, request, &estimates);
         common::ensure(choice.estimate.feasible,
@@ -202,6 +212,8 @@ std::vector<Region> build_factorized_regions(const Circuit& circuit,
             describe_engine_choice(engines, choice.engine_index, estimates);
         region.estimated_state_bytes = choice.estimate.estimated_peak_bytes;
         region.estimated_work_units = choice.estimate.estimated_work_units;
+        region.fusion = choice.estimate.fusion;
+        region.time = choice.estimate.time;
     }
 
     return regions;

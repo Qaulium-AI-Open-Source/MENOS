@@ -1,0 +1,94 @@
+environment: os=Linux arch=x86_64 compiler=GCC 15.2.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+2026-11-03T19:52:04+00:00
+Running build/bench/benchmarks/menos_tiered_memory_benchmark
+Run on (22 X 2995.2 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x11)
+  L1 Instruction 64 KiB (x11)
+  L2 Unified 2048 KiB (x11)
+  L3 Unified 24576 KiB (x1)
+Load Average: 1.00, 1.93, 5.43
+***WARNING*** ASLR is enabled, the results may have unreproducible noise in them.
+
+=== MENOS tiered memory benchmark, CPU side (Phase 23 step 1) ===
+environment      : environment: os=Linux arch=x86_64 compiler=GCC 15.2.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+repetitions      : 10 per point (5 for the disk rows, 3 from n = 28 in memory) after a warm-up; medians unless stated
+
+== (0) facts ==
+scratch directory        : /tmp
+volume capacity          : 12598722560 bytes
+volume available         : 12598722560 bytes
+host budget              : 12598722560 bytes
+hardware threads         : 22
+
+== (1) disk: a 2048 MiB scratch file written and read in chunks (milliseconds, medians over 5; GB/s of the median) ==
+ chunk path                     write    GB/s     flush      read    GB/s     w+f read cache
+   256 explicit buffered        544.4    3.94       0.0     402.5    5.34    3.94 dropped
+   256 explicit unbuffered      534.1    4.02       0.0     407.8    5.27    4.02 dropped
+   256 mapped                   824.2    2.61       0.0     115.8   18.55    2.61 dropped
+  1024 explicit buffered        530.5    4.05       0.0     407.5    5.27    4.05 dropped
+  1024 explicit unbuffered      529.0    4.06       0.0     403.0    5.33    4.06 dropped
+  2048 explicit buffered        529.6    4.06       0.0     403.5    5.32    4.06 dropped
+  2048 explicit unbuffered      559.6    3.84       0.0     422.8    5.08    3.84 dropped
+volume available after the sweep: 12598722560 bytes
+
+== (2) passes of the greedy rule (docs/adr/0027 section 3.2); w = the window's global-qubit capacity ==
+family         n gates   L global   gmax w=gmax    w+1    w+2
+crossover     28   255  24     36      2     24     13      1
+crossover     28   255  26     18      2      1      1      1
+crossover     30   273  24     54      2     36     27     18
+crossover     30   273  26     36      2     24     13      1
+crossover     30   273  28     18      2      1      1      1
+crossover     32   291  24     72      2     48     37     24
+crossover     32   291  26     54      2     36     27     18
+crossover     32   291  28     36      2     24     13      1
+crossover     34   309  24     90      2     60     45     30
+crossover     34   309  26     72      2     48     37     24
+crossover     34   309  28     54      2     36     27     18
+ladder        28   330  24     48      2     30     18      1
+ladder        28   330  26     24      2      1      1      1
+ladder        30   354  24     72      2     48     30     20
+ladder        30   354  26     48      2     30     18      1
+ladder        30   354  28     24      2      1      1      1
+ladder        32   378  24     96      2     66     39     27
+ladder        32   378  26     72      2     48     30     20
+ladder        32   378  28     48      2     30     18      1
+ladder        34   402  24    120      2     84     48     34
+ladder        34   402  26     96      2     66     39     27
+ladder        34   402  28     72      2     48     30     20
+random_pairs  28   200  24     37      2     13      5      1
+random_pairs  28   200  26     16      1      7      1      1
+random_pairs  30   200  24     53      2     22     12      8
+random_pairs  30   200  26     44      2     16      6      1
+random_pairs  30   200  28     20      1     10      1      1
+random_pairs  32   200  24     64      2     30     17     13
+random_pairs  32   200  26     48      2     18     12      6
+random_pairs  32   200  28     38      2     12      4      1
+random_pairs  34   200  24     78      2     39     24     18
+random_pairs  34   200  26     60      2     29     17     12
+random_pairs  34   200  28     46      2     20     12      6
+qft_like      28   406  24    106      2     54     35      1
+qft_like      28   406  26     55      2      1      1      1
+qft_like      30   465  24    165      2     87     56     41
+qft_like      30   465  26    114      2     58     38      1
+qft_like      30   465  28     59      2      1      1      1
+qft_like      32   528  24    228      2    124     79     58
+qft_like      32   528  26    177      2     93     60     44
+qft_like      32   528  28    122      2     62     40      1
+qft_like      34   595  24    295      2    165    104     76
+qft_like      34   595  26    244      2    132     84     62
+qft_like      34   595  28    189      2     99     64     47
+
+== (3) DenseEngine::execute in memory, crossover circuit and an empty circuit (seconds, medians) ==
+  n gates reps     circuit       empty    per gate   GB/s eq
+ 26   237   10      8.4235      0.3713    0.033975     63.21
+ 27   246   10     17.4748      0.7556    0.067964     63.19
+ 28   255    3     37.5521      1.9365    0.139669     61.50
+ 29   264    3     74.2161      3.3792    0.268322     64.03
+ 30 (skipped: does not fit the host budget)
+
+JSON written     : build/phase23-baseline/wsl-run-c/cpu.json
+-----------------------------------------------------------------------------
+Benchmark                                   Time             CPU   Iterations
+-----------------------------------------------------------------------------
+BM_TieredMemoryReport/iterations:1 ERROR OCCURRED: 'report-only benchmark: see the printed tables'

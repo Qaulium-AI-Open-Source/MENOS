@@ -114,4 +114,27 @@ struct ContractionResult {
                                          const analysis::LineGraph& line_graph,
                                          const std::vector<std::size_t>& elimination_order);
 
+// The network build_contraction_network() builds, as leg lists only, and its
+// memory (Phase 21, docs/adr/0025 section 3.4): legs[i] is node i's tensor's
+// legs in that tensor's own order; network_bytes the heap bytes of the
+// network it returns; build_peak_bytes the most it holds at once while
+// building, including that network. Builds no tensor data.
+struct NetworkShape {
+    std::vector<std::vector<LegId>> legs;
+    std::uint64_t network_bytes = 0;
+    std::uint64_t build_peak_bytes = 0;
+};
+[[nodiscard]] NetworkShape network_shape(std::uint32_t num_qubits,
+                                         std::span<const Operation> operations,
+                                         const PauliString& term);
+
+// The most heap bytes contract() holds at once for a network of this shape,
+// including the network it consumes: replayed on leg lists, so every
+// intermediate's size is exact, and every tensor already absorbed is released
+// as contract() releases it.
+[[nodiscard]] std::uint64_t contraction_peak_bytes(
+    const NetworkShape& shape,
+    const analysis::LineGraph& line_graph,
+    const std::vector<std::size_t>& elimination_order);
+
 }  // namespace menos::engines::tensor_network

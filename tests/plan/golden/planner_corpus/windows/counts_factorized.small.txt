@@ -1,0 +1,15 @@
+MENOS EXECUTION REPORT
+circuit    qubits=8 clbits=8 operations=96 depth=17 global_phase=0
+light_cone qubits 8->8 operations 96->96
+candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=76576 work_units=27136
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (ry) is not a Clifford gate"
+candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=66328 work_units=3080
+candidate 3strategy=factorized feasible=true winner=true peak_bytes=97800 work_units=1728
+strategy   factorized (exact)
+region 0   qubits=[0,1,2,3] engine=dense backend=cpu fusion=containment blocks=11 absorbed=30 why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
+region 1   qubits=[4,5,6,7] engine=dense backend=cpu fusion=containment blocks=11 absorbed=30 why="dense (stabilizer rejected: operation 0 (ry) is not a Clifford gate) (pauli rejected: the Pauli propagation engine produces an expectation value only, never counts) (tensor_network rejected: the tensor-network engine produces an expectation value only, never counts)"
+estimated  state_bytes=97800 work_units=1728
+--- plan fields not printed by explain() ---
+region 0: operations=48 observable_terms=0 state_bytes=1864 work_units=864 global_to_local_size=8
+region 1: operations=48 observable_terms=0 state_bytes=1864 work_units=864 global_to_local_size=8
+reduced_circuit: qubits=8 operations=96

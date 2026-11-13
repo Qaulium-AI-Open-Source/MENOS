@@ -1,0 +1,5 @@
+start 2026-11-10T10:30:25Z loadavg=0.95 0.46 0.25 power: {"ac_online": true, "battery_percent": 100, "power_scheme": "Balanced"}
+kernels-done 2026-11-10T10:30:40Z loadavg=0.96 0.49 0.27 power: {"ac_online": true, "battery_percent": 100, "power_scheme": "Balanced"}
+runs-done 2026-11-10T10:31:09Z loadavg=5.19 1.55 0.63 power: {"ac_online": true, "battery_percent": 100, "power_scheme": "Balanced"}
+noclones-start 2026-11-10T10:32:37Z loadavg=3.18 1.71 0.76 power: {"ac_online": true, "battery_percent": 100, "power_scheme": "Balanced"}
+end 2026-11-10T10:32:52Z loadavg=2.77 1.69 0.77 power: {"ac_online": true, "battery_percent": 100, "power_scheme": "Balanced"}

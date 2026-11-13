@@ -10,6 +10,8 @@
 | Every candidate is estimated to exceed the time budget | Plan time |
 | A run overran its time budget and no other plan fits | Run time |
 | A device allocation would exceed GPU memory | Plan time (the region falls back to CPU first) |
+| Another process took device memory between the plan and the allocation | Run time, naming the bytes (since Phase 23) |
+| The disk tier's scratch file plus its reserve would not fit the scratch directory, or its window would not fit the budget | Plan time (since Phase 23) |
 
 It is raised **before** any allocation for plan-time causes, so a refusal never leaves a half-built state.
 

@@ -1,4 +1,4 @@
-// Counters exposed by benchmarks/counting_allocator.cpp (Phase 21 step 1).
+// Counters exposed by benchmarks/counting_allocator.cpp (Phase 24 step 1).
 // Only meaningful in a binary that links that file.
 
 #pragma once

@@ -6,10 +6,14 @@
 #include <map>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "analysis/treewidth.h"
+#include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/pauli_row.h"
 #include "ir/gate_table.h"
 
@@ -246,29 +250,10 @@ LabeledTensor trace_leg(const LabeledTensor& t, std::size_t p0, std::size_t p1) 
     return result;
 }
 
-}  // namespace
-
-ContractionNetwork build_contraction_network(std::uint32_t num_qubits,
-                                             std::span<const Operation> operations,
-                                             const PauliString& term) {
-    const analysis::ClosedTimelines timelines =
-        analysis::build_closed_timelines(num_qubits, operations, term);
-
-    // node_id -> Operation*, for every ket-side gate node (node ids
-    // [0, num_gate_nodes)); populated by walking `operations` in the
-    // same order build_closed_timelines used to assign ket node ids
-    // (every GateOp/UnitaryOp, consecutively, skipping MeasureOp).
-    std::vector<const Operation*> gate_ops_in_order;
-    for (const Operation& op : operations) {
-        if (operand_qubits(op) != nullptr) {
-            gate_ops_in_order.push_back(&op);
-        }
-    }
-
-    // Every node's own leg assignment, gathered across whichever
-    // per-qubit timelines touch it (a k-operand gate node is touched by
-    // exactly k timelines, one per operand; boundary/observable nodes by
-    // exactly one).
+// Every node's own leg assignment, gathered across whichever per-qubit
+// timelines touch it (a k-operand gate node is touched by exactly k
+// timelines, one per operand; boundary/observable nodes by exactly one).
+std::map<std::size_t, LegAssignment> gather_legs(const analysis::ClosedTimelines& timelines) {
     std::map<std::size_t, LegAssignment> legs_of;
     for (std::size_t q = 0; q < timelines.per_qubit.size(); ++q) {
         const std::vector<ClosedTimelineEntry>& combined = timelines.per_qubit[q];
@@ -295,6 +280,29 @@ ContractionNetwork build_contraction_network(std::uint32_t num_qubits,
             right_owner.left[b.operand_index] = leg;
         }
     }
+    return legs_of;
+}
+
+}  // namespace
+
+ContractionNetwork build_contraction_network(std::uint32_t num_qubits,
+                                             std::span<const Operation> operations,
+                                             const PauliString& term) {
+    const analysis::ClosedTimelines timelines =
+        analysis::build_closed_timelines(num_qubits, operations, term);
+
+    // node_id -> Operation*, for every ket-side gate node (node ids
+    // [0, num_gate_nodes)); populated by walking `operations` in the
+    // same order build_closed_timelines used to assign ket node ids
+    // (every GateOp/UnitaryOp, consecutively, skipping MeasureOp).
+    std::vector<const Operation*> gate_ops_in_order;
+    for (const Operation& op : operations) {
+        if (operand_qubits(op) != nullptr) {
+            gate_ops_in_order.push_back(&op);
+        }
+    }
+
+    const std::map<std::size_t, LegAssignment> legs_of = gather_legs(timelines);
 
     ContractionNetwork network;
     network.tensors.resize(timelines.num_nodes);
@@ -371,9 +379,22 @@ ContractionResult contract(ContractionNetwork network,
     std::vector<std::size_t> redirect(num_nodes);
     std::iota(redirect.begin(), redirect.end(), std::size_t{0});
     std::size_t peak_legs = 0;
+    // The live tensors' data, charged to the memory ledger (docs/adr/0025
+    // section 3.2); each step's result is charged while its inputs are still
+    // live.
+    std::uint64_t held_bytes = 0;
     for (const LabeledTensor& t : live) {
         peak_legs = std::max(peak_legs, t.legs.size());
+        held_bytes += common::buffer_bytes(t.data);
     }
+    common::MemoryLedger::Charge tensors_charge(held_bytes);
+    const auto replace = [&](std::size_t slot, LabeledTensor&& tensor) {
+        tensors_charge.set(held_bytes + common::buffer_bytes(tensor.data));
+        held_bytes += common::buffer_bytes(tensor.data);
+        held_bytes -= common::buffer_bytes(live[slot].data);
+        live[slot] = std::move(tensor);
+        tensors_charge.set(held_bytes);
+    };
 
     for (const std::size_t wire_node : elimination_order) {
         const LegId& leg = line_graph.wire_of.at(wire_node);
@@ -403,13 +424,17 @@ ContractionResult contract(ContractionNetwork network,
             common::ensure(positions.size() == 2,
                            "contract: a wire appeared neither 0 nor 2 times on its own merged "
                            "slot -- internal invariant violated");
-            live[root_a] = trace_leg(live[root_a], positions[0], positions[1]);
+            replace(root_a, trace_leg(live[root_a], positions[0], positions[1]));
             peak_legs = std::max(peak_legs, live[root_a].legs.size());
             continue;
         }
 
-        live[root_a] = contract_pair(live[root_a], live[root_b]);
+        replace(root_a, contract_pair(live[root_a], live[root_b]));
         redirect[root_b] = root_a;
+        // root_b's slot is never read again (find_root now leads past it), so
+        // its tensor is released here rather than when contract() returns
+        // (docs/adr/0025 section 3.3).
+        replace(root_b, LabeledTensor{});
         peak_legs = std::max(peak_legs, live[root_a].legs.size());
     }
 
@@ -436,6 +461,166 @@ ContractionResult contract(ContractionNetwork network,
     common::ensure(found_any, "contract: no surviving component -- empty network");
 
     return ContractionResult{scalar, peak_legs};
+}
+
+namespace {
+
+constexpr std::uint64_t kComplexBytes = sizeof(Complex);
+
+// A tensor's data over `legs` legs, one allocation.
+std::uint64_t data_bytes(std::size_t legs) {
+    return common::heap_block_bytes(
+        common::checked_mul(common::checked_pow2(static_cast<unsigned>(legs)), kComplexBytes));
+}
+
+// A tensor's leg list of `legs` legs, which every builder below grows one
+// leg at a time (or reserves exactly, which this also covers).
+std::uint64_t leg_list_bytes(std::size_t legs) {
+    return common::grown_vector_bytes(legs, sizeof(LegId));
+}
+
+}  // namespace
+
+NetworkShape network_shape(std::uint32_t num_qubits,
+                           std::span<const Operation> operations,
+                           const PauliString& term) {
+    const analysis::ClosedTimelines timelines =
+        analysis::build_closed_timelines(num_qubits, operations, term);
+    const std::map<std::size_t, LegAssignment> legs_of = gather_legs(timelines);
+
+    NetworkShape shape;
+    shape.legs.resize(timelines.num_nodes);
+    std::uint64_t gather_bytes = common::checked_mul(
+        timelines.num_nodes + 1,
+        common::tree_node_bytes(sizeof(std::pair<const std::size_t, LegAssignment>)));
+    std::uint64_t tensors =
+        common::heap_block_bytes(common::checked_mul(timelines.num_nodes, sizeof(LabeledTensor)));
+    for (const auto& [node_id, assignment] : legs_of) {
+        gather_bytes =
+            common::checked_add(gather_bytes,
+                                common::checked_add(leg_list_bytes(assignment.left.size()),
+                                                    leg_list_bytes(assignment.right.size())));
+        std::vector<LegId>& legs = shape.legs.at(node_id);
+        legs.insert(legs.end(), assignment.left.begin(), assignment.left.end());
+        legs.insert(legs.end(), assignment.right.begin(), assignment.right.end());
+        tensors = common::checked_add(
+            tensors, common::checked_add(data_bytes(legs.size()), leg_list_bytes(legs.size())));
+    }
+    std::size_t gates = 0;
+    std::uint64_t largest_matrix = 0;
+    for (const Operation& op : operations) {
+        if (const std::vector<QubitId>* qubits = operand_qubits(op); qubits != nullptr) {
+            ++gates;
+            largest_matrix = std::max(largest_matrix, data_bytes(2 * qubits->size()));
+        }
+    }
+    shape.network_bytes = tensors;
+
+    // build_contraction_network(): its timelines while they are built; then,
+    // with them held, the gate list, the leg assignments, the per-node kind,
+    // flag and owner arrays, the network so far and one gate's matrix.
+    const std::uint64_t kinds = common::checked_add(
+        common::checked_add(
+            common::heap_block_bytes(common::checked_mul(timelines.num_nodes, sizeof(Kind))),
+            common::heap_block_bytes(common::checked_mul(timelines.num_nodes, sizeof(QubitId)))),
+        common::heap_block_bytes((timelines.num_nodes + 63) / 64 * sizeof(std::uint64_t)));
+    std::uint64_t filling = analysis::closed_timelines_bytes(timelines);
+    filling = common::checked_add(filling, common::grown_vector_bytes(gates, sizeof(void*)));
+    filling = common::checked_add(filling, gather_bytes);
+    filling = common::checked_add(filling, kinds);
+    filling = common::checked_add(filling, common::checked_add(tensors, largest_matrix));
+    shape.build_peak_bytes =
+        std::max(analysis::closed_timelines_peak_bytes(timelines, operations.size()), filling);
+    return shape;
+}
+
+std::uint64_t contraction_peak_bytes(const NetworkShape& shape,
+                                     const analysis::LineGraph& line_graph,
+                                     const std::vector<std::size_t>& elimination_order) {
+    // contract() on leg lists alone: the same redirects, the same shared-leg
+    // matching, the same order. `live` is the network contract() consumes,
+    // which it holds throughout, plus the redirect array.
+    std::vector<std::vector<LegId>> live = shape.legs;
+    const std::size_t num_nodes = live.size();
+    std::vector<std::size_t> redirect(num_nodes);
+    std::iota(redirect.begin(), redirect.end(), std::size_t{0});
+    std::uint64_t held = common::checked_add(
+        shape.network_bytes,
+        common::kHeapBlockOverheadBytes + common::checked_mul(num_nodes, sizeof(std::size_t)));
+    std::uint64_t peak = held;
+    const auto slot_bytes = [](std::size_t legs) {
+        return common::checked_add(data_bytes(legs), leg_list_bytes(legs));
+    };
+
+    for (const std::size_t wire_node : elimination_order) {
+        const LegId& leg = line_graph.wire_of.at(wire_node);
+        const std::size_t root_a = find_root(redirect, std::get<0>(leg));
+        const std::size_t root_b = find_root(redirect, std::get<1>(leg));
+        std::vector<LegId>& a = live[root_a];
+
+        if (root_a == root_b) {
+            std::size_t occurrences = 0;
+            for (const LegId& l : a) {
+                occurrences += l == leg ? 1U : 0U;
+            }
+            if (occurrences == 0) {
+                continue;
+            }
+            // trace_leg: the result beside its input, with its free-position
+            // and bit arrays, and the caller's position list.
+            const std::size_t result_legs = a.size() - 2;
+            const std::uint64_t transient = common::checked_add(
+                common::checked_add(slot_bytes(result_legs),
+                                    common::grown_vector_bytes(result_legs, sizeof(std::size_t))),
+                common::heap_block_bytes(a.size() * sizeof(int)) +
+                    common::grown_vector_bytes(2, sizeof(std::size_t)));
+            peak = std::max(peak, common::checked_add(held, transient));
+            held = common::checked_add(held - slot_bytes(a.size()), slot_bytes(result_legs));
+            std::vector<LegId> kept;
+            for (const LegId& l : a) {
+                if (l != leg) {
+                    kept.push_back(l);
+                }
+            }
+            a = std::move(kept);
+            continue;
+        }
+
+        std::vector<LegId>& b = live[root_b];
+        // contract_pair: the result beside both inputs, with its four
+        // position lists and two bit arrays.
+        std::vector<LegId> result;
+        std::size_t shared = 0;
+        for (const LegId& l : a) {
+            if (std::find(b.begin(), b.end(), l) != b.end()) {
+                ++shared;
+            } else {
+                result.push_back(l);
+            }
+        }
+        for (const LegId& l : b) {
+            if (std::find(a.begin(), a.end(), l) == a.end()) {
+                result.push_back(l);
+            }
+        }
+        const std::uint64_t positions = common::checked_add(
+            common::checked_mul(std::uint64_t{2},
+                                common::grown_vector_bytes(shared, sizeof(std::size_t))),
+            common::checked_add(
+                common::grown_vector_bytes(a.size() - shared, sizeof(std::size_t)),
+                common::grown_vector_bytes(b.size() - shared, sizeof(std::size_t))));
+        const std::uint64_t transient =
+            common::checked_add(common::checked_add(slot_bytes(result.size()), positions),
+                                common::heap_block_bytes(a.size() * sizeof(int)) +
+                                    common::heap_block_bytes(b.size() * sizeof(int)));
+        peak = std::max(peak, common::checked_add(held, transient));
+        held = common::checked_add(held - slot_bytes(a.size()) - slot_bytes(b.size()),
+                                   slot_bytes(result.size()));
+        a = std::move(result);
+        b.clear();
+        redirect[root_b] = root_a;
+    }
+    return peak;
 }
 
 }  // namespace menos::engines::tensor_network

@@ -3,10 +3,14 @@ add_library(menos_ir STATIC
     circuit.cpp
     depth.cpp
     gate_table.cpp
+    inverse.cpp
+    parameter.cpp
+    builder.cpp
     validate.cpp
     final_writes.cpp
     noise.cpp
     fuse_diagonal.cpp
+    fuse_gates.cpp
 )
 
 target_include_directories(menos_ir PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)

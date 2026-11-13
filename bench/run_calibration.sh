@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Cold hardware calibration, once per fresh process (Phase 21 step 1,
-# docs/adr/0025 section 5). Usage: bench/run_calibration.sh <probe> [runs]
+# Cold hardware calibration, once per fresh process (Phase 24 step 1,
+# docs/adr/0028 section 5). Usage: bench/run_calibration.sh <probe> [runs]
 #   <probe>  path to menos_calibration_probe (CPU or CUDA build)
 #   runs     number of fresh processes (default 20)
 # Prints CSV: one header line, then one line per process.

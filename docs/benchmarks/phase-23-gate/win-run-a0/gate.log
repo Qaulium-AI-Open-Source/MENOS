@@ -1,0 +1,10 @@
+== overlap at n = 29
+   in memory...
+   13.6113 s
+   disk tier (forced)...
+   94.2861 s
+   MISMATCH: counts 0 expectation 0 dense in memory 0
+== reach at n = 31
+   915.435 s, predicted 781.543 s, tier disk
+report: C:\Users\janak\menos\build\phase23-gate\win-run-a\gate.json
+gate driver exit 1

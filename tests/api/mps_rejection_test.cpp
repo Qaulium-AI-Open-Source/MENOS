@@ -39,9 +39,12 @@ Circuit make_globally_entangling_circuit() {
 
 TEST(MPSRejectionTest, GloballyEntangledCircuitStaysOnDenseAndExplainShowsMPSRejectionAndBound) {
     const Circuit circuit = make_globally_entangling_circuit();
-    // Between dense's own 16384 bytes and MPS's own 43648 bytes at this
-    // scale: dense fits, MPS does not.
-    constexpr std::uint64_t kBudgetBytes = 20000;
+    // Between dense's figure and MPS's at this scale: dense fits, MPS does
+    // not. Since Phase 21 (docs/adr/0025 section 3.4) those are what each
+    // engine really allocates: about 21 KB for dense (the 16384-byte state and
+    // its buffers) and about 209 KB for MPS (the bonds it builds, with every
+    // SVD's workspace).
+    constexpr std::uint64_t kBudgetBytes = 30000;
     const Result result = run(circuit,
                               RunOptions{.shots = 10,
                                          .want_statevector = false,

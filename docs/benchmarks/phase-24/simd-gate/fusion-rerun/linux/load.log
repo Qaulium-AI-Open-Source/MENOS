@@ -1,0 +1,2 @@
+start 2026-11-10T12:27:22Z loadavg=1.04 2.18 2.30 power: {"ac_online": true, "battery_percent": 92, "power_scheme": "Balanced"}
+end 2026-11-10T12:29:38Z loadavg=14.75 6.61 3.87 power: {"ac_online": true, "battery_percent": 92, "power_scheme": "Balanced"}

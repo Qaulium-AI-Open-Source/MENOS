@@ -1,0 +1,10 @@
+291de4c Measure cut-and-recombine in the accuracy benchmark on the cut differential fixture
+Filesystem     Type     1B-blocks        Avail
+/dev/sdd       ext4 1081101176832 971174748160
+21:32:06 start power: {"ac_online": true, "battery_percent": 81, "power_scheme": "Balanced"}
+21:33:38 after-build power: {"ac_online": true, "battery_percent": 82, "power_scheme": "Balanced"}
+== gate 21:33:38
+21:38:41 end power: {"ac_online": true, "battery_percent": 83, "power_scheme": "Balanced"}
+Filesystem     Type     1B-blocks        Avail
+/dev/sdd       ext4 1081101176832 971180482560
+== done 21:38:41

@@ -29,50 +29,182 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
+#include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/tolerance.h"
 
 namespace menos::common {
+
+namespace {
+
+// zgesdd's own workspace query (lwork = -1): the optimal complex workspace for
+// an m x n jobz='S' decomposition. Reads no matrix data.
+lapack_int zgesdd_optimal_lwork(lapack_int m, lapack_int n) {
+    const char jobz = 'S';
+    const lapack_int lda = std::max<lapack_int>(1, m);
+    const lapack_int ldu = std::max<lapack_int>(1, m);
+    const lapack_int ldvt = std::max<lapack_int>(1, std::min(m, n));
+    const lapack_int query = -1;
+    std::complex<double> optimal{0.0, 0.0};
+    double rwork_dummy = 0.0;
+    lapack_int iwork_dummy = 0;
+    lapack_int info = 0;
+    LAPACK_zgesdd(&jobz,
+                  &m,
+                  &n,
+                  nullptr,
+                  &lda,
+                  nullptr,
+                  nullptr,
+                  &ldu,
+                  nullptr,
+                  &ldvt,
+                  &optimal,
+                  &query,
+                  &rwork_dummy,
+                  &iwork_dummy,
+                  &info);
+    // The message is built only on failure: an eager concatenation would
+    // allocate on every call (docs/adr/0025 section 3.4).
+    if (info != 0) {
+        throw InternalError("svd: zgesdd workspace query failed with info=" + std::to_string(info));
+    }
+    return static_cast<lapack_int>(optimal.real());
+}
+
+// LAPACKE's rwork size for jobz != 'N', which svd() allocates.
+std::size_t rwork_size(std::size_t m, std::size_t n) {
+    const std::size_t k = std::min(m, n);
+    return std::max<std::size_t>(1, k * std::max((5 * k) + 7, (2 * std::max(m, n)) + (2 * k) + 1));
+}
+
+}  // namespace
+
+std::uint64_t svd_result_bytes(std::size_t m, std::size_t n) {
+    constexpr std::uint64_t kComplex = sizeof(std::complex<double>);
+    const std::uint64_t k = std::min(m, n);
+    return checked_add(checked_add(heap_block_bytes(checked_mul(checked_mul(m, k), kComplex)),
+                                   heap_block_bytes(checked_mul(checked_mul(k, n), kComplex))),
+                       heap_block_bytes(checked_mul(k, sizeof(double))));
+}
+
+std::uint64_t svd_peak_bytes(std::size_t m, std::size_t n) {
+    constexpr std::uint64_t kComplex = sizeof(std::complex<double>);
+    const std::uint64_t k = std::min(m, n);
+    const std::uint64_t input = heap_block_bytes(checked_mul(checked_mul(m, n), kComplex));
+    const std::uint64_t u = heap_block_bytes(checked_mul(checked_mul(m, k), kComplex));
+    const std::uint64_t vt = heap_block_bytes(checked_mul(checked_mul(k, n), kComplex));
+    const std::uint64_t s = heap_block_bytes(checked_mul(k, sizeof(double)));
+    const auto lwork = static_cast<std::uint64_t>(std::max<lapack_int>(
+        1, zgesdd_optimal_lwork(static_cast<lapack_int>(m), static_cast<lapack_int>(n))));
+    const std::uint64_t workspace = checked_add(
+        checked_add(heap_block_bytes(checked_mul(lwork, kComplex)),
+                    heap_block_bytes(checked_mul(rwork_size(m, n), sizeof(double)))),
+        heap_block_bytes(checked_mul(std::max<std::uint64_t>(1, 8 * k), sizeof(lapack_int))));
+    // zgesdd's call: the column-major input, U, VT, S and the workspace. Then
+    // the row-major U beside both column-major outputs, then the row-major
+    // VT beside the column-major one and the row-major U. Each buffer is one
+    // allocation.
+    const std::uint64_t call =
+        checked_add(checked_add(input, workspace), checked_add(checked_add(u, vt), s));
+    const std::uint64_t first_transpose = checked_add(checked_add(2 * u, vt), s);
+    const std::uint64_t second_transpose = checked_add(checked_add(u, 2 * vt), s);
+    return std::max({call, first_transpose, second_transpose});
+}
 
 SvdResult svd(std::span<const std::complex<double>> a, std::size_t m, std::size_t n) {
     ensure(a.size() == m * n, "svd: matrix size does not match m * n");
     ensure(m > 0 && n > 0, "svd: m and n must both be positive");
 
     const std::size_t k = std::min(m, n);
-    // LAPACKE_zgesdd destroys its input matrix (standard LAPACK
-    // convention) -- copy first so the caller's data is untouched.
-    std::vector<std::complex<double>> a_copy(a.begin(), a.end());
+    const auto lm = static_cast<lapack_int>(m);
+    const auto ln = static_cast<lapack_int>(n);
+    const auto lk = static_cast<lapack_int>(k);
 
+    // zgesdd called column-major, exactly as LAPACKE_zgesdd's row-major path
+    // calls it (docs/adr/0025 section 3.3): the input transposed into a
+    // column-major buffer with lda = m, U written column-major with ldu = m,
+    // VT with ldvt = k, the workspace from zgesdd's own query, and the
+    // outputs transposed back. zgesdd therefore receives exactly the inputs it
+    // did through LAPACKE, so the results are bitwise identical
+    // (tests/common/svd_test.cpp checks this against LAPACKE), but every
+    // buffer is MENOS's own: none is hidden in a malloc inside LAPACKE, and
+    // the caller's matrix is transposed once instead of copied and then
+    // transposed. jobz='S' is the thin/economy SVD, exactly k = min(m, n)
+    // singular values and vectors -- what every caller (Schmidt-rank bound,
+    // MPS truncation) needs. zgesdd destroys its input, which is now the
+    // transposed copy.
+    std::vector<std::complex<double>> a_col(m * n);
+    for (std::size_t i = 0; i < m; ++i) {
+        for (std::size_t j = 0; j < n; ++j) {
+            a_col[(j * m) + i] = a[(i * n) + j];
+        }
+    }
+    std::vector<std::complex<double>> u_col(m * k);
+    std::vector<std::complex<double>> vt_col(k * n);
     SvdResult result;
     result.singular_values.resize(k);
+
+    const lapack_int lwork = zgesdd_optimal_lwork(lm, ln);
+    std::vector<std::complex<double>> work(
+        static_cast<std::size_t>(std::max<lapack_int>(1, lwork)));
+    std::vector<double> rwork(rwork_size(m, n));
+    std::vector<lapack_int> iwork(std::max<std::size_t>(1, 8 * k));
+    MemoryLedger::Charge charge(buffer_bytes(a_col) + buffer_bytes(u_col) + buffer_bytes(vt_col) +
+                                buffer_bytes(result.singular_values) + buffer_bytes(work) +
+                                buffer_bytes(rwork) + buffer_bytes(iwork));
+
+    const char jobz = 'S';
+    const lapack_int lda = std::max<lapack_int>(1, lm);
+    const lapack_int ldu = std::max<lapack_int>(1, lm);
+    const lapack_int ldvt = std::max<lapack_int>(1, lk);
+    lapack_int info = 0;
+    LAPACK_zgesdd(&jobz,
+                  &lm,
+                  &ln,
+                  a_col.data(),
+                  &lda,
+                  result.singular_values.data(),
+                  u_col.data(),
+                  &ldu,
+                  vt_col.data(),
+                  &ldvt,
+                  work.data(),
+                  &lwork,
+                  rwork.data(),
+                  iwork.data(),
+                  &info);
+    if (info != 0) {
+        throw InternalError("svd: zgesdd failed with info=" + std::to_string(info));
+    }
+
+    // Release the input and workspace before the row-major outputs exist.
+    // (Swapping with an empty vector frees the buffer; `v = {}` would assign
+    // an empty initializer list and keep the capacity.)
+    std::vector<std::complex<double>>().swap(a_col);
+    std::vector<std::complex<double>>().swap(work);
+    std::vector<double>().swap(rwork);
+    std::vector<lapack_int>().swap(iwork);
+
     result.u.resize(m * k);
+    charge.set(buffer_bytes(u_col) + buffer_bytes(vt_col) + buffer_bytes(result.singular_values) +
+               buffer_bytes(result.u));
+    for (std::size_t i = 0; i < m; ++i) {
+        for (std::size_t j = 0; j < k; ++j) {
+            result.u[(i * k) + j] = u_col[(j * m) + i];
+        }
+    }
+    std::vector<std::complex<double>>().swap(u_col);
     result.vt.resize(k * n);
-
-    // Row-major throughout (matches this codebase's matrix convention);
-    // jobz='S' is the thin/economy SVD, exactly k = min(m, n) singular
-    // values and vectors -- what every caller (Schmidt-rank bound, MPS
-    // truncation) needs. Leading dimensions follow LAPACKE's row-major
-    // rule (lda/ldu/ldvt = the number of columns of that specific
-    // array): lda = n for the m x n input, ldu = k for the m x k left
-    // singular vectors, ldvt = n for the k x n right singular vectors
-    // (conjugate-transposed convention). Verified end-to-end against
-    // reconstruction in tests/common/svd_test.cpp, not assumed from
-    // memory (CLAUDE.md: API behavior comes from the installed source
-    // or a measurement).
-    const lapack_int info = LAPACKE_zgesdd(LAPACK_ROW_MAJOR,
-                                           'S',
-                                           static_cast<lapack_int>(m),
-                                           static_cast<lapack_int>(n),
-                                           a_copy.data(),
-                                           static_cast<lapack_int>(n),
-                                           result.singular_values.data(),
-                                           result.u.data(),
-                                           static_cast<lapack_int>(k),
-                                           result.vt.data(),
-                                           static_cast<lapack_int>(n));
-    ensure(info == 0, "svd: LAPACKE_zgesdd failed with info=" + std::to_string(info));
-
+    for (std::size_t i = 0; i < k; ++i) {
+        for (std::size_t j = 0; j < n; ++j) {
+            result.vt[(i * n) + j] = vt_col[(j * k) + i];
+        }
+    }
     return result;
 }
 

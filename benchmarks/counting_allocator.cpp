@@ -1,12 +1,12 @@
 // A counting global operator new/delete, linked only into the planner
-// benchmark (Phase 21 step 1, docs/adr/0025 section 5). It counts heap
+// benchmark (Phase 24 step 1, docs/adr/0028 section 5). It counts heap
 // allocations, bytes requested and the peak of live bytes, and otherwise
 // forwards to malloc/free, so it measures the planner's own allocation
 // behaviour without valgrind or heaptrack. Never linked into the library.
 //
-// Live bytes are tracked with malloc_usable_size (glibc), the size malloc
-// actually reserved, so the peak is the allocator-level peak, not the sum of
-// requested sizes. Over-aligned new/delete are not replaced; nothing on the
+// Live bytes are tracked with malloc_usable_size (glibc) or _msize (the MSVC
+// CRT), the size malloc actually reserved, so the peak is the allocator-level
+// peak, not the sum of requested sizes. Over-aligned new/delete are not replaced; nothing on the
 // planning path uses them.
 
 #include "counting_allocator.h"
@@ -18,6 +18,14 @@
 #include <new>
 
 namespace {
+
+std::size_t usable_size(void* p) {
+#if defined(_WIN32)
+    return _msize(p);
+#else
+    return malloc_usable_size(p);
+#endif
+}
 
 std::atomic<std::uint64_t> g_allocations{0};
 std::atomic<std::uint64_t> g_bytes_requested{0};
@@ -31,7 +39,7 @@ void* counted_alloc(std::size_t size) {
     }
     g_allocations.fetch_add(1, std::memory_order_relaxed);
     g_bytes_requested.fetch_add(size, std::memory_order_relaxed);
-    const auto usable = static_cast<std::int64_t>(malloc_usable_size(p));
+    const auto usable = static_cast<std::int64_t>(usable_size(p));
     const std::int64_t live = g_live_bytes.fetch_add(usable, std::memory_order_relaxed) + usable;
     std::int64_t peak = g_peak_live_bytes.load(std::memory_order_relaxed);
     while (live > peak &&
@@ -44,8 +52,7 @@ void counted_free(void* p) noexcept {
     if (p == nullptr) {
         return;
     }
-    g_live_bytes.fetch_sub(static_cast<std::int64_t>(malloc_usable_size(p)),
-                           std::memory_order_relaxed);
+    g_live_bytes.fetch_sub(static_cast<std::int64_t>(usable_size(p)), std::memory_order_relaxed);
     std::free(p);
 }
 

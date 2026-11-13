@@ -11,6 +11,8 @@
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "common/pauli_row.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
@@ -370,13 +372,20 @@ bool is_fully_clifford(const std::vector<Operation>& operations) {
 // original Pauli string, so it is safe to abandon there; `completed` is shared
 // across every term of one execute() call so it counts that whole invocation.
 std::complex<double> propagate_term(const PauliString& start,
-                                    const std::vector<Operation>& operations,
+                                    std::span<const Operation> operations,
                                     std::uint64_t& peak_terms_seen,
                                     const ExecutionMonitor* monitor,
                                     std::uint64_t& completed) {
     std::vector<WeightedTerm> terms;
     terms.push_back(
         WeightedTerm{common::PauliRow{start.x_words, start.z_words, false}, {1.0, 0.0}});
+    // The term list and each term's x and z words, updated after every gate.
+    const std::uint64_t term_words_bytes = 2 * start.x_words.size() * sizeof(std::uint64_t);
+    common::MemoryLedger::Charge terms_charge;
+    const auto charge_terms = [&] {
+        terms_charge.set(common::buffer_bytes(terms) + terms.size() * term_words_bytes);
+    };
+    charge_terms();
 
     for (std::size_t i = operations.size(); i-- > 0;) {
         const GateOp* gate = gate_or_null(operations[i]);
@@ -443,6 +452,7 @@ std::complex<double> propagate_term(const PauliString& start,
                     "estimate()");
         }
         peak_terms_seen = std::max(peak_terms_seen, static_cast<std::uint64_t>(terms.size()));
+        charge_terms();
         ++completed;
         if (monitor != nullptr) {
             monitor->at_safe_boundary(completed);
@@ -463,6 +473,39 @@ std::complex<double> propagate_term(const PauliString& start,
         }
     }
     return total;
+}
+
+// Everything execute() allocates, at the most it holds at once (Phase 21,
+// docs/adr/0025 section 3.4), for a term list of at most max_terms terms of
+// n qubits: one complex per observable term, plus one rotation's split, when
+// the old list (its capacity at most twice its size, from push_back growth)
+// and the new one (at its last reallocation) are both live, with the few
+// terms a split builds and returns in flight. max_terms is the estimate's own
+// term-growth bound, number of terms times the branching product, as before
+// Phase 21 (docs/adr/0025 section 7: its overcount is left as it is).
+// Term counts and a qubit count: distinct roles, named at the one call site.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+std::uint64_t peak_bytes_of(std::uint64_t max_terms,
+                            std::uint32_t num_qubits,
+                            std::uint64_t num_observable_terms) {
+    const std::uint64_t words = (std::uint64_t{num_qubits} + 63) / 64;
+    // A term's x and z words are two allocations.
+    const std::uint64_t term_words =
+        2 * common::heap_block_bytes(checked_mul(words, sizeof(std::uint64_t)));
+    const std::uint64_t term = checked_add(sizeof(WeightedTerm), term_words);
+    // A split's locals, its initializer list and the vector built from it.
+    constexpr std::uint64_t kTermsInFlight = 6;
+    std::uint64_t bytes = common::grown_vector_bytes(max_terms, sizeof(WeightedTerm));
+    bytes = checked_add(bytes,
+                        checked_add(checked_mul(2 * max_terms, sizeof(WeightedTerm)),
+                                    common::kHeapBlockOverheadBytes));
+    bytes = checked_add(bytes, checked_mul(2 * max_terms, term_words));
+    // The terms in flight, and the vector a split returns them in.
+    bytes = checked_add(
+        bytes, checked_add(checked_mul(kTermsInFlight, term), common::kHeapBlockOverheadBytes));
+    return checked_add(
+        bytes,
+        common::heap_block_bytes(checked_mul(num_observable_terms, sizeof(std::complex<double>))));
 }
 
 }  // namespace
@@ -560,19 +603,48 @@ CostEstimate PauliPropagationEngine::estimate(const EngineEstimateRequest& reque
         }
         const std::uint64_t max_terms = checked_mul(t0, branching);
 
-        const std::uint64_t words = (std::uint64_t{request.num_qubits} + 63) / 64;
-        const std::uint64_t row_bytes = checked_add(
-            checked_mul(std::uint64_t{2}, checked_mul(words, std::uint64_t{8})), std::uint64_t{16});
-        const std::uint64_t peak_bytes = checked_mul(max_terms, row_bytes);
+        const std::uint64_t peak_bytes = peak_bytes_of(max_terms, request.num_qubits, t0);
         const std::uint64_t work = checked_mul(max_terms, num_gates);
-        return CostEstimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        CostEstimate estimate{/*feasible=*/true, peak_bytes, work, /*infeasible_reason=*/"", {}};
+        // Time terms (docs/adr/0028 section 20). The worst-case branching
+        // above is the right bound for memory and the wrong figure for time:
+        // a term splits only when a rotation anticommutes with it, and on the
+        // measured workloads the runtime stayed flat while the bound grew 4x
+        // per rotation (section 16.10.1). The time model therefore charges
+        // the observable's own terms through every gate, the cost of a run in
+        // which no term branches: component 0 the gates; component 1 the term
+        // updates, t0 per gate, each with a fixed cost; component 2 their
+        // words, n/64 per term update; component 3 the rotation visits, t0
+        // per RZ/RX/RY/P/U, each of which builds its split's terms afresh
+        // even when the term does not branch (docs/adr/0028 section 22);
+        // component 4 the observable's own terms, each with a fixed cost. It
+        // is a lower bound on a run that
+        // branches heavily; such a run overruns its prediction and is caught
+        // by the Phase 11 monitor like any other. For the same reason the
+        // bandwidth floor is taken from the term list a run allocates when
+        // nothing branches, not from the worst-case peak above.
+        const std::uint64_t word_count = (std::uint64_t{request.num_qubits} + 63) / 64;
+        const double words = static_cast<double>(word_count);
+        const double term_updates = static_cast<double>(t0) * static_cast<double>(num_gates);
+        auto& pauli = estimate.time.counts[static_cast<std::size_t>(Engine::Pauli)];
+        pauli[0] = static_cast<double>(num_gates);
+        pauli[1] = term_updates;
+        pauli[2] = term_updates * words;
+        pauli[3] = static_cast<double>(t0) * static_cast<double>(single_axis_count + u_count);
+        // Component 4: the observable's terms, each propagated on its own
+        // (a term list, its ledger charge and the final evaluation).
+        pauli[4] = static_cast<double>(t0);
+        estimate.time.floor_bytes = static_cast<double>(peak_bytes_of(t0, request.num_qubits, t0));
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
 }
 
 EngineExecutionResult PauliPropagationEngine::execute(const EngineExecutionRequest& request) const {
-    std::vector<Operation> operations(request.operations.begin(), request.operations.end());
+    // Read in place: until Phase 21 every operation was copied first
+    // (docs/adr/0025 section 3.3).
+    const std::span<const Operation> operations = request.operations;
 
     std::vector<std::complex<double>> terms;
     terms.reserve(request.observable->terms.size());

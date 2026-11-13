@@ -1,0 +1,2 @@
+environment: os=Linux arch=x86_64 compiler=GCC 15.2.0, Release (NDEBUG) cpu=Intel(R) Core(TM) Ultra 7 155H
+threads=22 memory_bandwidth_B_per_s=3.062909e+10 work_units_per_s=1.483654e+09 safe_budget_bytes=12598724608

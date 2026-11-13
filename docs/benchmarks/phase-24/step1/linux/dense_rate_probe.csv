@@ -1,0 +1,15 @@
+kind,qubits,threads,work_units_per_s,measurement_s,repetitions
+dense_rate,13,1,2.244981e+09,0.030414,41
+dense_rate,13,22,2.288502e+09,0.030538,42
+dense_rate,16,1,2.264662e+09,0.034078,5
+dense_rate,16,22,1.842338e+09,0.034579,4
+dense_rate,17,1,1.949838e+09,0.036872,2
+dense_rate,17,22,1.237812e+09,0.060762,2
+dense_rate,18,1,2.113727e+09,0.074212,2
+dense_rate,18,22,2.494840e+09,0.065611,2
+dense_rate,20,1,1.833274e+09,0.372029,2
+dense_rate,20,22,5.343731e+09,0.133924,2
+dense_rate,22,1,1.283596e+09,2.275233,2
+dense_rate,22,22,4.615882e+09,0.645725,2
+kind,write_B_per_s,read_B_per_s,measured_bytes,measurement_s
+scratch,1.424174e+09,5.395672e+09,1073741824,1.040803

@@ -18,13 +18,7 @@ option(MENOS_BUILD_BENCHMARKS "Build the Google Benchmark programs under benchma
 # presets, which also pin CMAKE_CUDA_COMPILER -- see those presets for why the
 # pin is required rather than optional.
 option(MENOS_ENABLE_CUDA "Build the CUDA dense backend" OFF)
-# Phase 21 (docs/adr/0025 section 6): build the frozen d89dde3 planner and the
-# differential test against it (tests/plan/frozen_d89dde3). Needs commit
-# d89dde3 in this repository's history, so it is off by default (a wheel
-# built from an sdist has no history) and on in the Linux presets that
-# scripts/verify.sh runs.
-option(MENOS_BUILD_FROZEN_PLANNER "Build the frozen-planner differential test" OFF)
-# Phase 21 (docs/adr/0025 section 12.3, C.3): compile the planner's
+# Phase 24 (docs/adr/0028 section 12.3, C.3): compile the planner's
 # Schmidt-rank-cache counters into menos_analysis so menos_planner_benchmark
 # can report them. OFF in every preset: timing builds never carry them.
 option(MENOS_PLANNER_COUNTERS "Compile planner cache counters for benchmark reports" OFF)
@@ -191,6 +185,7 @@ add_subdirectory(src/qasm2)
 add_subdirectory(src/qasm3)
 add_subdirectory(src/kernels)
 add_subdirectory(src/engines/dense)
+add_subdirectory(src/engines/dense_tiered)
 add_subdirectory(src/engines/stabilizer)
 add_subdirectory(src/engines/pauli)
 add_subdirectory(src/engines/mps)
@@ -214,6 +209,7 @@ add_subdirectory(tests/qasm2)
 add_subdirectory(tests/qasm3)
 add_subdirectory(tests/cli)
 add_subdirectory(tests/engines/dense)
+add_subdirectory(tests/engines/dense_tiered)
 add_subdirectory(tests/engines/stabilizer)
 add_subdirectory(tests/engines/pauli)
 add_subdirectory(tests/engines/mps)
@@ -226,6 +222,7 @@ add_subdirectory(tests/plan)
 add_subdirectory(tests/runtime)
 add_subdirectory(tests/api)
 add_subdirectory(tests/mitigation)
+add_subdirectory(tests/memory)
 
 if(MENOS_BUILD_PYTHON_BINDINGS)
     add_subdirectory(src/python)

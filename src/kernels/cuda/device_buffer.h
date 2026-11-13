@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 
+#include "common/memory_ledger.h"
 #include "kernels/dense_kernels.h"
 
 namespace menos::kernels::cuda {
@@ -23,9 +24,12 @@ namespace menos::kernels::cuda {
 // the budget passed here comes from cudaMemGetInfo, never from a datasheet.
 class DeviceBuffer {
 public:
-    // Allocates num_amplitudes * 16 bytes on the current device, zero-filled.
-    // Throws ResourceExceeded if that exceeds budget_bytes; throws
-    // InternalError if the allocation itself fails despite fitting the budget.
+    // Allocates num_amplitudes * 16 bytes on the current device, from the
+    // process's memory pool (device_pool.h, Phase 22). The contents are
+    // UNDEFINED until kernels::cuda::initialize() runs; nothing reads a state
+    // before that. Throws ResourceExceeded if the size exceeds budget_bytes;
+    // throws InternalError if the allocation itself fails despite fitting the
+    // budget.
     DeviceBuffer(std::size_t num_amplitudes, std::uint64_t budget_bytes);
     ~DeviceBuffer();
 
@@ -47,6 +51,7 @@ public:
 private:
     void* data_;
     std::size_t num_amplitudes_;
+    common::MemoryLedger::Charge charge_;
 };
 
 }  // namespace menos::kernels::cuda

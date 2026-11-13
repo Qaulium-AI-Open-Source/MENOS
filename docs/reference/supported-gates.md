@@ -32,6 +32,36 @@ Twenty named gates run natively, plus explicit unitaries and measurements. The t
 - **Pauli propagation** accepts the Clifford gates plus `rz rx ry p u`. It does **not** accept `t`, `tdg`, `cp`, `rzz`, `ccx` or unitaries. See [Pauli Propagation](/engines/pauli).
 - The **dense**, **MPS**, **tensor-network** and **cut** strategies accept every gate in the table.
 
+## Circuit builder methods and OpenQASM 3 export
+
+Each opcode has a [circuit builder](/build/circuit-builder) method. [OpenQASM 3 export](/reference/circuit-builder-api#openqasm-3-export) writes it under the name below, which [`from_qasm3`](/reference/python-api#from-qasm3) reads back as the same opcode.
+
+| Opcode | Builder method | OpenQASM 3 export |
+|---|---|---|
+| `Opcode.X` | `x(qubit)` | `x` |
+| `Opcode.Y` | `y(qubit)` | `y` |
+| `Opcode.Z` | `z(qubit)` | `z` |
+| `Opcode.H` | `h(qubit)` | `h` |
+| `Opcode.S` | `s(qubit)` | `s` |
+| `Opcode.Sdg` | `sdg(qubit)` | `sdg` |
+| `Opcode.T` | `t(qubit)` | `t` |
+| `Opcode.Tdg` | `tdg(qubit)` | `tdg` |
+| `Opcode.SX` | `sx(qubit)` | `sx` |
+| `Opcode.SXdg` | `sxdg(qubit)` | `inv @ sx` |
+| `Opcode.RX` | `rx(theta, qubit)` | `rx` |
+| `Opcode.RY` | `ry(theta, qubit)` | `ry` |
+| `Opcode.RZ` | `rz(phi, qubit)` | `rz` |
+| `Opcode.P` | `p(theta, qubit)` | `p` |
+| `Opcode.U` | `u(theta, phi, lam, qubit)` | `U` |
+| `Opcode.CX` | `cx(control, target)` | `cx` |
+| `Opcode.CZ` | `cz(control, target)` | `cz` |
+| `Opcode.SWAP` | `swap(qubit1, qubit2)` | `swap` |
+| `Opcode.CP` | `cp(theta, control, target)` | `cp` |
+| `Opcode.RZZ` | `rzz(theta, qubit1, qubit2)` | `rzz`, defined as `gate rzz(theta) a, b { cx a, b; rz(theta) b; cx a, b; }` |
+| `Opcode.CCX` | `ccx(control1, control2, target)` | `ccx` |
+
+Explicit unitaries, noise channels and readout errors have no OpenQASM 3 form, so export refuses them.
+
 ## Other operations
 
 | Operation | Support |
@@ -70,4 +100,6 @@ assert documented == {(name, spec.opcode.name) for name, spec in GATE_TABLE.item
 assert len(GATE_TABLE) == 21
 assert {name for name in GATE_TABLE} <= set(build_target().operation_names)
 assert sorted(m for m in dir(Opcode) if m[0].isupper()) == sorted(spec.opcode.name for spec in GATE_TABLE.values())
+builder_rows = set(re.findall(r"^\| `Opcode\.(\w+)` \| `(\w+)\(", page, flags=re.MULTILINE))
+assert builder_rows == {(spec.opcode.name, name) for name, spec in GATE_TABLE.items()}
 ```

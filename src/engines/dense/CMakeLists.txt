@@ -4,6 +4,7 @@ add_library(menos_engines_dense STATIC
     sample.cpp
     cumulative_distribution.cpp
     dense_engine.cpp
+    fused_block.cpp
 )
 
 target_include_directories(menos_engines_dense PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)

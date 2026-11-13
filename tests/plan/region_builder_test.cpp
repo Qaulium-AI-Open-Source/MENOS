@@ -61,8 +61,16 @@ TEST(BuildFactorizedRegionsTest, ContiguousComponentsRemapCorrectly) {
     Circuit circuit(3, 0);
     circuit.append(Opcode::CX, {0, 1});
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, false, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 false,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions.size(), 2U);
 
     EXPECT_EQ(regions[0].local_to_global, (std::vector<QubitId>{0, 1}));
@@ -84,8 +92,16 @@ TEST(BuildFactorizedRegionsTest, InterleavedComponentsRemapToLocalZeroOne) {
     circuit.append(Opcode::CX, {0, 2});
     circuit.append(Opcode::CX, {1, 3});
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, false, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 false,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions.size(), 2U);
 
     EXPECT_EQ(regions[0].local_to_global, (std::vector<QubitId>{0, 2}));
@@ -106,8 +122,16 @@ TEST(BuildFactorizedRegionsTest, MeasureOpKeepsGlobalClbitButRemapsLocalQubit) {
     circuit.append(Opcode::CX, {0, 2});
     circuit.append_measure(2, 3);  // global qubit 2 -> region 0's local qubit 1; clbit 3 untouched
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, true, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions[0].local_to_global, (std::vector<QubitId>{0, 2}));
 
     bool found = false;
@@ -130,8 +154,16 @@ TEST(BuildFactorizedRegionsTest, IdleMeasuredQubitStillZeroBytesWithMeasureOpPre
     circuit.append_measure(1, 0);
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
     ASSERT_EQ(graph.components.size(), 2U);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, true, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
 
     // Region for qubit 1 (idle, only measured).
     const auto it = std::find_if(regions.begin(), regions.end(), [](const Region& r) {
@@ -154,8 +186,16 @@ TEST(BuildFactorizedRegionsTest, AllCliffordComponentPicksStabilizerAndRecordsRe
     circuit.append_measure(1, 1);
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
     ASSERT_EQ(graph.components.size(), 1U);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, true, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions.size(), 1U);
     EXPECT_EQ(regions[0].engine, Engine::Stabilizer);
     EXPECT_FALSE(regions[0].engine_selection_reason.empty());
@@ -176,8 +216,16 @@ TEST(BuildFactorizedRegionsTest, OneNonCliffordGateKeepsComponentOnDenseAndNames
     circuit.append(Opcode::T, {0});
     circuit.append_measure(0, 0);
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, phase_4_engines(), false, true, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 phase_4_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions.size(), 1U);
     EXPECT_EQ(regions[0].engine, Engine::Dense);
     EXPECT_NE(regions[0].engine_selection_reason.find("operation 2"), std::string::npos)
@@ -197,6 +245,35 @@ TEST(BuildFactorizedRegionsTest, OneNonCliffordGateKeepsComponentOnDenseAndNames
 // under Phase 4's own engine set, by the test above) -- only evidence
 // that available_engines() has grown since then and the planner's own
 // cost-based selection correctly reflects that growth.
+// With gate fusion on (the default since Phase 24 item 7) the same three
+// gates on one qubit are ONE dense pass: dense work = 2 (init) + 2^(1+1)
+// (the block) + 2 (counts) = 8, under MPS's 14, so dense wins. A changed
+// winner by the fused cost model, recorded in docs/adr/0028 section 17.7.
+TEST(BuildFactorizedRegionsTest, WithFusionThreeGatesOnOneQubitAreOnePassAndDenseWins) {
+    Circuit circuit(1, 1);
+    circuit.append(Opcode::H, {0});
+    circuit.append(Opcode::H, {0});
+    circuit.append(Opcode::T, {0});
+    circuit.append_measure(0, 0);
+    const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0,
+                                                                 /*fuse_gates=*/true);
+    ASSERT_EQ(regions.size(), 1U);
+    EXPECT_EQ(regions[0].engine, Engine::Dense);
+    EXPECT_EQ(regions[0].estimated_work_units, 8U);
+    EXPECT_EQ(regions[0].fusion.fused_blocks, 1U);
+    EXPECT_EQ(regions[0].fusion.gates_absorbed, 2U);
+}
+
 TEST(BuildFactorizedRegionsTest, OneNonCliffordGateCanRouteToMPSWhenAvailableAndCheaper) {
     Circuit circuit(1, 1);
     circuit.append(Opcode::H, {0});
@@ -204,8 +281,17 @@ TEST(BuildFactorizedRegionsTest, OneNonCliffordGateCanRouteToMPSWhenAvailableAnd
     circuit.append(Opcode::T, {0});
     circuit.append_measure(0, 0);
     const analysis::InteractionGraph graph = analysis::build_interaction_graph(circuit);
-    const std::vector<Region> regions = build_factorized_regions(
-        circuit, graph, available_engines(), false, true, false, nullptr, 1'000'000'000, {});
+    const std::vector<Region> regions = build_factorized_regions(circuit,
+                                                                 graph,
+                                                                 available_engines(),
+                                                                 false,
+                                                                 true,
+                                                                 false,
+                                                                 nullptr,
+                                                                 1'000'000'000,
+                                                                 {},
+                                                                 /*shots=*/0,
+                                                                 /*fuse_gates=*/false);
     ASSERT_EQ(regions.size(), 1U);
     EXPECT_EQ(regions[0].engine, Engine::MPS);
     EXPECT_NE(regions[0].engine_selection_reason.find("operation 2"), std::string::npos)
@@ -229,7 +315,8 @@ TEST(BuildFactorizedRegionsTest, StatevectorRequestKeepsAllCliffordComponentOnDe
                                                                  false,
                                                                  nullptr,
                                                                  1'000'000'000,
-                                                                 {});
+                                                                 {},
+                                                                 /*shots=*/0);
     ASSERT_EQ(regions.size(), 1U);
     EXPECT_EQ(regions[0].engine, Engine::Dense);
 }

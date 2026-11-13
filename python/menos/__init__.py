@@ -9,13 +9,20 @@ from menos import _core
 from menos._core import (
     Backend,
     Circuit,
+    CircuitBuilder,
+    ClassicalRegister,
     MitigatedResult,
     NoiseMethod,
     Opcode,
+    Parameter,
+    ParameterExpression,
+    QuantumRegister,
     ReadoutMitigationOptions,
     Result,
     RunOptions,
+    Tier,
     readout_calibration_circuits,
+    release_device_memory,
     run,
     run_batch,
     run_readout_mitigated,
@@ -31,10 +38,16 @@ from menos.exceptions import (
 __all__ = [
     "Backend",
     "Circuit",
+    "CircuitBuilder",
+    "Parameter",
+    "ParameterExpression",
+    "QuantumRegister",
+    "ClassicalRegister",
     "NoiseMethod",
     "Opcode",
     "Result",
     "RunOptions",
+    "Tier",
     "run",
     "run_batch",
     "ReadoutMitigationOptions",
@@ -42,6 +55,7 @@ __all__ = [
     "readout_calibration_circuits",
     "run_readout_mitigated",
     "from_qasm3",
+    "release_device_memory",
     "MenosError",
     "InvalidCircuitError",
     "UnsupportedFeatureError",
@@ -64,4 +78,4 @@ def from_qasm3(text: str, inputs: dict[str, float] | None = None) -> Circuit:
     return _core.from_qasm3(text, bindings)
 
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"

@@ -9,7 +9,7 @@ target_include_directories(menos_benchmark_environment PUBLIC ${CMAKE_CURRENT_SO
 target_link_libraries(menos_benchmark_environment PUBLIC menos_plan)
 target_compile_options(menos_benchmark_environment PRIVATE ${MENOS_WARNING_FLAGS})
 
-# Phase 21 step 1 (docs/adr/0025 section 5): plan_job latency and heap
+# Phase 24 step 1 (docs/adr/0028 section 5): plan_job latency and heap
 # traffic over the fixed planner corpus shared with the golden-plan test, and
 # a cold-calibration probe run once per fresh process by bench/run_calibration.sh.
 add_executable(menos_planner_benchmark
@@ -23,7 +23,7 @@ target_link_libraries(menos_planner_benchmark PRIVATE
 )
 target_compile_options(menos_planner_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
-# Phase 21 step 2 pass 2 (docs/adr/0025 section 12): each planner data
+# Phase 24 step 2 pass 2 (docs/adr/0028 section 12): each planner data
 # structure timed alone.
 add_executable(menos_planner_structures_benchmark
     planner_structures_benchmark.cpp
@@ -39,7 +39,30 @@ add_executable(menos_calibration_probe calibration_probe.cpp)
 target_link_libraries(menos_calibration_probe PRIVATE menos_plan)
 target_compile_options(menos_calibration_probe PRIVATE ${MENOS_WARNING_FLAGS})
 
-# Phase 21 owner question 4: does calibration noise change the chosen plan?
+# Phase 24 step 1, item 9 (docs/adr/0028 section 16.9): the dense work rate by
+# state size and thread count, and the scratch disk's write/read bandwidths.
+add_executable(menos_dense_rate_probe dense_rate_probe.cpp)
+target_link_libraries(menos_dense_rate_probe PRIVATE menos_plan menos_engines_dense)
+target_compile_options(menos_dense_rate_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 24 step 1, item 7 (docs/adr/0028 section 17.3): the cost of one pass
+# over the state by operand count and size, and a brickwork circuit applied
+# gate by gate against fused blocks, on the unchanged kernels.
+add_executable(menos_dense_fusion_probe dense_fusion_probe.cpp)
+target_link_libraries(menos_dense_fusion_probe PRIVATE
+    menos_api menos_plan menos_engines_dense menos_ir menos_benchmark_environment
+)
+target_compile_options(menos_dense_fusion_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 24 item 8 step 1 (docs/adr/0028 section 19.3): one pass of each dense
+# CPU kernel by the operand placement that selects its code path.
+add_executable(menos_dense_simd_probe dense_simd_probe.cpp)
+target_link_libraries(menos_dense_simd_probe PRIVATE
+    menos_plan menos_engines_dense menos_benchmark_environment
+)
+target_compile_options(menos_dense_simd_probe PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 24 owner question 4: does calibration noise change the chosen plan?
 add_executable(menos_calibration_sensitivity calibration_sensitivity.cpp)
 target_include_directories(menos_calibration_sensitivity PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
 target_link_libraries(menos_calibration_sensitivity PRIVATE menos_plan)
@@ -70,6 +93,18 @@ target_link_libraries(menos_cost_model_correlation_benchmark PRIVATE
     menos_api menos_cost menos_engines_dense menos_benchmark_environment
 )
 target_compile_options(menos_cost_model_correlation_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 24 step 1, item 1 (docs/adr/0028 sections 16.7 and 16.9): actual over
+# predicted seconds for every engine, on easy, representative and stress
+# workloads, CSV on stdout for bench/tools/accuracy_table.py.
+add_executable(menos_cost_model_accuracy_benchmark
+    cost_model_accuracy_benchmark.cpp
+)
+target_include_directories(menos_cost_model_accuracy_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/tests/plan)
+target_link_libraries(menos_cost_model_accuracy_benchmark PRIVATE
+    menos_api menos_runtime menos_plan menos_benchmark_environment
+)
+target_compile_options(menos_cost_model_accuracy_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
 add_executable(menos_stabilizer_cost_correlation_benchmark
     stabilizer_cost_correlation_benchmark.cpp
@@ -129,6 +164,34 @@ target_link_libraries(menos_monitor_overhead_benchmark PRIVATE
 )
 target_compile_options(menos_monitor_overhead_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
+# Phase 23 step 1 (docs/adr/0027 section 4), CPU side: scratch-disk bandwidth
+# through explicit and mapped I/O, the pass counts of the chunked executor's
+# greedy rule, and the in-memory dense engine as the competitor. Platform
+# code (pread/pwrite, mmap; ReadFile/WriteFile, CreateFileMapping) lives in
+# the benchmark only; src/ gains its own in step 2.
+add_executable(menos_tiered_memory_benchmark
+    tiered_memory_benchmark.cpp
+    menos_benchmark_main.cpp
+)
+target_link_libraries(menos_tiered_memory_benchmark PRIVATE
+    menos_engines_dense menos_engines_dense_tiered menos_ir menos_common menos_benchmark_environment
+    benchmark::benchmark
+    nlohmann_json::nlohmann_json  # MENOS_TIERED_MEMORY_JSON output
+)
+target_compile_options(menos_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+# Phase 23 step 5 (docs/adr/0027 section 6): the disk tier's gate-scale runs
+# through the public API, one timed run each (a run writes a 16-32 GiB
+# scratch file), with its own main.
+add_executable(menos_tiered_gate_benchmark
+    tiered_gate_benchmark.cpp
+)
+target_link_libraries(menos_tiered_gate_benchmark PRIVATE
+    menos_api menos_benchmark_environment
+    nlohmann_json::nlohmann_json  # MENOS_TIERED_GATE_JSON output
+)
+target_compile_options(menos_tiered_gate_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
 if(MENOS_ENABLE_CUDA)
     # The CPU/CUDA crossover benchmark (docs/BUILD_PLAN.md Phase 10).
     add_executable(menos_cuda_crossover_benchmark
@@ -169,6 +232,37 @@ if(MENOS_ENABLE_CUDA)
     target_compile_options(menos_cuda_kernel_benchmark PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>
         $<$<COMPILE_LANGUAGE:CUDA>:-fmad=false>)
+
+    # Phase 22 step 1 (docs/adr/0026 section 4): allocation, the expectation
+    # scratch, three device-to-host paths and whole executions, same run. It
+    # calls the CUDA runtime directly, so it takes the toolkit's include
+    # directories through menos_kernels_cuda, as device_buffer.cpp does.
+    add_executable(menos_cuda_memory_benchmark
+        cuda_memory_benchmark.cpp
+        menos_benchmark_main.cpp
+    )
+    target_link_libraries(menos_cuda_memory_benchmark PRIVATE
+        menos_kernels_cuda menos_engines_dense_cuda menos_ir menos_plan
+        menos_benchmark_environment benchmark::benchmark
+        nlohmann_json::nlohmann_json  # MENOS_CUDA_MEMORY_JSON output
+    )
+    target_compile_options(menos_cuda_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
+
+    # Phase 23 step 1 (docs/adr/0027 section 4), CUDA side: chunk-sized
+    # transfers from pageable, pinned and registered memory, a window copied
+    # in and out around gate sweeps, copy/compute overlap on two streams,
+    # managed memory beyond device memory, and the in-VRAM engine as the
+    # competitor. Same linkage as menos_cuda_memory_benchmark.
+    add_executable(menos_cuda_tiered_memory_benchmark
+        cuda_tiered_memory_benchmark.cpp
+        menos_benchmark_main.cpp
+    )
+    target_link_libraries(menos_cuda_tiered_memory_benchmark PRIVATE
+        menos_kernels_cuda menos_engines_dense_cuda menos_ir menos_plan
+        menos_benchmark_environment benchmark::benchmark
+        nlohmann_json::nlohmann_json  # MENOS_CUDA_TIERED_JSON output
+    )
+    target_compile_options(menos_cuda_tiered_memory_benchmark PRIVATE ${MENOS_WARNING_FLAGS})
 
     # Phase 17 step 4a (docs/adr/0021 section 5): every CPU/CUDA assignment of
     # a Factorized plan's regions, and one fragment-sized evaluation on each

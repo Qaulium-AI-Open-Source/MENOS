@@ -1,8 +1,10 @@
-// Optional planner counters for benchmark reports (docs/adr/0025 section
+// Optional planner counters for benchmark reports (docs/adr/0028 section
 // 12.3, C.3). Compiled in only when CMake's MENOS_PLANNER_COUNTERS option is
 // ON, which no shipped or timed build sets: menos_planner_benchmark built
-// with it reports, per corpus job, how the Schmidt-rank cache was used. Not
-// public API.
+// with it reports, per corpus job, how the Schmidt-rank cache was used and
+// how much min-fill elimination search planning did (Phase 24 step 1,
+// docs/adr/0028 section 16.9, the figure a node-count cap would be derived
+// from). Not public API.
 
 #pragma once
 
@@ -21,6 +23,14 @@ struct PlannerCounters {
     std::uint64_t rank_evictions = 0;
     std::uint64_t rank_uncached = 0;
     std::uint64_t rank_peak_bytes = 0;  // the largest single cache's peak
+    // Min-fill elimination searches (estimate_treewidth_min_fill): how many
+    // ran, how many vertices they eliminated in total, how many vertices
+    // their graphs had in total, and how many stopped early (budget or
+    // caller).
+    std::uint64_t minfill_searches = 0;
+    std::uint64_t minfill_steps = 0;
+    std::uint64_t minfill_nodes = 0;
+    std::uint64_t minfill_stopped = 0;
 
     void add(const SchmidtRankCacheStats& s) {
         rank_hits += s.hits;

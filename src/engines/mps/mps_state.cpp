@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "common/error.h"
+#include "common/memory_ledger.h"
 #include "common/svd.h"
 
 namespace menos::engines::mps {
@@ -87,6 +88,15 @@ MPSState::MPSState(std::uint32_t num_qubits)
         t.chi_right = 1;
         t.data = {Complex{1.0, 0.0}, Complex{0.0, 0.0}};  // |0> in a trivial 1x2x1 tensor.
     }
+    charge_sites();
+}
+
+void MPSState::charge_sites() {
+    std::uint64_t bytes = common::buffer_bytes(sites_);
+    for (const SiteTensor& t : sites_) {
+        bytes += common::buffer_bytes(t.data);
+    }
+    charge_.set(bytes);
 }
 
 std::size_t MPSState::bond_dimension(std::size_t i) const {
@@ -114,6 +124,7 @@ void MPSState::move_orthogonality_center_to(std::size_t target) {
         shift_center_left(*this, orthogonality_center_);
         --orthogonality_center_;
     }
+    charge_sites();
 }
 
 }  // namespace menos::engines::mps

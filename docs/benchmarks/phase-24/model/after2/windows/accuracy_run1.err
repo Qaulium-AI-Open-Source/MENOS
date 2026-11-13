@@ -1,0 +1,120 @@
+== dense affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.41298
+time_model engine=0 1.62382e-06 2.08857e-10 1.14901e-07 0 0
+time_model engine=1 0 2.44854e-09 2.85329e-10 0 0
+time_model engine=2 9.39171e-12 6.12987e-09 0 1.66749e-07 1.31129e-07
+time_model engine=3 1.51125e-06 6.37361e-09 3.26597e-09 1.25676e-09 7.70236e-08
+time_model engine=4 3.9443e-07 1.56073e-09 1.83498e-06 0 0
+time_model engine=5 1.20458e-07 1.90783e-10 9.82394e-08 0 0
+time_model engine=6 8.18905e-08 5.31012e-10 5.94877e-07 0 0
+calibrated: work_units_per_second=4.84372e+09 memory_bandwidth_bytes_per_second=3.62594e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== dense_cuda affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.43791
+time_model engine=0 1.61273e-06 2.14329e-10 1.12899e-07 0 0
+time_model engine=1 0 2.3936e-09 2.8684e-10 0 0
+time_model engine=2 0 6.07373e-09 0 1.67611e-07 1.35779e-07
+time_model engine=3 1.52537e-06 7.28955e-09 3.09106e-09 1.18419e-09 7.93231e-08
+time_model engine=4 5.77059e-07 2.16276e-09 1.05568e-06 0 0
+time_model engine=5 1.2135e-07 1.89724e-10 9.7698e-08 0 0
+time_model engine=6 8.07379e-08 5.23585e-10 6.07613e-07 0 0
+calibrated: work_units_per_second=4.55087e+09 memory_bandwidth_bytes_per_second=3.643e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== stabilizer affinity=4000
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=3.51881
+time_model engine=0 1.77909e-06 2.06241e-10 1.1506e-07 0 0
+time_model engine=1 9.45735e-10 2.48652e-09 2.842e-10 0 0
+time_model engine=2 0 6.21715e-09 0 1.67977e-07 1.3818e-07
+time_model engine=3 1.4283e-06 2.70808e-08 1.63307e-09 9.43993e-10 8.37473e-08
+time_model engine=4 9.23524e-08 1.28747e-09 3.06239e-06 0 0
+time_model engine=5 1.24877e-07 1.92918e-10 9.96313e-08 0 0
+time_model engine=6 8.39393e-08 5.38759e-10 6.23155e-07 0 0
+calibrated: work_units_per_second=4.51728e+09 memory_bandwidth_bytes_per_second=3.57773e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== pauli affinity=4000
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=3.49849
+time_model engine=0 1.58909e-06 2.07018e-10 1.14438e-07 0 0
+time_model engine=1 0 2.42274e-09 2.96723e-10 0 0
+time_model engine=2 3.90784e-10 5.91499e-09 0 1.62286e-07 3.4866e-07
+time_model engine=3 1.39478e-06 2.94623e-08 1.58007e-09 1.00559e-09 8.27247e-08
+time_model engine=4 0 1.23956e-09 3.31211e-06 0 0
+time_model engine=5 1.23682e-07 1.93323e-10 1.02946e-07 0 0
+time_model engine=6 8.35786e-08 5.34612e-10 6.23986e-07 0 0
+calibrated: work_units_per_second=4.54939e+09 memory_bandwidth_bytes_per_second=3.66248e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== mps affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.43964
+time_model engine=0 1.57511e-06 2.05831e-10 1.16758e-07 0 0
+time_model engine=1 3.21572e-11 2.39772e-09 2.83764e-10 0 0
+time_model engine=2 6.27943e-10 5.79552e-09 7.24217e-12 1.58221e-07 5.18089e-07
+time_model engine=3 1.4914e-06 7.57494e-09 3.16558e-09 9.66585e-10 8.42832e-08
+time_model engine=4 2.32728e-07 1.33686e-09 2.34757e-06 0 0
+time_model engine=5 1.23977e-07 1.94793e-10 9.71537e-08 0 0
+time_model engine=6 8.2248e-08 5.43722e-10 6.00958e-07 0 0
+calibrated: work_units_per_second=4.82266e+09 memory_bandwidth_bytes_per_second=3.70428e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== tensor_network affinity=4000
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=3.5388
+time_model engine=0 1.66273e-06 2.14211e-10 1.15037e-07 0 0
+time_model engine=1 0 2.41711e-09 2.862e-10 0 0
+time_model engine=2 0 5.97157e-09 1.75345e-10 1.64907e-07 1.91046e-07
+time_model engine=3 1.42274e-06 2.82473e-08 1.48849e-09 1.03084e-09 8.26722e-08
+time_model engine=4 4.69437e-07 1.43682e-09 1.63147e-06 0 0
+time_model engine=5 1.23659e-07 1.9196e-10 9.99558e-08 0 0
+time_model engine=6 8.47105e-08 5.72039e-10 6.23804e-07 0 0
+calibrated: work_units_per_second=4.73687e+09 memory_bandwidth_bytes_per_second=3.80937e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== cut affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.45361
+time_model engine=0 1.81764e-06 2.12321e-10 1.12393e-07 0 0
+time_model engine=1 6.49874e-10 2.39233e-09 2.78649e-10 0 0
+time_model engine=2 0 5.98837e-09 0 1.67873e-07 1.61955e-07
+time_model engine=3 1.50131e-06 6.6977e-09 3.79876e-09 1.3211e-09 7.74486e-08
+time_model engine=4 0 1.07401e-09 3.42822e-06 0 0
+time_model engine=5 1.18874e-07 1.90238e-10 1.00703e-07 0 0
+time_model engine=6 8.37318e-08 5.28568e-10 6.98612e-07 0 0
+calibrated: work_units_per_second=4.67882e+09 memory_bandwidth_bytes_per_second=3.48771e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== factorized affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.43432
+time_model engine=0 1.59574e-06 2.06301e-10 1.1214e-07 0 0
+time_model engine=1 0 2.40251e-09 2.85482e-10 0 0
+time_model engine=2 0 6.22385e-09 0 1.63374e-07 1.16405e-07
+time_model engine=3 1.48776e-06 6.94934e-09 3.2111e-09 1.22606e-09 8.01457e-08
+time_model engine=4 2.55003e-07 1.39301e-09 2.36177e-06 0 0
+time_model engine=5 1.19739e-07 1.90182e-10 9.89158e-08 0 0
+time_model engine=6 8.76129e-08 5.28863e-10 5.862e-07 0 0
+calibrated: work_units_per_second=4.66637e+09 memory_bandwidth_bytes_per_second=3.79468e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== density_matrix affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.48987
+time_model engine=0 1.73053e-06 2.41166e-10 1.15857e-07 0 0
+time_model engine=1 0 2.49914e-09 2.99102e-10 0 0
+time_model engine=2 2.45133e-10 6.08699e-09 0 1.75937e-07 2.82405e-07
+time_model engine=3 1.59033e-06 6.95547e-09 3.45889e-09 1.13261e-09 8.46215e-08
+time_model engine=4 1.63493e-07 1.6922e-09 2.51753e-06 0 0
+time_model engine=5 1.20249e-07 1.93253e-10 1.00962e-07 0 0
+time_model engine=6 8.32552e-08 5.24832e-10 5.80908e-07 0 0
+calibrated: work_units_per_second=4.63416e+09 memory_bandwidth_bytes_per_second=3.74471e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0
+== trajectory affinity=FFC03
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibration_seconds=1.44938
+time_model engine=0 1.67092e-06 1.92144e-10 1.13026e-07 0 0
+time_model engine=1 5.90317e-10 2.42623e-09 2.78349e-10 0 0
+time_model engine=2 3.68097e-10 5.66673e-09 8.75108e-11 1.59076e-07 3.44707e-07
+time_model engine=3 1.60373e-06 6.978e-09 3.40395e-09 1.16431e-09 8.10143e-08
+time_model engine=4 8.11812e-07 1.77463e-09 4.06279e-07 0 0
+time_model engine=5 1.23163e-07 1.90188e-10 1.01876e-07 0 0
+time_model engine=6 8.08926e-08 5.24217e-10 6.25027e-07 0 0
+calibrated: work_units_per_second=4.76005e+09 memory_bandwidth_bytes_per_second=3.84892e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0

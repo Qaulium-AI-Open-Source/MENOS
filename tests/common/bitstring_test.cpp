@@ -65,6 +65,29 @@ TEST(BitStringTest, OrCombinesDisjointBits) {
     }
 }
 
+TEST(BitStringTest, XorFlipsBitsInBothDirections) {
+    BitString a(70);
+    a.set(0, true);
+    a.set(69, true);
+    BitString b(70);
+    b.set(0, true);   // 1 ^ 1 = 0
+    b.set(64, true);  // 0 ^ 1 = 1, across the word boundary
+    a ^= b;
+    EXPECT_FALSE(a.test(0));
+    EXPECT_TRUE(a.test(64));
+    EXPECT_TRUE(a.test(69));
+    a ^= b;  // an involution
+    EXPECT_TRUE(a.test(0));
+    EXPECT_FALSE(a.test(64));
+    EXPECT_TRUE(a.test(69));
+}
+
+TEST(BitStringTest, XorMismatchedWidthThrowsInternalError) {
+    BitString a(8);
+    BitString b(9);
+    EXPECT_THROW(a ^= b, common::InternalError);
+}
+
 TEST(BitStringTest, OrMismatchedWidthThrowsInternalError) {
     BitString a(8);
     BitString b(9);

@@ -1,16 +1,21 @@
 #include "engines/dense_cuda/cuda_dense_engine.h"
 
+#include <algorithm>
 #include <complex>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/checked_math.h"
 #include "common/error.h"
+#include "common/memory_bounds.h"
+#include "common/memory_ledger.h"
 #include "engines/dense/cumulative_distribution.h"
+#include "engines/dense/fused_block.h"
 #include "engines/dense/sample.h"
-#include "engines/dense/state_vector.h"
+#include "ir/fuse_gates.h"
 #include "ir/gate_table.h"
 #include "ir/noise.h"
 #include "kernels/cuda/device_buffer.h"
@@ -81,6 +86,65 @@ void apply_operations(kernels::DeviceState state,
     }
 }
 
+// Everything execute() allocates on the host, at the most it holds at once
+// (Phase 21, docs/adr/0025 section 3.4), in execute()'s order:
+//   * during the sweep, one GateOp's generated matrix;
+//   * then each term's partial sums, copied back and added up, beside the
+//     terms already computed;
+//   * then, for a statevector or counts, the one host copy of the state, which
+//     becomes the statevector, with the CPU sampler's outputs beside it.
+//   * with fusion (Phase 24 item 7), the fusion plan through the sweep and
+//     one block's build beside it, and the plan's construction before it.
+std::uint64_t host_peak_bytes(const EngineEstimateRequest& request,
+                              std::uint64_t state_bytes,
+                              const ir::FusionPlan* plan) {
+    std::uint64_t gate = 0;
+    std::uint64_t plan_bytes = 0;
+    std::uint64_t construction = 0;
+    if (plan != nullptr) {
+        // The CUDA kernels take the matrix as an argument: no host scratch,
+        // so one thread's figure is the block build alone.
+        gate = engines::dense::max_block_transient_bytes(*plan, *request.operations, 1);
+        plan_bytes = plan->heap_bytes();
+        construction = ir::FusionPlan::construction_peak_bytes(
+            request.operations->size(), plan->block_count(), plan->block_qubits.size());
+    } else {
+        for (const Operation& op : *request.operations) {
+            if (const auto* g = std::get_if<GateOp>(&op)) {
+                gate = std::max(gate,
+                                common::heap_block_bytes(checked_mul(
+                                    checked_pow2(static_cast<unsigned>(2 * g->qubits.size())),
+                                    sizeof(std::complex<double>))));
+            }
+        }
+    }
+    std::uint64_t terms = 0;
+    std::uint64_t reduction = 0;
+    if (request.want_expectation) {
+        terms = common::heap_block_bytes(
+            checked_mul(static_cast<std::uint64_t>(request.observable->terms.size()),
+                        sizeof(std::complex<double>)));
+        reduction = checked_add(
+            terms, common::heap_block_bytes(kernels::cuda::expectation_scratch_bytes()));
+    }
+    std::uint64_t copy_back = 0;
+    if (request.want_statevector || request.want_counts) {
+        copy_back = checked_add(terms, common::heap_block_bytes(state_bytes));
+        if (request.want_counts) {
+            const std::uint32_t n = request.num_qubits;
+            copy_back =
+                checked_add(copy_back,
+                            request.is_sole_region
+                                ? engines::dense::sample_bytes(request.shots,
+                                                               std::min(n, request.bitstring_width),
+                                                               request.bitstring_width)
+                                : engines::dense::CumulativeDistribution::heap_bytes(
+                                      checked_pow2(n), request.bitstring_width));
+        }
+    }
+    return std::max(construction, checked_add(plan_bytes, std::max({gate, reduction, copy_back})));
+}
+
 }  // namespace
 
 bool cuda_device_available() {
@@ -125,8 +189,23 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
     }
     try {
         std::uint64_t work = checked_pow2(request.num_qubits);  // initialization
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
+        // The fused sweep's blocks (Phase 24 item 7), each one launch of its
+        // operand count, or every gate on its own.
+        std::optional<ir::FusionPlan> plan;
+        std::vector<std::size_t> pass_operand_counts;
+        if (request.fuse_gates) {
+            plan.emplace(ir::plan_fusion(*request.operations));
+            pass_operand_counts.reserve(plan->block_count());
+            for (std::size_t b = 0; b < plan->block_count(); ++b) {
+                pass_operand_counts.push_back(plan->block_operands(b).size());
+            }
+        } else {
+            pass_operand_counts.reserve(request.operations->size());
+            for (const Operation& op : *request.operations) {
+                pass_operand_counts.push_back(operand_count(op));
+            }
+        }
+        for (const std::size_t k : pass_operand_counts) {
             if (k == 0) {
                 continue;  // MeasureOp
             }
@@ -148,17 +227,19 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
         const std::uint64_t state_bytes =
             checked_mul(checked_pow2(request.num_qubits), sizeof(std::complex<double>));
 
-        // Device memory: one state buffer. The gate matrix goes to constant
-        // memory and the expectation partials are a bounded 16 KiB scratch,
-        // neither of which scales with n, so the state is the whole story.
-        const std::uint64_t device_bytes = state_bytes;
+        // Device memory: the state buffer, plus the expectation reduction's
+        // partial sums while a term is reduced. The gate matrix goes to
+        // constant memory or a kernel argument.
+        const std::uint64_t device_bytes =
+            request.want_expectation
+                ? checked_add(state_bytes, kernels::cuda::expectation_scratch_bytes())
+                : state_bytes;
 
         // Transfers and launches, counted from what execute() actually does
         // rather than estimated in the abstract.
         std::uint64_t h2d_bytes = 0;
         std::uint64_t launches = 1;  // initialize
-        for (const Operation& op : *request.operations) {
-            const std::size_t k = operand_count(op);
+        for (const std::size_t k : pass_operand_counts) {
             if (k == 0) {
                 continue;  // MeasureOp launches nothing
             }
@@ -182,11 +263,8 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                                 {}};
         }
 
-        // Host peak: the CUDA backend still materializes a host-side copy
-        // whenever a statevector or counts are requested, so the host figure is
-        // honest about that rather than reporting zero.
         const std::uint64_t host_bytes =
-            (request.want_statevector || request.want_counts) ? state_bytes : 0;
+            host_peak_bytes(request, state_bytes, plan.has_value() ? &*plan : nullptr);
 
         // A statevector or counts request is what forces the big transfer back;
         // an expectation-only job returns one complex per term.
@@ -198,11 +276,28 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                                      sizeof(std::complex<double>))
                        : 0);
 
-        return CostEstimate{/*feasible=*/true,
-                            host_bytes,
-                            work,
-                            /*infeasible_reason=*/"",
-                            DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
+        CostEstimate estimate{/*feasible=*/true,
+                              host_bytes,
+                              work,
+                              /*infeasible_reason=*/"",
+                              DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
+        // Counts are drawn on the HOST, by the CPU dense engine's sampler on
+        // the copied-back state (execute() below), so that work is reported in
+        // the CPU dense engine's own time components, as DenseEngine reports
+        // it: one pass (the cumulative distribution), its 2^n amplitudes and
+        // the shots. The planner prices them at that engine's measured rates
+        // beside the device terms (docs/adr/0028 section 23). Without them a
+        // job with many shots looked as cheap on the GPU as one with none.
+        if (request.want_counts) {
+            auto& dense = estimate.time.counts[static_cast<std::size_t>(Engine::Dense)];
+            dense[0] = 1.0;
+            dense[1] = static_cast<double>(checked_pow2(request.num_qubits));
+            dense[2] = static_cast<double>(request.shots);
+        }
+        if (plan.has_value()) {
+            estimate.fusion = FusionSummary{plan->fused_blocks, plan->gates_absorbed};
+        }
+        return estimate;
     } catch (const ResourceExceeded& e) {
         return CostEstimate{/*feasible=*/false, 0, 0, e.what(), {}};
     }
@@ -220,7 +315,25 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
                                        kernels::cuda::device_available_bytes());
 
     kernels::cuda::initialize(buffer.state(), request.global_phase);
-    apply_operations(buffer.state(), request.operations, request.monitor);
+    if (request.fuse_gates) {
+        // The same plan the CPU engine and the disk tier build from the same
+        // operations, and the same host-built block matrices (Phase 24 item
+        // 7, docs/adr/0028 section 17): the device applies each with the
+        // kernel that is bitwise the CPU one's, so CPU and CUDA stay
+        // identical with fusion on. The plan is built before the device
+        // state only in the host's accounting; the device buffer above is
+        // the device's own.
+        const ir::FusionPlan plan = ir::plan_fusion(request.operations);
+        engines::dense::apply_blocks(
+            plan,
+            request.operations,
+            request.monitor,
+            [&](std::span<const std::complex<double>> matrix, std::span<const QubitId> operands) {
+                kernels::cuda::apply_matrix(buffer.state(), matrix, operands);
+            });
+    } else {
+        apply_operations(buffer.state(), request.operations, request.monitor);
+    }
 
     EngineExecutionResult result;
     result.actual_bytes = buffer.size_bytes();
@@ -238,16 +351,23 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
     }
 
     // A statevector or counts request is what forces the transfer back. Both
-    // are served from one copy.
+    // are served from one host copy, which becomes the result's statevector
+    // when one is requested (docs/adr/0025 section 3.3): the device state is
+    // copied straight into it, the CPU sampler reads it, and it is then moved,
+    // never copied again.
     if (request.want_statevector || request.want_counts) {
-        engines::dense::StateVector host_state(static_cast<int>(request.num_qubits),
-                                               request.budget_bytes);
-        buffer.copy_to_host(host_state.amplitudes());
-
-        if (request.want_statevector) {
-            const auto amps = host_state.amplitudes();
-            result.statevector = std::vector<std::complex<double>>(amps.begin(), amps.end());
+        const std::uint64_t host_bytes =
+            common::checked_mul(num_amplitudes, sizeof(std::complex<double>));
+        if (host_bytes > request.budget_bytes) {
+            throw ResourceExceeded("CUDA dense: the host copy needs " + std::to_string(host_bytes) +
+                                   " bytes, budget is " + std::to_string(request.budget_bytes) +
+                                   " bytes");
         }
+        std::vector<std::complex<double>> host(static_cast<std::size_t>(num_amplitudes));
+        // Charged while this engine holds it; once moved into the result it is
+        // the result's.
+        common::MemoryLedger::Charge host_charge(common::buffer_bytes(host));
+        buffer.copy_to_host(host);
 
         if (request.want_counts) {
             // The CPU sampler, unchanged. This is what makes counts identical
@@ -256,11 +376,16 @@ EngineExecutionResult CudaDenseEngine::execute(const EngineExecutionRequest& req
             const std::span<const std::pair<QubitId, ClbitId>> targets = request.measure_targets;
             if (request.is_sole_region) {
                 result.counts = engines::dense::sample(
-                    host_state, request.shots, request.seed, targets, request.bitstring_width);
+                    host, request.shots, request.seed, targets, request.bitstring_width);
             } else {
                 result.counts_sampler = std::make_unique<engines::dense::CumulativeDistribution>(
-                    host_state, targets, request.bitstring_width);
+                    host, targets, request.bitstring_width);
             }
+        }
+
+        if (request.want_statevector) {
+            host_charge.release();
+            result.statevector = std::move(host);
         }
     }
 

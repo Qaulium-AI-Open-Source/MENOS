@@ -1,0 +1,2 @@
+wsl vhd before ext4 chain: 57993592832 bytes 2026-11-03T21:22:21Z
+wsl vhd after ext4 chain: 62255005696 bytes 2026-11-03T22:03:52Z

@@ -1,0 +1,12 @@
+MENOS EXECUTION REPORT
+circuit    qubits=16 clbits=16 operations=251 depth=21 global_phase=0
+light_cone qubits 16->16 operations 251->251
+candidate 0strategy=direct_dense feasible=true winner=false peak_bytes=1302316 work_units=20840448
+candidate 1strategy=direct_stabilizer feasible=true winner=true peak_bytes=251176 work_units=4304
+candidate 2strategy=direct_mps feasible=true winner=false peak_bytes=10962768 work_units=1526890512
+strategy   direct_stabilizer (exact)
+region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] engine=stabilizer backend=cpu
+estimated  state_bytes=251176 work_units=4304
+--- plan fields not printed by explain() ---
+region 0: operations=251 observable_terms=0 state_bytes=251176 work_units=4304 global_to_local_size=16
+reduced_circuit: qubits=16 operations=251

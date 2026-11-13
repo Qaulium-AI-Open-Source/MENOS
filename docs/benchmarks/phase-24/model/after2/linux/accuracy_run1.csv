@@ -1,0 +1,46 @@
+engine,workload,target,backend,status,won,pred_source,predicted_s,actual_median_s,actual_min_s,actual_max_s,ratio,note,time_terms
+dense,random_brickwork_d20/n16,DirectDense,cpu,measured,yes,planner,0.00692789,0.00778871,0.00755271,0.0100608,1.12425,"",0:160:40501248:1000:0:0
+dense,random_brickwork_d20/n20,DirectDense,cpu,measured,no,planner,0.110465,0.090922,0.0901579,0.0948572,0.823082,"",0:202:819986432:1000:0:0
+dense,random_brickwork_d20/n22,DirectDense,cpu,measured,no,planner,0.466001,0.434772,0.430664,0.45059,0.932985,"",0:223:3623878656:1000:0:0
+dense,random_brickwork_d20/n24,DirectDense,cpu,measured,no,planner,2.01102,2.20716,2.15525,2.25389,1.09754,"",0:244:15871246336:1000:0:0
+dense,qft/n16,DirectDense,cpu,measured,yes,planner,0.00603569,0.00450078,0.00436411,0.00455335,0.745695,"",0:153:35651584:0:0:0
+dense,qft/n20,DirectDense,cpu,measured,no,planner,0.118687,0.0877457,0.0845376,0.0891307,0.739306,"",0:231:880803840:0:0:0
+dense,qft/n22,DirectDense,cpu,measured,no,planner,0.542647,0.524741,0.512799,0.53494,0.967002,"",0:276:4244635648:0:0:0
+dense,ghz/n20,DirectDense,cpu,measured,no,planner,0.0136801,0.0125654,0.011629,0.0132848,0.918513,"",0:21:81788928:1000:0:0
+dense,ghz/n24,DirectDense,cpu,measured,no,planner,0.262004,0.353077,0.346307,0.391592,1.3476,"",0:25:1577058304:1000:0:0
+dense_cuda,random_brickwork_d20/n20,DirectDense,cuda,measured,yes,planner,0.110465,0.103607,0.095901,0.115246,0.937911,"",0:202:819986432:1000:0:0
+dense_cuda,random_brickwork_d20/n24,DirectDense,cuda,measured,yes,planner,2.01102,1.71559,1.67979,1.71868,0.853098,"",0:244:15871246336:1000:0:0
+stabilizer,random_clifford_d100/n256,DirectStabilizer,cpu,measured,yes,planner,0.0222387,0.0211276,0.0209508,0.0227021,0.950038,"",1:38350:9817600:1548288:65536:0
+stabilizer,random_clifford_d100/n1000,DirectStabilizer,cpu,measured,yes,planner,0.346027,0.397858,0.39527,0.400751,1.14979,"",1:149950:149950000:48000000:1000000:0
+stabilizer,graph_state/n500,DirectStabilizer,cpu,measured,yes,planner,0.00486989,0.00667149,0.00643836,0.0068008,1.36995,"",1:2500:1250000:8000000:250000:0
+stabilizer,graph_state/n2000,DirectStabilizer,cpu,measured,no,planner,0.128076,0.0795259,0.0785962,0.0832289,0.620928,"",1:10000:20000000:320000000:4000000:0
+pauli,clifford_rz2_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00365697,0.00508021,0.00494071,0.00512596,1.38919,"",2:1194:477600:477600:800:400
+pauli,clifford_rz4_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00370741,0.00543814,0.00511544,0.00575416,1.46683,"",2:1198:479200:479200:1600:400
+pauli,clifford_rz6_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00375785,0.00563572,0.00526273,0.00601864,1.49972,"",2:1202:480800:480800:2400:400
+pauli,clifford_rz8_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00380829,0.00584698,0.00579993,0.00605726,1.53533,"",2:1206:482400:482400:3200:400
+pauli,clifford_rz10_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00385873,0.00599665,0.0059702,0.00606842,1.55405,"",2:1210:484000:484000:4000:400
+pauli,clifford_rz12_paulis400/n40,DirectPauli,cpu,measured,yes,planner,0.00390917,0.00723581,0.00695039,0.00835872,1.85098,"",2:1214:485600:485600:4800:400
+mps,ising_trotter_s4/n16,DirectMPS,cpu,measured,no,planner,0.00558983,0.0062238,0.00620882,0.00638944,1.11342,"",3:120:171896:37966:4776000:16000
+mps,ising_trotter_s4/n32,DirectMPS,cpu,measured,yes,planner,0.01452,0.0155346,0.0148067,0.0162744,1.06988,"",3:248:471416:97806:12968000:32000
+mps,ising_trotter_s4/n64,DirectMPS,cpu,measured,yes,planner,0.0323803,0.036602,0.0358225,0.0410447,1.13038,"",3:504:1070456:217486:29352000:64000
+mps,random_brickwork_d8/n12,DirectMPS,cpu,measured,no,planner,0.0251147,0.0253391,0.0249279,0.0255956,1.00894,"",3:160:3079320:203718:10920000:12000
+mps,random_brickwork_d8/n16,DirectMPS,cpu,measured,no,planner,0.512177,0.486856,0.471382,0.51515,0.950561,"",3:224:74869320:1301430:174760000:16000
+mps,random_brickwork_d8/n20,DirectMPS,cpu,measured,no,planner,1.29133,1.3414,1.25056,1.6599,1.03877,"",3:288:189913080:2743206:436904000:20000
+tensor_network,brickwork_d4_zall/n30,DirectTensorNetwork,cpu,measured,yes,planner,0.000585298,0.000833868,0.0007919,0.000904499,1.42469,"",4:532:268754:178:0:0
+tensor_network,brickwork_d4_zall/n40,DirectTensorNetwork,cpu,measured,yes,planner,0.000794107,0.000993403,0.000866458,0.0010842,1.25097,"",4:712:368994:238:0:0
+tensor_network,random_pairs_d6_ising/n24,DirectTensorNetwork,cpu,infeasible,no,,-1,-1,-1,-1,-1,"the elimination search for one observable term did not finish within the job's own memory budget (12598722560 bytes) -- this means the search was stopped early, not that no valid contraction plan exists for this circuit",
+cut,cut_scrambled_d8_budget2MiB/w10,CutAndRecombine,cpu,not_chosen,no,planner,1.40159,-1,-1,-1,-1,"winner DirectMPS",
+cut,cut_scrambled_d8_budget2MiB/w12,CutAndRecombine,cpu,plan_refused,,,-1,-1,-1,-1,-1,"plan_job: no feasible candidate within the time budget of 1000000.000000 s -- direct dense simulation requires 268439560 bytes, budget is 2097152 bytes; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read; operation 0 (ry) is not a Clifford gate; checked_mul: 9223372036854775808 * 2 overflows uint64_t; direct mps simulation requires 3517392 bytes, budget is 2097152 bytes; the elimination search for one observable term did not finish within the job's own memory budget (2097152 bytes) -- this means the search was stopped early, not that no valid contraction plan exists for this circuit; cut fragments require 3692514 bytes, budget is 2097152 bytes",
+cut,cut_scrambled_d8_budget2MiB/w14,CutAndRecombine,cpu,plan_refused,,,-1,-1,-1,-1,-1,"plan_job: no feasible candidate within the time budget of 1000000.000000 s -- direct dense simulation requires 4294971868 bytes, budget is 2097152 bytes; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read; operation 0 (ry) is not a Clifford gate; checked_mul: 9223372036854775808 * 2 overflows uint64_t; direct mps simulation requires 13757792 bytes, budget is 2097152 bytes; the elimination search for one observable term did not finish within the job's own memory budget (2097152 bytes) -- this means the search was stopped early, not that no valid contraction plan exists for this circuit; cut fragments require 13955954 bytes, budget is 2097152 bytes",
+cut,clusters_migrating1_budget1MB/c4,CutAndRecombine,cpu,not_chosen,no,planner,7.91226e-05,-1,-1,-1,-1,"winner DirectDense",
+cut,clusters_migrating1_budget1MB/c5,CutAndRecombine,cpu,not_chosen,no,planner,0.000109575,-1,-1,-1,-1,"winner DirectDense",
+cut,clusters_migrating1_budget1MB/c6,CutAndRecombine,cpu,not_chosen,no,planner,0.00207267,-1,-1,-1,-1,"winner DirectDense",
+cut,random_pairs_d10_zall/n20,CutAndRecombine,cpu,not_chosen,no,planner,0.562537,-1,-1,-1,-1,"winner DirectDense",
+factorized,blocks_4x8_d30,Factorized,cpu,measured,yes,planner,0.000733007,0.000992083,0.000812832,0.00120829,1.35344,"",0:444:440320:4000:0:0
+factorized,blocks_2x18_d20,Factorized,cpu,not_chosen,no,planner,0.0578134,-1,-1,-1,-1,"winner Factorized",
+factorized,mixed_clifford200_dense18_d20,Factorized,cpu,measured,yes,planner,0.0318636,0.0400527,0.0386523,0.0904308,1.257,"",0:181:183500800:1000:0:0|1:5990:1198000:1120000:40000:0
+density_matrix,noisy_brickwork_d10/n8,DirectDensityMatrix,cpu,measured,yes,planner,0.00905183,0.0110709,0.0101966,0.0137803,1.22306,"",5:266:48562432:1000:0:0
+density_matrix,noisy_brickwork_d10/n10,DirectDensityMatrix,cpu,measured,yes,planner,0.182337,0.167697,0.152897,0.17669,0.91971,"",5:336:986711040:1000:0:0
+density_matrix,noisy_brickwork_d10/n12,DirectDensityMatrix,cpu,measured,yes,planner,3.53588,3.65308,3.56754,3.76057,1.03315,"",5:406:19142807552:1000:0:0
+trajectory,noisy_brickwork_d6/n12,DirectTrajectory,cpu,measured,yes,planner,1.22548,1.00109,0.979134,1.03754,0.816899,"",6:172000:1814528000:1000:0:0
+trajectory,noisy_brickwork_d6/n14,DirectTrajectory,cpu,measured,yes,planner,5.74408,4.75834,4.69745,5.09939,0.828391,"",6:202000:8536064000:1000:0:0

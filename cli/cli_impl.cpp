@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -52,6 +53,11 @@ struct Flags {
     std::optional<double> time_budget;
     // Phase 17 (docs/adr/0021 section 2, owner Q2): RunOptions::backend.
     std::optional<menos::Backend> backend;
+    // Phase 23 (docs/adr/0027): RunOptions::tier and RunOptions::scratch_directory.
+    std::optional<menos::Tier> tier;
+    // Phase 24 item 7: RunOptions::fuse_gates; --fusion on|off, on by default.
+    bool fuse_gates = true;
+    std::optional<std::filesystem::path> scratch_directory;
     // Phase 19 (docs/adr/0023 section 3): values for an OpenQASM 3 program's
     // `input` declarations.
     menos::qasm3::InputBindings inputs;
@@ -123,6 +129,35 @@ Flags parse_flags(const std::vector<std::string>& args, std::size_t start, bool 
             } else {
                 throw UsageError("--backend must be 'cpu' or 'cuda', got '" + value + "'");
             }
+        } else if (arg == "--tier") {
+            if (i + 1 >= args.size()) {
+                throw UsageError("--tier requires an argument");
+            }
+            const std::string& value = args[++i];
+            if (value == "disk") {
+                flags.tier = menos::Tier::Disk;
+            } else if (value == "in_memory") {
+                flags.tier = menos::Tier::InMemory;
+            } else {
+                throw UsageError("--tier must be 'disk' or 'in_memory', got '" + value + "'");
+            }
+        } else if (arg == "--fusion") {
+            if (i + 1 >= args.size()) {
+                throw UsageError("--fusion requires an argument");
+            }
+            const std::string& value = args[++i];
+            if (value == "on") {
+                flags.fuse_gates = true;
+            } else if (value == "off") {
+                flags.fuse_gates = false;
+            } else {
+                throw UsageError("--fusion must be 'on' or 'off', got '" + value + "'");
+            }
+        } else if (arg == "--scratch-dir") {
+            if (i + 1 >= args.size()) {
+                throw UsageError("--scratch-dir requires an argument");
+            }
+            flags.scratch_directory = std::filesystem::path(args[++i]);
         } else if (arg == "--input") {
             if (i + 1 >= args.size()) {
                 throw UsageError("--input requires an argument NAME=VALUE");
@@ -233,7 +268,10 @@ int cmd_explain(const std::string& file, const Flags& flags, std::ostream& out) 
                                     .want_statevector = false,
                                     .seed = flags.seed.value_or(0),
                                     .time_budget_seconds = flags.time_budget,
-                                    .backend = flags.backend};
+                                    .fuse_gates = flags.fuse_gates,
+                                    .backend = flags.backend,
+                                    .tier = flags.tier,
+                                    .scratch_directory = flags.scratch_directory};
     const menos::Plan plan = menos::preview(circuit, options);
     out << plan.explain() << "\n";
     return 0;
@@ -259,7 +297,10 @@ int cmd_run(const std::string& file, const Flags& flags, std::ostream& out) {
                                     .want_statevector = flags.statevector,
                                     .seed = *flags.seed,
                                     .time_budget_seconds = flags.time_budget,
-                                    .backend = flags.backend};
+                                    .fuse_gates = flags.fuse_gates,
+                                    .backend = flags.backend,
+                                    .tier = flags.tier,
+                                    .scratch_directory = flags.scratch_directory};
     const menos::Result result = menos::run(circuit, options);
     out << result.explain() << "\n";
 
@@ -284,7 +325,8 @@ int dispatch(const std::vector<std::string>& args, std::ostream& out) {
     if (args.size() < 2) {
         throw UsageError(
             "usage: menos <explain|run> <file.qasm> [--shots N] [--seed N] [--statevector] "
-            "[--time-budget SECONDS] [--backend cpu|cuda] [--input NAME=VALUE]...");
+            "[--time-budget SECONDS] [--backend cpu|cuda] [--tier disk|in_memory] "
+            "[--scratch-dir PATH] [--fusion on|off] [--input NAME=VALUE]...");
     }
     const std::string& command = args[0];
     const std::string& file = args[1];

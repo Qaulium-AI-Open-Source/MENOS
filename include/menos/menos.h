@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 
 #include "menos/accuracy_policy.h"
+#include "menos/builder.h"
 #include "menos/circuit.h"
 #include "menos/noise_method.h"
 #include "menos/observable.h"
@@ -95,6 +97,22 @@ struct RunOptions {
     // run, and the CUDA engine does not fuse, so with this on a CPU run is no
     // longer bitwise identical to a CUDA run of the same job. Off by default.
     bool fuse_diagonal_gates = false;
+    // Gate fusion (Phase 24 item 7, docs/adr/0028 section 17). The dense
+    // engines (CPU, CUDA and the disk tier) sweep the state once per fused
+    // block instead of once per gate: a gate joins the newest block that
+    // shares a qubit with it when one of the two qubit sets contains the
+    // other, so every merge removes a pass and widens none, and a diagonal
+    // pass is never turned into a dense one. On by default at every size; it
+    // reads nothing from the machine, so the same circuit gives the same
+    // blocks everywhere. A fused run is exact up to rounding (the block's
+    // matrix is the product of its gates, within common::kDefaultAbsTol of
+    // the gate-by-gate run) and keeps every bitwise identity the unfused run
+    // has: the same bytes on every thread count, on CPU and CUDA, in memory
+    // and on the disk tier. The plan report names the outcome on the region
+    // line (fusion=containment blocks= absorbed=). Off, every gate is
+    // applied on its own and results and reports are byte-identical to a run
+    // from before fusion existed.
+    bool fuse_gates = true;
     // The machine to run on (Phase 17, docs/adr/0021 section 2). A request, not
     // a preference: it is honoured or the job is refused, never quietly
     // replaced.
@@ -120,6 +138,34 @@ struct RunOptions {
     // sample of the same distribution for the same seed, because a different
     // engine draws them.
     std::optional<Backend> backend = std::nullopt;
+    // The memory tier (Phase 23, docs/adr/0027). The planner reaches for the
+    // disk tier -- the dense state in a scratch file, the gates applied chunk
+    // by chunk through a window in memory -- only when the in-memory state
+    // does not fit the memory budget and no statevector is wanted, so no job
+    // that fits is planned differently. A request, not a preference, like
+    // `backend`:
+    //
+    // - Unset (the default): the planner chooses.
+    // - Tier::Disk: the job runs on the disk tier whether or not it would have
+    //   fit in memory, and never falls back. run() throws UnsupportedFeature
+    //   for a request the tier cannot serve at all (a statevector, a noisy
+    //   circuit, or backend=cuda), and ResourceExceeded when it has no room
+    //   (too little scratch space beside the reserve, or a window that does
+    //   not fit the memory budget).
+    // - Tier::InMemory: the disk tier is never used; a job that does not fit
+    //   is refused as it was before Phase 23.
+    // - Tier::HostOffloaded was measured and not built (docs/adr/0027 section
+    //   10.1); requesting it raises UnsupportedFeature.
+    //
+    // Counts and expectation values on the disk tier are bitwise the
+    // in-memory engine's for the same circuit, options and seed.
+    std::optional<Tier> tier = std::nullopt;
+    // Where the disk tier creates its scratch file (16 * 2^n bytes, deleted
+    // when the run ends, also on an exception). Unset: the system's temporary
+    // directory, std::filesystem::temp_directory_path(). The planner leaves
+    // 5% of the volume or 8 GiB, whichever is larger, untouched; a directory
+    // without room for the file beside that reserve refuses the disk tier.
+    std::optional<std::filesystem::path> scratch_directory = std::nullopt;
 };
 
 // Validates circuit and the output request, plans, executes, and returns
@@ -127,6 +173,11 @@ struct RunOptions {
 // ResourceExceeded (menos::common) on invalid input, an unsupported
 // feature, or an exceeded memory budget, respectively.
 [[nodiscard]] Result run(const Circuit& circuit, const RunOptions& options);
+
+// run(builder.to_circuit(), options): the builder's circuit, which must have
+// no parameters (InvalidCircuit naming them otherwise; bind them with
+// CircuitBuilder::bind and run the Circuit). docs/adr/0029 section 3.3.
+[[nodiscard]] Result run(const CircuitBuilder& builder, const RunOptions& options);
 
 // Validates circuit and the output request, plans, and returns the Plan
 // without executing it -- the same validation and planning run() performs,
@@ -155,5 +206,15 @@ struct PlanCacheStats {
 [[nodiscard]] PlanCacheStats plan_cache_stats();
 // Empties the cache and zeroes the statistics.
 void plan_cache_clear();
+// Returns to the CUDA driver the device memory MENOS keeps between jobs
+// (Phase 22, docs/adr/0026 section 3.1). MENOS allocates every device state
+// from one memory pool and, when a job finishes, keeps its state's memory in
+// the pool for the next job instead of freeing it, so a second job of the
+// same size pays no allocation. That memory is counted as available by the
+// planner and shown in explain() (device_pool_bytes). Call this to give it
+// back when another process needs the GPU. A no-op in a build without CUDA,
+// on a machine without a device, or when the pool is already empty. Throws
+// InternalError if the driver refuses to release it.
+void release_device_memory();
 
 }  // namespace menos

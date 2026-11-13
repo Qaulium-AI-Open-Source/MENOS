@@ -1,8 +1,10 @@
 #include "menos/menos.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <utility>
 
 #include "api/replan_controller.h"
@@ -14,15 +16,28 @@
 #include "plan/plan_cache.h"
 #include "plan/planner.h"
 
+#ifdef MENOS_ENABLE_CUDA
+#include "kernels/cuda/device_pool.h"
+#endif
+
 namespace menos {
 namespace {
+
+// What validate_and_plan() produces: the plan, the job it was planned for,
+// and the hardware profile it was planned against.
+struct PlannedJob {
+    Plan plan;
+    plan::JobSpec job_spec;
+    plan::HardwareProfile hardware_profile;
+    // Wall-clock seconds of the planner call alone (Result::plan_seconds()).
+    double plan_seconds = 0.0;
+};
 
 // Shared by run() and preview(): validate, build the JobSpec, and
 // produce a Plan. run() additionally executes it; preview()
 // (docs/BUILD_PLAN.md Phase 7) returns it as-is, for a preview that
 // never pays execution cost.
-std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
-                                                 const RunOptions& options) {
+PlannedJob validate_and_plan(const Circuit& circuit, const RunOptions& options) {
     ir::validate(circuit);
     ir::validate_output_request(
         circuit, options.shots, options.want_statevector, options.expectation.has_value());
@@ -61,6 +76,11 @@ std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
     const std::uint32_t max_threads =
         std::min(options.max_threads.value_or(hardware_threads), hardware_threads);
 
+    // The disk tier's scratch directory (Phase 23, docs/adr/0027 section 3.3):
+    // the caller's, or the system's temporary directory.
+    const std::filesystem::path scratch_directory = options.scratch_directory.has_value()
+                                                        ? *options.scratch_directory
+                                                        : std::filesystem::temp_directory_path();
     plan::JobSpec job_spec{
         .circuit = circuit,
         .shots = options.shots,
@@ -74,32 +94,63 @@ std::pair<Plan, plan::JobSpec> validate_and_plan(const Circuit& circuit,
         .expectation_precision = options.expectation_precision,
         .max_threads = max_threads,
         .fuse_diagonal_gates = options.fuse_diagonal_gates,
+        .fuse_gates = options.fuse_gates,
         .backend = options.backend,
+        .tier = options.tier,
+        .scratch_directory = scratch_directory,
     };
-    // Calibrated, not merely detected: the time budget is evaluated against
-    // measured throughput. Cached after the first call, so only the first job
-    // in a process pays for the microbenchmarks.
-    const plan::HardwareProfile& hardware_profile =
-        plan::hardware_profile_for(options.time_budget_seconds.has_value());
+    // The profile the job is planned against. The planner's own reach test,
+    // on the whole circuit, says whether this job could reach the disk tier
+    // (docs/adr/0027 section 9, Q3); it reads memory facts only, so the
+    // detected profile answers it. A job with a time budget, or one that could
+    // reach the disk tier (whose crossings the planner prices at the
+    // calibrated rates, docs/adr/0027 section 3.5), is planned against the
+    // calibrated profile: measured throughput, cached after the first call, so
+    // only the first such job in a process pays for the microbenchmarks. Any
+    // other CPU-only job never runs them (plan::hardware_profile_for, Phase
+    // 24, docs/adr/0028). On top of that base the device's free memory is read
+    // again for every job (docs/adr/0025, Q3), and so is the scratch
+    // directory's; its bandwidth is measured, once per directory per process,
+    // only when this job could reach the tier.
+    const bool measure_scratch =
+        plan::may_reach_disk_tier(job_spec, plan::hardware_profile_for(/*time_budgeted=*/false));
+    const plan::HardwareProfile hardware_profile = plan::current_hardware_profile(
+        plan::hardware_profile_for(options.time_budget_seconds.has_value() || measure_scratch),
+        scratch_directory,
+        measure_scratch);
+    // Timed around the planner call only: validation, the JobSpec and the
+    // hardware profile (whose calibration is cached per process) are not
+    // planning (docs/adr/0028 section 16.7 Q3).
+    const auto planning_start = std::chrono::steady_clock::now();
     Plan job_plan = plan::plan_job_cached(job_spec, hardware_profile);
-    return {std::move(job_plan), std::move(job_spec)};
+    const double plan_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - planning_start).count();
+    return {std::move(job_plan), std::move(job_spec), hardware_profile, plan_seconds};
 }
 
 }  // namespace
 
 Result run(const Circuit& circuit, const RunOptions& options) {
-    auto [execution_plan, job_spec] = validate_and_plan(circuit, options);
+    PlannedJob job = validate_and_plan(circuit, options);
     // A fresh steady_clock per execution attempt (Phase 11, docs/adr/0015 --
     // see BudgetMonitor for why the budget bounds an attempt, not the job).
     return api::run_with_replanning(
-        job_spec,
-        plan::hardware_profile_for(options.time_budget_seconds.has_value()),
-        std::move(execution_plan),
-        &api::steady_elapsed_source);
+               job.job_spec, job.hardware_profile, std::move(job.plan), &api::steady_elapsed_source)
+        .with_plan_seconds(job.plan_seconds);
+}
+
+Result run(const CircuitBuilder& builder, const RunOptions& options) {
+    return run(builder.to_circuit(), options);
 }
 
 Plan preview(const Circuit& circuit, const RunOptions& options) {
-    return validate_and_plan(circuit, options).first;
+    return validate_and_plan(circuit, options).plan;
+}
+
+void release_device_memory() {
+#ifdef MENOS_ENABLE_CUDA
+    kernels::cuda::device_pool().trim();
+#endif
 }
 
 PlanCacheStats plan_cache_stats() {

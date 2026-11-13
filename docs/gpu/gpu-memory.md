@@ -24,6 +24,16 @@ On a card with about 3.6 GiB free, **27 qubits is the arithmetic ceiling**. The 
 
 Host memory is typically larger, and by default half of it is available, so the CPU path can go further than a 4 GB card. Above the device ceiling the CUDA candidate is simply infeasible and the CPU wins by default.
 
+## The memory pool
+
+Every GPU state is allocated from one MENOS memory pool (`cudaMallocAsync`, since Phase 22). A finished job's state stays in the pool and serves the next job, region, replan or batch circuit of that size, instead of a `cudaMalloc` and `cudaFree` per execution. On the development GPU the allocation cycle went from 1–3 ms at 20 qubits and 9–23 ms at 24 to 1–6 µs. Results are unchanged, bit for bit.
+
+- The planner counts the pool's reusable bytes as available device memory, so no job is refused for memory that is only waiting in the pool. `explain()` prints it as `device_pool_bytes=` beside `device_available_bytes=`.
+- `release_device_memory()` (Python `menos.release_device_memory()`) gives the pool's memory back to the driver, for when another process needs the GPU.
+- A device without memory-pool support falls back to `cudaMalloc`, and `explain()` shows `pooled=false`.
+
+So after a large GPU job, `nvidia-smi` keeps showing that memory as used by the process until it exits or calls `release_device_memory()`.
+
 ## Refusal, then fallback
 
 A region that does not fit the device budget is refused **before any `cudaMalloc`**. The planner then keeps the region on the CPU instead of failing the job, so the plan report simply shows `backend=cpu` for that region. A hardware profile with a smaller device budget is honoured the same way, which is how the project's C++ tests exercise this behaviour.
@@ -40,12 +50,12 @@ An expectation-only job transfers almost nothing back, which is where the GPU's 
 
 ## Other processes
 
-A desktop environment, a browser, or another GPU job all hold device memory. The free figure is read when MENOS first queries the device and cached for the process, so memory released or claimed afterwards is not noticed.
+A desktop environment, a browser, or another GPU job all hold device memory. MENOS reads the free figure again before planning each job (since Phase 21), so memory released or claimed between jobs is noticed. A replan within a job uses that job's figure. When a plan puts anything on the device, `explain()` prints the figure it used on the `estimated` line as `device_available_bytes=`, and each CUDA candidate's `device_bytes=`. Because the figure depends on other processes, such a report can differ between two runs of the same job.
 
 ## If a device allocation still fails
 
-An allocation that fails even though the budget check passed surfaces as `InternalError` with the CUDA error text, for example `cuda: cudaMalloc failed: out of memory`. That is the signal that something else took device memory after the query.
+An allocation that fails for memory even though the budget check passed is a `ResourceExceeded` (since Phase 23) naming the bytes asked for, the bytes free and the bytes MENOS's pool retains: `the CUDA device could not provide N bytes of device memory: F bytes are free now and P are retained in MENOS's pool; another process may have taken device memory since the job was planned`. That is the signal that something else took device memory after the query. Under WSL the driver may serve an allocation past the free figure from shared system memory, so there the refusal can come later than the figure suggests.
 
 ## Related
 
-[Memory Constraints](/planning/memory-constraints) · [CPU vs CUDA](/gpu/cpu-vs-cuda) · [Troubleshooting CUDA](/gpu/troubleshooting-cuda)
+[Memory Architecture](/planning/memory-architecture) · [Memory Constraints](/planning/memory-constraints) · [CPU vs CUDA](/gpu/cpu-vs-cuda) · [Troubleshooting CUDA](/gpu/troubleshooting-cuda)

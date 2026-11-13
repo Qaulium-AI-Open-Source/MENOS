@@ -1,5 +1,6 @@
 #include "menos/qasm3.h"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -93,6 +94,10 @@ struct GateDef {
     std::vector<std::string> qubits;
     std::size_t body_begin;  // token index after '{'
     std::size_t body_end;    // token index of the matching '}'
+    // `gate rzz(t) a, b { cx a, b; rz(t) b; cx a, b; }` exactly, with
+    // stdgates.inc included: read as one RZZ, which equals that body exactly
+    // (docs/adr/0029 section 8). Any other rzz body is expanded.
+    bool canonical_rzz = false;
 };
 
 // The names visible inside a gate body while it is expanded.
@@ -429,7 +434,32 @@ private:
         }
         def.body_end = pos_;
         advance();
+        def.canonical_rzz = is_canonical_rzz(name.text, def);
         gates_.emplace(name.text, std::move(def));
+    }
+
+    // Whether def is the circuit builder's exported rzz definition, token for
+    // token (docs/adr/0029 section 3.6). Its body calls the stdgates.inc cx and
+    // rz, so stdgates.inc must be included (which also stops a user definition
+    // of cx or rz).
+    bool is_canonical_rzz(std::string_view name, const GateDef& def) const {
+        if (name != "rzz" || !stdgates_ || def.params.size() != 1 || def.qubits.size() != 2) {
+            return false;
+        }
+        const std::string& t = def.params[0];
+        const std::string& a = def.qubits[0];
+        const std::string& b = def.qubits[1];
+        const std::array<std::string_view, 16> expected = {
+            "cx", a, ",", b, ";", "rz", "(", t, ")", b, ";", "cx", a, ",", b, ";"};
+        if (def.body_end - def.body_begin != expected.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < expected.size(); ++i) {
+            if (tokens_[def.body_begin + i].text != expected[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- measurement ------------------------------------------------------
@@ -688,6 +718,9 @@ private:
                 fail_malformed("gate '" + name.text + "' is used before its definition", name);
             }
             check(it->second.params.size(), it->second.qubits.size());
+            if (it->second.canonical_rzz) {
+                return {GateOp{Opcode::RZZ, targets, params}};
+            }
             return expand_user_gate(it->second, params, targets);
         }
         if (stdgates_) {

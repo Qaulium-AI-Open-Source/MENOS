@@ -1,0 +1,15 @@
+MENOS EXECUTION REPORT
+circuit    qubits=64 clbits=0 operations=3840 depth=168 global_phase=0
+light_cone qubits 64->64 operations 3840->3840
+candidate 0strategy=direct_dense feasible=false winner=false reason="checked_pow2: n = 64 exceeds the maximum of 62; the disk tier: the disk tier has no scratch directory to use: none was given, or its space could not be read"
+candidate 1strategy=direct_stabilizer feasible=false winner=false reason="operation 0 (rx) is not a Clifford gate"
+candidate 2strategy=direct_pauli feasible=false winner=false reason="checked_mul: 9223372036854775808 * 2 overflows uint64_t"
+candidate 3strategy=direct_mps feasible=true winner=true peak_bytes=10425184 work_units=14310309952
+candidate 4strategy=direct_tensor_network feasible=false winner=false reason="pruned by branch-and-bound: costing stopped in observable term 1 of 127, at 15024324376 work units (including a lower bound for the remaining terms), already more than the 14310309952 of a cheaper feasible alternative"
+candidate 5strategy=cut_and_recombine feasible=false winner=false reason="cut reconstruction requires exact fragments: no reviewed source bounds how a truncated fragment's error composes across the 8^K signed terms of the reconstruction"
+strategy   direct_mps (approximate)
+region 0   qubits=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63] engine=mps backend=cpu
+estimated  state_bytes=10425184 work_units=14310309952
+--- plan fields not printed by explain() ---
+region 0: operations=3840 observable_terms=127 state_bytes=10425184 work_units=14310309952 global_to_local_size=64
+reduced_circuit: qubits=64 operations=3840

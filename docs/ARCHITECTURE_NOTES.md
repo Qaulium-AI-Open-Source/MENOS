@@ -1,6 +1,6 @@
 # Architecture notes: the planning hot path
 
-Phase 21, step 0 (discovery). Written 2026-11-03 against `main` at `d89dde3`.
+Phase 24, step 0 (discovery). Written 2026-11-03 against `main` at `d89dde3`.
 Nothing below has been measured in this phase yet. Every claim about speed is
 marked **[HYPOTHESIS]** until the step-1 baseline (`bench/BASELINE.md`) confirms
 or refutes it. Figures from earlier phases are cited with their ADR.

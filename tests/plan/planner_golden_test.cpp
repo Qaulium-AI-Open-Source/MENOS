@@ -1,10 +1,17 @@
-// Golden plans for the fixed Phase 21 planner corpus (docs/adr/0025 sections
+// Golden plans for the fixed Phase 24 planner corpus (docs/adr/0028 sections
 // 3 and 6): every corpus job's plan, as Plan::explain() plus the plan fields
 // explain() does not print, must match the file recorded from the pre-phase
 // planner at d89dde3. A planner speed-up that changes any of it fails here.
 //
 // To re-record (only with the owner's approval of the changed plans):
 //   MENOS_UPDATE_GOLDEN=1 ./menos_plan_tests --gtest_filter='PlannerGolden*'
+
+#if defined(_WIN32) && !defined(_CRT_SECURE_NO_WARNINGS)
+// std::getenv reads MENOS_UPDATE_GOLDEN; MSVC warns about it as it does for
+// every C standard call with a _s variant (benchmarks/tiered_gate_benchmark.cpp
+// takes the same route).
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <gtest/gtest.h>
 
@@ -25,7 +32,7 @@ namespace {
 // make the dev ctest run take minutes for these alone, so they are checked
 // only in optimised builds (the release and cuda-release ctest stages of
 // scripts/verify.sh). Every other job is checked in every build.
-bool checked_in_this_build(const std::string& name) {
+[[maybe_unused]] bool checked_in_this_build(const std::string& name) {
 #ifdef NDEBUG
     static_cast<void>(name);
     return true;
@@ -37,17 +44,37 @@ bool checked_in_this_build(const std::string& name) {
 #endif
 }
 
-std::filesystem::path golden_path(const std::string& name) {
+[[maybe_unused]] std::filesystem::path golden_path(const std::string& name) {
     std::string file = name;
     for (char& c : file) {
         if (c == '/') {
             c = '.';
         }
     }
-    return std::filesystem::path(MENOS_PLANNER_GOLDEN_DIR) / (file + ".txt");
+    // One recording per platform, as tests/memory/data's baselines are: the
+    // memory estimates count standard containers (Phase 21, docs/adr/0025
+    // section 3.4), whose sizes differ between libstdc++ and the MSVC STL
+    // (std::set is 48 bytes against 16), so a plan's peak_bytes does too.
+    // Strategies, winners, reasons and work units are the same on both.
+#if defined(_WIN32)
+    constexpr const char* kPlatform = "windows";
+#else
+    constexpr const char* kPlatform = "linux";
+#endif
+    return std::filesystem::path(MENOS_PLANNER_GOLDEN_DIR) / kPlatform / (file + ".txt");
 }
 
 TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
+#if defined(_MSC_VER) && !defined(NDEBUG)
+    // The MSVC debug STL (iterator debugging) makes std::vector 32 bytes
+    // instead of 24, and the memory estimates count container sizes (Phase
+    // 21, docs/adr/0025 section 3.4): a counts plan's peak_bytes is 8 bytes
+    // larger per histogram node here than in every optimised build and on
+    // libstdc++. The recorded plans are the optimised builds'; windows-dev
+    // still runs the memory fixtures, which hold each build's own estimate
+    // to its heap tracker.
+    GTEST_SKIP() << "golden plans are checked in optimised builds on MSVC (debug STL sizes)";
+#else
     const bool update = std::getenv("MENOS_UPDATE_GOLDEN") != nullptr;
     for (const planner_corpus::CorpusJob& job : planner_corpus::planner_corpus()) {
         SCOPED_TRACE(job.name);
@@ -65,8 +92,13 @@ TEST(PlannerGolden, EveryCorpusPlanMatchesTheRecordedPlan) {
         ASSERT_TRUE(in.good()) << "missing golden file " << path;
         std::stringstream expected;
         expected << in.rdbuf();
-        EXPECT_EQ(actual, expected.str());
+        // The files are recorded with "\n"; a checkout with core.autocrlf=true
+        // (Windows) delivers them with "\r\n", which is not a plan difference.
+        std::string recorded = expected.str();
+        std::erase(recorded, '\r');
+        EXPECT_EQ(actual, recorded);
     }
+#endif
 }
 
 // The corpus itself is fixed: its size and order are part of the record, so

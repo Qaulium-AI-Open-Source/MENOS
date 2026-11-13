@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "menos/builder.h"
 #include "menos/circuit.h"
 
 namespace menos::qasm3 {
@@ -37,5 +38,26 @@ using InputBindings = std::map<std::string, double, std::less<>>;
 // Throws menos::common::InvalidCircuit, with the same location, for a
 // malformed program. Does not call menos::ir::validate(); the caller does.
 [[nodiscard]] Circuit parse(std::string_view text, const InputBindings& inputs = {});
+
+// Writes builder as an OpenQASM 3 program that parse() reads back into the
+// identical operations and global phase (docs/adr/0029 section 3.6), given
+// the same values for its inputs: `OPENQASM 3.0;`, `include "stdgates.inc";`,
+// an `input float[64]` per parameter, `qubit[n]`/`bit[m]` per register in
+// declaration order, `gphase(x);` for a non-zero global phase, then each
+// operation by the importer's own name (`U` for u, `inv @ sx` for sxdg, and
+// rzz through the definition `gate rzz(theta) a, b { cx a, b; rz(theta) b;
+// cx a, b; }`, which parse() reads as one rzz). Numbers are written in their
+// shortest round-trip form and expressions in their evaluation order, so the
+// values are bitwise the same. A global phase of -0.0 is written as none.
+//
+// Throws menos::common::UnsupportedFeature, naming the operation's index,
+// for an explicit unitary, a noise channel or a measurement with a readout
+// error (OpenQASM 3 has no form for them), and naming the register or
+// parameter whose name is an OpenQASM 3 reserved word or standard gate name
+// or is shared by two of them. Throws menos::common::InvalidCircuit for a
+// non-finite angle or global phase.
+[[nodiscard]] std::string emit(const CircuitBuilder& builder);
+// emit(CircuitBuilder::from_circuit(circuit)): registers q and c.
+[[nodiscard]] std::string emit(const Circuit& circuit);
 
 }  // namespace menos::qasm3

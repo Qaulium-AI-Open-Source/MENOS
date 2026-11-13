@@ -63,6 +63,18 @@ std::string_view backend_name(Backend backend) {
     throw common::InternalError("backend_name: unknown Backend");
 }
 
+std::string_view tier_name(Tier tier) {
+    switch (tier) {
+        case Tier::InMemory:
+            return "in_memory";
+        case Tier::Disk:
+            return "disk";
+        case Tier::HostOffloaded:
+            return "host_offloaded";
+    }
+    throw common::InternalError("tier_name: unknown Tier");
+}
+
 }  // namespace plan
 
 namespace {
@@ -70,6 +82,7 @@ namespace {
 using plan::backend_name;
 using plan::engine_name;
 using plan::strategy_name;
+using plan::tier_name;
 
 // Left-justifies a label to an 11-character column, matching the example
 // report in docs/BUILD_PLAN.md Phase 1, 1.4.
@@ -89,6 +102,22 @@ std::string candidate_line(std::size_t index, const CandidateSummary& c, bool sh
     if (c.feasible) {
         s += std::format(
             " peak_bytes={} work_units={}", c.estimated_peak_bytes, c.estimated_work_units);
+        // A CUDA candidate's device memory, beside its host peak_bytes
+        // (docs/adr/0025 section 5), and a Factorized candidate's when some
+        // of its regions run on CUDA. CPU candidates print nothing new.
+        if (c.backend == Backend::Cuda || c.device.device_bytes > 0) {
+            s += std::format(" device_bytes={}", c.device.device_bytes);
+        }
+        // A candidate costed for a memory tier (Phase 23, docs/adr/0027).
+        // Printed only then, so every report of a job whose state fits in
+        // memory stays byte-identical to a pre-Phase-23 one.
+        if (c.tier != Tier::InMemory) {
+            s += std::format(" tier={} passes={} chunk_qubits={} disk_bytes={}",
+                             tier_name(c.tier),
+                             c.tier_cost.passes,
+                             c.tier_cost.chunk_qubits,
+                             c.tier_cost.file_bytes);
+        }
         // Printed only for a time-constrained plan. estimated_seconds is
         // measured, so it differs between machines; including it in every
         // report would break the byte-identical output Plan::explain()
@@ -144,6 +173,9 @@ std::string Plan::explain() const {
     if (requested_backend.has_value()) {
         out += label("backend") + std::format("{} (requested)\n", backend_name(*requested_backend));
     }
+    if (requested_tier.has_value()) {
+        out += label("tier") + std::format("{} (requested)\n", tier_name(*requested_tier));
+    }
     for (std::size_t i = 0; i < candidates.size(); ++i) {
         out += candidate_line(i, candidates[i], show_seconds) + "\n";
     }
@@ -156,6 +188,18 @@ std::string Plan::explain() const {
                                                                qubit_list(region.local_to_global),
                                                                engine_name(region.engine),
                                                                backend_name(region.backend));
+        if (region.tier != Tier::InMemory) {
+            out += std::format(" tier={}", tier_name(region.tier));
+        }
+        // What gate fusion did to the sweep (Phase 24 item 7, docs/adr/0028
+        // section 17). Printed only when a gate was absorbed, so a report of
+        // a run with fusion off, or of a circuit in which nothing fused, is
+        // byte-identical to one from before fusion existed.
+        if (region.fusion.gates_absorbed != 0) {
+            out += std::format(" fusion=containment blocks={} absorbed={}",
+                               region.fusion.fused_blocks,
+                               region.fusion.gates_absorbed);
+        }
         if (!region.engine_selection_reason.empty()) {
             out += std::format(" why=\"{}\"", region.engine_selection_reason);
         }
@@ -213,9 +257,40 @@ std::string Plan::explain() const {
         }
         out += " (statistical, not exact)\n";
     }
-    out +=
-        label("estimated") +
-        std::format("state_bytes={} work_units={}\n", estimated_state_bytes, estimated_work_units);
+    out += label("estimated") +
+           std::format("state_bytes={} work_units={}", estimated_state_bytes, estimated_work_units);
+    // The device memory the CUDA decisions above were checked against
+    // (docs/adr/0025, Q3). Absent from every plan with no CUDA in it.
+    if (device_available_bytes.has_value()) {
+        out += std::format(" device_available_bytes={}", *device_available_bytes);
+    }
+    // The part of it that is MENOS's own retained pool, and whether there is
+    // one (Phase 22, docs/adr/0026 section 3.4). Set with the figure above.
+    if (device_pool_bytes.has_value()) {
+        out += std::format(" device_pool_bytes={}", *device_pool_bytes);
+    }
+    if (device_pooled.has_value()) {
+        out += std::format(" pooled={}", *device_pooled ? "true" : "false");
+    }
+    // The scratch directory a disk-tier decision rested on (Phase 23,
+    // docs/adr/0027), with the space and bandwidth figures of the moment.
+    // Absent from every plan with no disk tier in it.
+    if (disk_available_bytes.has_value()) {
+        out += std::format(" disk_available_bytes={}", *disk_available_bytes);
+    }
+    if (scratch_directory.has_value()) {
+        out += std::format(" scratch_directory=\"{}\"", scratch_directory->string());
+    }
+    if (disk_write_bytes_per_second.has_value() && disk_read_bytes_per_second.has_value()) {
+        if (*disk_write_bytes_per_second > 0.0 && *disk_read_bytes_per_second > 0.0) {
+            out += std::format(" disk_write_bandwidth={:.6g} disk_read_bandwidth={:.6g} (measured)",
+                               *disk_write_bytes_per_second,
+                               *disk_read_bytes_per_second);
+        } else {
+            out += " disk_bandwidth=unmeasured";
+        }
+    }
+    out += "\n";
     return out;
 }
 

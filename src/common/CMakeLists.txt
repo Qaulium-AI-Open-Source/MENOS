@@ -58,6 +58,7 @@ add_library(menos_common STATIC
     pauli_row.cpp
     observable_restrict.cpp
     svd.cpp
+    memory_ledger.cpp
 )
 
 target_include_directories(menos_common PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src

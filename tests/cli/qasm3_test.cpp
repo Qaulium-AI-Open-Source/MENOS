@@ -25,8 +25,8 @@ std::string write_temp_program(const std::string& name, const std::string& text)
 }
 
 std::string normalize_timings(const std::string& text) {
-    static const std::regex kTimingPattern(R"(execute_s=[^ \n]+ sample_s=[^ \n]+)");
-    return std::regex_replace(text, kTimingPattern, "execute_s=<t> sample_s=<t>");
+    static const std::regex kTimingPattern(R"((execute_s|sample_s|plan_s|replan_s)=[^ \n]+)");
+    return std::regex_replace(text, kTimingPattern, "$1=<t>");
 }
 
 struct Outcome {

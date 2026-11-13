@@ -1,0 +1,3 @@
+environment: os=Windows arch=x86_64 compiler=MSVC 195035726, Release (NDEBUG) cpu=unknown-cpu
+calibrated: work_units_per_second=4.83203e+09 memory_bandwidth_bytes_per_second=3.76382e+10 cuda_device_work_units_per_second=0 threads=22
+exit 0

@@ -186,8 +186,13 @@ TEST(TensorNetworkScaleTest, ThirtyOneQubitTreeIsTensorNetworkOnlyAtARealisticBu
                                          .expectation = z_on_every_qubit(kNumQubits)});
 
     const Plan& plan = result.plan();
-    EXPECT_FALSE(candidate_for(plan, Strategy::DirectDense).feasible)
-        << "31 qubits needs 16 * 2^31 = 34.4 GB, above the budget";
+    // 31 qubits needs 16 * 2^31 = 34.4 GB, above the budget: in memory the
+    // dense candidate is infeasible. From Phase 23 (docs/adr/0027) it may be
+    // feasible on the disk tier when the scratch directory has the room, at
+    // the same work units, so it never wins here.
+    const CandidateSummary& dense = candidate_for(plan, Strategy::DirectDense);
+    EXPECT_TRUE(!dense.feasible || dense.tier == Tier::Disk);
+    EXPECT_FALSE(dense.is_winner);
     EXPECT_FALSE(candidate_for(plan, Strategy::DirectStabilizer).feasible)
         << "the circuit is non-Clifford from its first RY";
     EXPECT_FALSE(candidate_for(plan, Strategy::DirectPauli).feasible)
@@ -236,7 +241,11 @@ TEST(TensorNetworkScaleTest, QaoaOnTheSameTreeTopologyAlsoRoutesToTensorNetwork)
                                          .expectation = z_on_every_qubit(kNumQubits)});
 
     const Plan& plan = result.plan();
-    EXPECT_FALSE(candidate_for(plan, Strategy::DirectDense).feasible);
+    // As above: the dense candidate is in memory infeasible, and on the disk
+    // tier (Phase 23) at most feasible, never the winner.
+    const CandidateSummary& dense = candidate_for(plan, Strategy::DirectDense);
+    EXPECT_TRUE(!dense.feasible || dense.tier == Tier::Disk);
+    EXPECT_FALSE(dense.is_winner);
     EXPECT_FALSE(candidate_for(plan, Strategy::DirectMPS).feasible);
     EXPECT_EQ(plan.strategy, Strategy::DirectTensorNetwork);
 

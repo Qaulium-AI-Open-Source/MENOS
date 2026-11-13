@@ -183,38 +183,5 @@ TEST(SpecialisedKernelsTest, AlmostDiagonalMatricesStillMatchGeneric) {
     expect_bitwise_equal_to_generic(one, {3}, 5, rng);  // signed zeros ARE zero: diagonal path
 }
 
-// The batched Z-term path agrees with the per-term kernel within the
-// expectation tolerance, for every Z-string on random states, and reports a
-// +0.0 imaginary part as the per-term kernel does.
-TEST(SpecialisedKernelsTest, DiagonalTermBatchMatchesPerTermExpectation) {
-    std::mt19937_64 rng(1507);
-    for (std::uint32_t n = 1; n <= 10; ++n) {
-        std::vector<Complex> state = random_vector(std::size_t{1} << n, rng);
-        double norm = 0.0;
-        for (const Complex& c : state) {
-            norm += std::norm(c);
-        }
-        for (Complex& c : state) {
-            c /= std::sqrt(norm);
-        }
-        std::vector<std::uint64_t> masks;
-        for (std::uint64_t z = 0; z < (std::uint64_t{1} << n); ++z) {
-            masks.push_back(z);
-        }
-        std::vector<Complex> expected;
-        for (const std::uint64_t z : masks) {
-            expected.push_back(expectation_of_term(state, 0, z));
-        }
-        std::vector<Complex> scratch = state;
-        const std::vector<Complex> got = expectation_of_diagonal_terms(scratch, masks);
-        ASSERT_EQ(got.size(), expected.size());
-        for (std::size_t i = 0; i < got.size(); ++i) {
-            EXPECT_NEAR(got[i].real(), expected[i].real(), 1e-12) << "n=" << n << " z=" << masks[i];
-            EXPECT_EQ(got[i].imag(), 0.0);
-            EXPECT_FALSE(std::signbit(got[i].imag()));
-        }
-    }
-}
-
 }  // namespace
 }  // namespace menos::kernels::cpu

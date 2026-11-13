@@ -28,7 +28,11 @@ def _bell() -> Circuit:
 
 
 def _without_timings(report: str) -> str:
-    return re.sub(r"execute_s=\S+ sample_s=\S+", "execute_s=<t> sample_s=<t>", report)
+    return re.sub(
+        r"(execute_s|sample_s|plan_s|replan_s)=\S+",
+        r"\1=<t>",
+        report,
+    )
 
 
 def _options(**fields) -> RunOptions:

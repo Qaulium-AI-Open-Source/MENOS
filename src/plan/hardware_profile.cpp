@@ -16,17 +16,29 @@
 #error "menos supports only Linux, macOS and Windows (docs/adr/0022)"
 #endif
 
+#include <algorithm>
 #include <chrono>
+#include <complex>
 #include <cstring>
+#include <map>
+#include <mutex>
+#include <span>
+#include <system_error>
 #include <vector>
 
 #include "common/error.h"
+#include "common/thread_count.h"
 #include "cost/cost_model.h"
 #include "engines/dense/dense_engine.h"
+#include "engines/dense_tiered/chunked_executor.h"
+#include "engines/dense_tiered/file_backing_store.h"
 #include "menos/circuit.h"
 #include "menos/simulation_engine.h"
+#include "plan/time_model.h"
 
 #ifdef MENOS_ENABLE_CUDA
+#include "kernels/cuda/device_info.h"
+#include "kernels/cuda/device_pool.h"
 #include "plan/cuda_calibration.h"
 #endif
 
@@ -134,21 +146,27 @@ double measure_memory_bandwidth() {
     return result;
 }
 
-Circuit make_calibration_circuit() {
-    Circuit circuit(kThroughputQubits, 0);
+Circuit make_calibration_circuit(std::uint32_t num_qubits) {
+    Circuit circuit(num_qubits, 0);
     for (std::uint32_t layer = 0; layer < kThroughputGateLayers; ++layer) {
-        for (std::uint32_t q = 0; q < kThroughputQubits; ++q) {
+        for (std::uint32_t q = 0; q < num_qubits; ++q) {
             circuit.append(Opcode::H, {static_cast<QubitId>(q)});
         }
-        for (std::uint32_t q = layer % 2; q + 1 < kThroughputQubits; q += 2) {
+        for (std::uint32_t q = layer % 2; q + 1 < num_qubits; q += 2) {
             circuit.append(Opcode::CX, {static_cast<QubitId>(q), static_cast<QubitId>(q + 1)});
         }
     }
     return circuit;
 }
 
-double measure_work_units_per_second() {
-    const Circuit circuit = make_calibration_circuit();
+// The dense rate on `num_qubits` qubits with up to `max_threads` threads.
+// At kThroughputQubits the kernels run on one thread whatever max_threads is
+// (2^12 groups, below kParallelMinGroups); at kThreadedThroughputQubits they
+// use every thread given (docs/adr/0028 section 16.10.3).
+// A qubit count and a thread cap: distinct roles, named at both call sites.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+double measure_work_units_per_second(std::uint32_t num_qubits, std::uint32_t max_threads) {
+    const Circuit circuit = make_calibration_circuit(num_qubits);
     const engines::dense::DenseEngine engine;
 
     // The work units the cost model itself assigns to this circuit. Dividing
@@ -182,6 +200,7 @@ double measure_work_units_per_second() {
         .budget_bytes = estimate.estimated_peak_bytes,
         .is_sole_region = true,
         .observable = nullptr,
+        .max_threads = max_threads,
     };
 
     // Same discarded-pass and minimum-repetition policy as the bandwidth
@@ -233,7 +252,11 @@ HardwareProfile detect_hardware_profile() {
 HardwareProfile calibrate_hardware() {
     HardwareProfile profile = detect_hardware_profile();
     profile.memory_bandwidth_bytes_per_second = measure_memory_bandwidth();
-    profile.work_units_per_second = measure_work_units_per_second();
+    profile.work_units_per_second =
+        measure_work_units_per_second(kThroughputQubits, common::default_thread_count());
+    // Every CPU engine timed in its own unit (Phase 24, docs/adr/0028
+    // section 20).
+    profile.seconds_per_time_count = calibrate_time_model();
 #ifdef MENOS_ENABLE_CUDA
     // Only measured when the build has CUDA support AND a device answers. A
     // CUDA-enabled binary on a machine without a GPU leaves every field zero
@@ -245,6 +268,7 @@ HardwareProfile calibrate_hardware() {
     profile.cuda_host_to_device_bytes_per_second = cuda.host_to_device_bytes_per_second;
     profile.cuda_device_to_host_bytes_per_second = cuda.device_to_host_bytes_per_second;
     profile.cuda_kernel_launch_seconds = cuda.kernel_launch_seconds;
+    profile.cuda_execution_seconds = cuda.execution_seconds;
     profile.cuda_device_work_units_per_second = cuda.device_work_units_per_second;
 #endif
     return profile;
@@ -261,6 +285,138 @@ const HardwareProfile& hardware_profile_for(bool time_budgeted) {
     static const HardwareProfile kDetected = detect_hardware_profile();
     return kDetected;
 #endif
+}
+
+std::uint64_t default_memory_budget(const HardwareProfile& profile) {
+    return static_cast<std::uint64_t>(static_cast<double>(profile.total_memory_bytes) *
+                                      kDefaultMemoryBudgetFraction);
+}
+
+namespace {
+
+HardwareProfile with_current_device_figures(HardwareProfile profile) {
+#ifdef MENOS_ENABLE_CUDA
+    if (profile.cuda_present) {
+        // Free memory plus what MENOS's own pool already holds for reuse
+        // (Phase 22, docs/adr/0026 section 3.4).
+        profile.cuda_device_available_bytes = kernels::cuda::device_available_bytes();
+        profile.cuda_device_pool_bytes = kernels::cuda::device_pool_bytes();
+        profile.cuda_device_pooled = kernels::cuda::device_pool().pooled();
+    }
+#endif
+    return profile;
+}
+
+}  // namespace
+
+HardwareProfile current_hardware_profile() {
+    return with_current_device_figures(calibrated_hardware_profile());
+}
+
+std::uint64_t scratch_reserve_bytes(std::uint64_t capacity_bytes) {
+    constexpr std::uint64_t kEightGiB = std::uint64_t{8} << 30;
+    return std::max(capacity_bytes / 20, kEightGiB);
+}
+
+ScratchBandwidth measure_scratch_bandwidth(const std::filesystem::path& directory,
+                                           std::uint64_t bytes) {
+    using engines::dense_tiered::FileBackingStore;
+    using engines::dense_tiered::Window;
+    // Chunks of 2^24 amplitudes, 256 MiB: the smallest size the disk tier
+    // prefers and the smallest step 1 measured (docs/adr/0027 section 10.1).
+    constexpr std::uint32_t kChunkQubits = 24;
+    constexpr std::uint64_t kChunkBytes = (std::uint64_t{1} << kChunkQubits) * 16;
+    ScratchBandwidth result;
+    const std::uint64_t chunks =
+        std::clamp<std::uint64_t>(std::min(bytes, kScratchMeasurementBytes) / kChunkBytes, 1, 4);
+    const std::uint64_t file_bytes = chunks * kChunkBytes;
+    std::error_code error;
+    const std::filesystem::space_info info = std::filesystem::space(directory, error);
+    if (error || info.available < file_bytes + scratch_reserve_bytes(info.capacity)) {
+        return result;
+    }
+    try {
+        const FileBackingStore store(
+            directory, chunks << kChunkQubits, std::uint64_t{1} << kChunkQubits);
+        Window window(kChunkQubits);
+        const std::span<std::complex<double>> chunk = window.slot(0, store.chunk_amplitudes());
+        // Resident and non-zero, so a write moves real bytes.
+        for (std::size_t i = 0; i < chunk.size(); i += 256) {
+            chunk[i] = std::complex<double>{static_cast<double>(i), 1.0};
+        }
+        const auto start_write = std::chrono::steady_clock::now();
+        for (std::uint64_t c = 0; c < chunks; ++c) {
+            store.write(c, chunk);
+        }
+        const double write_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start_write).count();
+        const auto start_read = std::chrono::steady_clock::now();
+        for (std::uint64_t c = 0; c < chunks; ++c) {
+            store.read(c, chunk);
+        }
+        const double read_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start_read).count();
+        if (write_seconds > 0.0 && read_seconds > 0.0) {
+            result.write_bytes_per_second = static_cast<double>(file_bytes) / write_seconds;
+            result.read_bytes_per_second = static_cast<double>(file_bytes) / read_seconds;
+            result.measured_bytes = file_bytes;
+        }
+    } catch (const common::Error&) {
+        // Not writable, or no longer roomy: unmeasured, and the planner says
+        // so rather than guessing.
+        result = ScratchBandwidth{};
+    }
+    return result;
+}
+
+ScratchBandwidth scratch_bandwidth_for(const std::filesystem::path& directory) {
+    // One measurement per directory per process (docs/adr/0027 section 9,
+    // Q3): the cache is written under the mutex and never invalidated, like
+    // the calibration cache below.
+    static std::mutex mutex;
+    static std::map<std::filesystem::path, ScratchBandwidth> cache;
+    const std::lock_guard<std::mutex> lock(mutex);
+    const auto found = cache.find(directory);
+    if (found != cache.end()) {
+        return found->second;
+    }
+    const ScratchBandwidth measured = measure_scratch_bandwidth(directory);
+    cache.emplace(directory, measured);
+    return measured;
+}
+
+HardwareProfile current_hardware_profile(const std::filesystem::path& scratch_directory,
+                                         bool measure_scratch) {
+    return current_hardware_profile(
+        calibrated_hardware_profile(), scratch_directory, measure_scratch);
+}
+
+HardwareProfile current_hardware_profile(const HardwareProfile& base,
+                                         const std::filesystem::path& scratch_directory,
+                                         bool measure_scratch) {
+    HardwareProfile profile = with_current_device_figures(base);
+    std::error_code error;
+    const std::filesystem::space_info info = std::filesystem::space(scratch_directory, error);
+    if (error) {
+        return profile;
+    }
+    profile.scratch_capacity_bytes = info.capacity;
+    profile.scratch_available_bytes = info.available;
+    if (measure_scratch) {
+        const ScratchBandwidth bandwidth = scratch_bandwidth_for(scratch_directory);
+        profile.scratch_write_bytes_per_second = bandwidth.write_bytes_per_second;
+        profile.scratch_read_bytes_per_second = bandwidth.read_bytes_per_second;
+        profile.dense_threaded_work_units_per_second = dense_threaded_work_units_per_second();
+    }
+    return profile;
+}
+
+double dense_threaded_work_units_per_second() {
+    // Function-local static, like the calibration below: measured once, on
+    // first use, then reused for the process lifetime.
+    static const double kRate =
+        measure_work_units_per_second(kThreadedThroughputQubits, common::default_thread_count());
+    return kRate;
 }
 
 const HardwareProfile& calibrated_hardware_profile() {

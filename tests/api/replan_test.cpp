@@ -4,6 +4,7 @@
 #include <complex>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,11 +29,14 @@
 namespace menos::api {
 namespace {
 
-// One work unit per second, one byte per second: seconds then equal
-// max(work_units, peak_bytes), so every figure below is computable by hand.
+// One work unit per second and a bandwidth floor too small to bind: seconds
+// then equal work_units, so every figure below is computable by hand. A
+// budgeted job ranks its candidates by those seconds (Phase 24 item 4,
+// docs/adr/0028 section 21), which here is the work-unit order these tests
+// were written against.
 constexpr plan::HardwareProfile kUnitRateProfile{
     .total_memory_bytes = 1ULL << 40,
-    .memory_bandwidth_bytes_per_second = 1.0,
+    .memory_bandwidth_bytes_per_second = 1.0e300,
     .work_units_per_second = 1.0,
 };
 
@@ -399,28 +403,146 @@ TEST(ReplanTest, ANoisyJobWhoseDensityMatrixRunOverrunsIsRefusedDeterministicall
     EXPECT_EQ(messages[0], messages[1]);
 }
 
-// A multi-region plan divides its elapsed time between several engines, and
-// this phase does not attribute it per region. The documented consequence is
-// refusal rather than a guessed attribution, and it is asserted here so the
-// limitation is visible in the suite.
-TEST(ReplanTest, AMultiRegionPlanIsRefusedRatherThanAttributedPerRegion) {
-    Circuit circuit(4, 4);
-    circuit.append(Opcode::H, {0});
-    circuit.append(Opcode::CX, {0, 1});
-    circuit.append(Opcode::H, {2});
-    circuit.append(Opcode::CX, {2, 3});
-    for (std::uint32_t q = 0; q < 4; ++q) {
+// A clock that advances `step` seconds per read on the first attempt and reads
+// 0 on every later one, so a Factorized attempt's region boundaries and safe
+// boundaries are all distinct, ordered instants, and later attempts never cross.
+ElapsedSourceFactory counting_clock(int* attempts, double step) {
+    return [attempts, step]() -> ElapsedSource {
+        if ((*attempts)++ > 0) {
+            return []() { return 0.0; };
+        }
+        auto reads = std::make_shared<double>(0.0);
+        return [reads, step]() { return *reads += step; };
+    };
+}
+
+Circuit four_blocks() {
+    // Four disjoint 6-qubit brickwork blocks, depth 20 (the planner corpus's
+    // counts_factorized/medium shape): the Factorized plan is the cheapest.
+    Circuit circuit(24, 24);
+    for (std::uint32_t layer = 0; layer < 20; ++layer) {
+        for (std::uint32_t q = 0; q < 24; ++q) {
+            circuit.append(Opcode::RY,
+                           {static_cast<QubitId>(q)},
+                           {0.3 + 0.1 * static_cast<double>(q + layer)});
+        }
+        for (std::uint32_t base : {0U, 6U, 12U, 18U}) {
+            for (std::uint32_t i = layer % 2; i + 1 < 6; i += 2) {
+                circuit.append(
+                    Opcode::CX,
+                    {static_cast<QubitId>(base + i), static_cast<QubitId>(base + i + 1)});
+            }
+        }
+    }
+    for (std::uint32_t q = 0; q < 24; ++q) {
         circuit.append_measure(static_cast<QubitId>(q), static_cast<ClbitId>(q));
     }
-    const plan::JobSpec unbudgeted = make_job(circuit, std::nullopt);
-    const Plan initial = plan::plan_job(unbudgeted, kUnitRateProfile);
-    ASSERT_GT(initial.regions.size(), 1U) << "this test needs a multi-region plan";
+    return circuit;
+}
 
-    const plan::JobSpec job = make_job(circuit, /*budget=*/1.0e9);
+// Phase 24 (docs/adr/0028 sections 16.4 and 16.8): a Factorized overrun is no
+// longer refused. Each region that started is timed on the attempt's own
+// clock, the whole plan gets a floor at the crossing, the replan never
+// reproduces the plan that overran, and explain() reports every region's
+// prediction and observation.
+TEST(ReplanTest, AFactorizedOverrunReplansWithPerRegionObservations) {
+    // 1000 shots: sampling the whole MPS state then costs more than sampling
+    // the two blocks, so the Factorized plan is the cheapest.
+    plan::JobSpec unbudgeted = make_job(four_blocks(), std::nullopt);
+    unbudgeted.shots = 1000;
+    // A budget the unit-rate predictions fit inside, crossed by the clock about
+    // 300 reads in: after the first region, inside the second.
+    constexpr double kBudget = 1.0e12;
+    plan::JobSpec job = make_job(four_blocks(), kBudget);
+    job.shots = 1000;
+    const Plan initial = plan::plan_job(job, kUnitRateProfile);
+    ASSERT_EQ(initial.strategy, Strategy::Factorized) << initial.explain();
+    ASSERT_EQ(initial.regions.size(), 4U);
+    const plan::PlanKey initial_key = plan::plan_key(initial);
+
+    int attempts = 0;
+    const Result result = run_with_replanning(
+        job, kUnitRateProfile, initial, counting_clock(&attempts, kBudget / 300.0));
+    EXPECT_EQ(attempts, 2) << "one abandoned attempt and one that completed";
+    ASSERT_EQ(result.replans().size(), 1U);
+    const ReplanEvent& event = result.replans()[0];
+    EXPECT_EQ(event.superseded_plan.strategy, Strategy::Factorized);
+    EXPECT_GT(event.observed_seconds, kBudget);
+    EXPECT_GE(event.regions.size(), 2U) << "the crossing comes after the first region";
+    EXPECT_NE(plan::plan_key(result.plan()), initial_key)
+        << "the plan that overran must not be run again";
+
+    ASSERT_FALSE(event.regions.empty());
+    double observed_total = 0.0;
+    for (std::size_t i = 0; i < event.regions.size(); ++i) {
+        const RegionObservation& region = event.regions[i];
+        EXPECT_GT(region.observed_seconds, 0.0);
+        EXPECT_GT(region.estimated_seconds, 0.0) << "the plan was priced: a budget was set";
+        // Only the last region started can still have been running.
+        EXPECT_EQ(region.completed, i + 1 < event.regions.size() || region.completed);
+        observed_total += region.observed_seconds;
+    }
+    EXPECT_LE(observed_total, event.observed_seconds)
+        << "per-region time can never add up to more than the attempt took";
+
+    const std::string report = result.explain();
+    EXPECT_NE(report.find("region 0 qubits=["), std::string::npos) << report;
+    EXPECT_NE(report.find(" observed="), std::string::npos) << report;
+    EXPECT_NE(report.find("this factorized plan is excluded by an observed floor"),
+              std::string::npos)
+        << report;
+
+    // A job with no budget never replans and reports exactly as before.
+    const Result plain = run_with_replanning(unbudgeted,
+                                             kUnitRateProfile,
+                                             plan::plan_job(unbudgeted, kUnitRateProfile),
+                                             &steady_elapsed_source);
+    EXPECT_EQ(plain.explain().find("replan"), std::string::npos) << plain.explain();
+}
+
+// Two all-to-all clusters with a migrating qubit, under a 1 MB memory budget:
+// the one-wire cut is the cheapest feasible plan (the cut_differential_test
+// fixture). A CutAndRecombine overrun is still not attributed per fragment, and
+// is refused with the message it had before Phase 24 (docs/adr/0028 section
+// 16.7 Q6).
+TEST(ReplanTest, ACutPlanOverrunIsStillRefusedRatherThanAttributedPerRegion) {
+    const std::uint32_t per_cluster = 4;
+    const std::uint32_t n = 2 * per_cluster;
+    Circuit circuit(n, 0);
+    for (std::uint32_t q = 0; q < n; ++q) {
+        circuit.append(
+            Opcode::RY, {static_cast<QubitId>(q)}, {0.21 + 0.07 * static_cast<double>(q)});
+    }
+    for (std::uint32_t base : {0U, per_cluster}) {
+        for (std::uint32_t a = base; a < base + per_cluster; ++a) {
+            for (std::uint32_t b = a + 1; b < base + per_cluster; ++b) {
+                circuit.append(Opcode::CZ, {static_cast<QubitId>(a), static_cast<QubitId>(b)});
+            }
+        }
+    }
+    circuit.append(Opcode::T, {static_cast<QubitId>(per_cluster)});
+    for (std::uint32_t b = per_cluster; b < n; ++b) {
+        circuit.append(Opcode::CZ, {0, static_cast<QubitId>(b)});
+    }
+    PauliString z_all{n, std::vector<std::uint64_t>(1, 0), std::vector<std::uint64_t>(1, 0)};
+    z_all.z_words[0] = (std::uint64_t{1} << n) - 1;
+    const plan::JobSpec job{
+        .circuit = circuit,
+        .shots = 0,
+        .want_statevector = false,
+        .seed = 0,
+        .memory_budget_bytes = 1'000'000,
+        .expectation = Observable{{{z_all, {1.0, 0.0}}}},
+        .accuracy_policy = {},
+        .time_budget_seconds = 1.0e9,
+    };
+    const Plan initial = plan::plan_job(job, kUnitRateProfile);
+    ASSERT_EQ(initial.strategy, Strategy::CutAndRecombine) << initial.explain();
+
     ScriptedClock clock({.before_seconds = 0.0, .after_seconds = 2.0e9, .cross_after_reads = 1});
     try {
         static_cast<void>(run_with_replanning(job, kUnitRateProfile, initial, clock.factory()));
-        FAIL() << "a multi-region overrun must be refused, not guessed at";
+        FAIL() << "a cut overrun must be refused, not guessed at";
     } catch (const common::ResourceExceeded& e) {
         EXPECT_NE(std::string(e.what()).find("not attributed per region"), std::string::npos)
             << e.what();
@@ -453,6 +575,33 @@ TEST(ReplanTest, ExplainReportsThePredictionObservationThresholdReasonAndSequenc
         << report;
     // The superseded plan is reachable in full, not merely summarized.
     EXPECT_FALSE(result.replans()[0].superseded_plan.explain().empty());
+}
+
+// Phase 24 (docs/adr/0028 section 16.7 Q3): each replan records the wall-clock
+// time its planner call took, Result::replan_seconds() is their sum, and
+// explain() prints both. A Result produced here, outside menos::run, has made
+// no initial planner call of its own, so its plan_seconds() is 0.
+TEST(ReplanTest, EachReplanRecordsItsPlanningTimeAndTheResultSumsThem) {
+    const Circuit circuit = clifford_circuit(4);
+    const plan::JobSpec job = make_job(circuit, /*budget=*/1.0e9);
+    const Plan initial = plan::plan_job(job, kUnitRateProfile);
+    ScriptedClock clock({.before_seconds = 0.0,
+                         .after_seconds = 2.0e9,
+                         .cross_after_reads = 1,
+                         .crossing_attempts = 2});
+    const Result result = run_with_replanning(job, kUnitRateProfile, initial, clock.factory());
+    ASSERT_EQ(result.replans().size(), 2U);
+    double sum = 0.0;
+    for (const ReplanEvent& event : result.replans()) {
+        EXPECT_GT(event.plan_seconds, 0.0);
+        EXPECT_TRUE(std::isfinite(event.plan_seconds));
+        sum += event.plan_seconds;
+    }
+    EXPECT_DOUBLE_EQ(result.replan_seconds(), sum);
+    EXPECT_EQ(result.plan_seconds(), 0.0);
+    const std::string report = result.explain();
+    EXPECT_NE(report.find(" replanned_in="), std::string::npos) << report;
+    EXPECT_NE(report.find(" replan_s="), std::string::npos) << report;
 }
 
 // Gate criterion 8, the strongest form: with no replan, the report is

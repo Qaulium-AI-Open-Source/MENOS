@@ -1,5 +1,5 @@
-// Microbenchmarks for the planner data structures of Phase 21 step 2
-// (docs/adr/0025 section 12), each timed alone so a change to one can be
+// Microbenchmarks for the planner data structures of Phase 24 step 2
+// (docs/adr/0028 section 12), each timed alone so a change to one can be
 // measured without the noise of a whole plan_job:
 //   fill/<n>/<density%>    compute_fill over every vertex of a random graph
 //                          (bit_adjacency.h, change (d))

@@ -1,6 +1,6 @@
-#include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -9,6 +9,7 @@
 #include "common/error.h"
 #include "engines/dense/dense_engine.h"
 #include "engines/dense_cuda/cuda_dense_engine.h"
+#include "ir/fuse_gates.h"
 #include "kernels/cuda/device_buffer.h"
 #include "kernels/cuda/device_info.h"
 #include "menos/circuit.h"
@@ -115,12 +116,13 @@ EngineExecutionRequest make_request(const Circuit& circuit,
 // Free device memory right now, straight from the driver. Deliberately NOT
 // kernels::cuda::device_info().free_memory_bytes, which is cached at first
 // query and would report the same number before and after.
-std::uint64_t free_device_bytes() {
-    std::size_t free_bytes = 0;
-    std::size_t total_bytes = 0;
-    const cudaError_t status = cudaMemGetInfo(&free_bytes, &total_bytes);
-    EXPECT_EQ(status, cudaSuccess) << cudaGetErrorString(status);
-    return static_cast<std::uint64_t>(free_bytes);
+// The device memory a job could use right now: the driver's free figure plus
+// what MENOS's own pool holds for reuse. Since Phase 22 (docs/adr/0026
+// section 3.4) a released DeviceBuffer goes back to the pool rather than to
+// the driver, so the driver's free figure alone no longer rises on release;
+// this sum does, and it is the figure the planner budgets against.
+std::uint64_t available_device_bytes() {
+    return kernels::cuda::device_available_bytes();
 }
 
 class CudaExecutionMonitorTest : public ::testing::Test {
@@ -138,14 +140,28 @@ protected:
     }
 };
 
-// The seam is called once per operation, on the device path too.
-TEST_F(CudaExecutionMonitorTest, TheCudaEngineCallsTheMonitorOncePerOperation) {
+// The seam is called at the same boundaries as on the CPU: once per fused
+// block with gate fusion (the default since Phase 24 item 7, docs/adr/0028
+// section 17), once per operation with fusion off.
+TEST_F(CudaExecutionMonitorTest, TheCudaEngineCallsTheMonitorOncePerBlockOrOncePerOperation) {
     const CudaDenseEngine engine;
     const Circuit circuit = layered({.num_qubits = 8, .layers = 3});
-    const CountingMonitor monitor;
-    static_cast<void>(engine.execute(make_request(circuit, false, &monitor)));
-    EXPECT_EQ(monitor.calls(), circuit.operations().size());
-    EXPECT_EQ(monitor.last(), circuit.operations().size());
+    const std::size_t blocks = ir::plan_fusion(circuit.operations()).block_count();
+    ASSERT_LT(blocks, circuit.operations().size()) << "the circuit must fuse something";
+    {
+        const CountingMonitor monitor;
+        static_cast<void>(engine.execute(make_request(circuit, false, &monitor)));
+        EXPECT_EQ(monitor.calls(), blocks);
+        EXPECT_EQ(monitor.last(), blocks);
+    }
+    {
+        const CountingMonitor monitor;
+        EngineExecutionRequest request = make_request(circuit, false, &monitor);
+        request.fuse_gates = false;
+        static_cast<void>(engine.execute(request));
+        EXPECT_EQ(monitor.calls(), circuit.operations().size());
+        EXPECT_EQ(monitor.last(), circuit.operations().size());
+    }
 }
 
 // A monitor that never abandons must not perturb a single bit of the result.
@@ -202,42 +218,44 @@ TEST_F(CudaExecutionMonitorTest, AnAbandonedCudaRunLeavesTheEngineProducingCorre
         << "a run after repeated abandons must still match the CPU bitwise";
 }
 
-// CONTROL for the two tests below. Without it, "free memory did not drop" could
-// pass because the probe cannot see allocations at all. Holding a live 256 MiB
-// buffer must visibly reduce free memory, so a leak of that size would too.
+// CONTROL for the two tests below. Without it, "available memory did not
+// drop" could pass because the probe cannot see allocations at all. Holding a
+// live 256 MiB buffer must visibly reduce available memory, so a leak of that
+// size would too.
 TEST_F(CudaExecutionMonitorTest, TheMemoryProbeCanSeeALiveDeviceAllocation) {
     constexpr std::size_t kAmplitudes = std::size_t{1} << 24;  // 256 MiB
-    const std::uint64_t before = free_device_bytes();
+    const std::uint64_t before = available_device_bytes();
     {
         const kernels::cuda::DeviceBuffer buffer(kAmplitudes,
                                                  kernels::cuda::device_available_bytes());
-        const std::uint64_t during = free_device_bytes();
+        const std::uint64_t during = available_device_bytes();
         EXPECT_LT(during + (std::uint64_t{200} << 20), before)
-            << "a live 256 MiB allocation must lower free memory by well over 200 MiB";
+            << "a live 256 MiB allocation must lower available memory by well over 200 MiB";
     }
-    EXPECT_GE(free_device_bytes() + (std::uint64_t{32} << 20), before)
-        << "and releasing it must give the memory back";
+    EXPECT_GE(available_device_bytes() + (std::uint64_t{32} << 20), before)
+        << "and releasing it must give the memory back (to the pool, Phase 22)";
 }
 
-// The direct measurement: free device memory after many abandons equals free
-// device memory before them. Each abandoned run holds a 128 MiB buffer at the
-// moment it is abandoned, so a leak of one buffer per abandon would show as
-// roughly 1 GiB here, against a 32 MiB tolerance for unrelated driver activity.
+// The direct measurement: available device memory after many abandons equals
+// available device memory before them. Each abandoned run holds a 128 MiB
+// buffer at the moment it is abandoned, so a leak of one buffer per abandon
+// would show as roughly 1 GiB here, against a 32 MiB tolerance for unrelated
+// driver activity.
 TEST_F(CudaExecutionMonitorTest, AbandoningReleasesTheDeviceAllocation) {
     const CudaDenseEngine engine;
     const Circuit circuit =
         layered({.num_qubits = 23, .layers = 2});  // 16 * 2^23 = 128 MiB of state
 
-    const std::uint64_t before = free_device_bytes();
+    const std::uint64_t before = available_device_bytes();
     for (int repeat = 0; repeat < 8; ++repeat) {
         const CountingMonitor monitor(3);
         EXPECT_THROW(static_cast<void>(engine.execute(make_request(circuit, false, &monitor))),
                      CountingMonitor::Abandoned);
     }
-    const std::uint64_t after = free_device_bytes();
+    const std::uint64_t after = available_device_bytes();
 
     EXPECT_GE(after + (std::uint64_t{32} << 20), before)
-        << "free device memory fell from " << before << " to " << after
+        << "available device memory fell from " << before << " to " << after
         << " bytes across 8 abandoned runs: the device allocation was not released";
 }
 

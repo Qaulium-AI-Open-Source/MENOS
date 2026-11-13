@@ -14,9 +14,22 @@ namespace menos::common {
 // own apply_*() below, and the stabilizer tableau's Gauss-Jordan
 // elimination (src/engines/stabilizer/tableau.cpp), which inspects and
 // combines PauliRow bits directly rather than through apply_*().
-[[nodiscard]] bool get_bit(const std::vector<std::uint64_t>& words, std::uint32_t q);
-void set_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value);
-void xor_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value);
+//
+// Inline and branch-free (docs/adr/0028 section 22): the stabilizer and
+// Pauli propagation engines call them for every row of every gate, and a
+// branch on a random bit costs a misprediction half the time, which made
+// the per-update cost depend on the rows' contents.
+[[nodiscard]] inline bool get_bit(const std::vector<std::uint64_t>& words, std::uint32_t q) {
+    return ((words[q / 64] >> (q % 64)) & std::uint64_t{1}) != 0;
+}
+inline void set_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value) {
+    const std::uint32_t shift = q % 64;
+    std::uint64_t& word = words[q / 64];
+    word = (word & ~(std::uint64_t{1} << shift)) | (static_cast<std::uint64_t>(value) << shift);
+}
+inline void xor_bit(std::vector<std::uint64_t>& words, std::uint32_t q, bool value) {
+    words[q / 64] ^= static_cast<std::uint64_t>(value) << (q % 64);
+}
 
 // One Pauli string's bit-packed representation: per qubit j, (x,z) bits
 // at position j of the x/z word vectors give I/X/Z/Y as (0,0)/(1,0)/
@@ -57,6 +70,16 @@ void apply_swap(PauliRow& row, std::uint32_t a, std::uint32_t b);
 // Exposed here (not file-local) because both Tableau::rowsum and the
 // stabilizer expectation reduction (docs/adr/0007) need it.
 [[nodiscard]] int pauli_phase_exponent(bool x1, bool z1, bool x2, bool z2);
+
+// The sum over every qubit of pauli_phase_exponent(a's bits, b's bits),
+// mod 4: the power of i in the product a*b, signs excluded. Computed a
+// word at a time (docs/adr/0028 section 22): per word, the qubits where
+// the factors anticommute contribute 1 or 3, by the cyclic order
+// X -> Y -> Z, and the two masks are counted. Exact integer arithmetic, so
+// it equals the per-qubit sum, which tests/common/pauli_row_test.cpp
+// keeps as the oracle. Precondition: a and b have the same word count, and
+// bits past the qubit count are zero in both.
+[[nodiscard]] int pauli_product_phase_exponent(const PauliRow& a, const PauliRow& b);
 
 // The single-qubit Pauli matrix for bits (x, z), row-major 2x2, matching
 // PauliString's own documented convention (I/X/Z/Y for (0,0)/(1,0)/

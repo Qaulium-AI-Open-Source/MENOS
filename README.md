@@ -14,7 +14,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 
 1. **Analyzes** the circuit: its structure, its entanglement, and what output you asked for;
 2. **Estimates** what each candidate strategy would cost, in a cost model shared by all engines;
-3. **Plans** by choosing the cheapest feasible strategy;
+3. **Plans** by choosing the cheapest feasible strategy (or, under a time budget, the one predicted to be fastest);
 4. **Executes** the plan, watching it against a time budget and replanning if reality disagrees with the estimate.
 
 ## Why MENOS?
@@ -23,7 +23,7 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 - **Infeasible is a first-class answer.** A candidate that cannot run is reported with the reason.
 - **Independent qubit groups are simulated independently** and recombined exactly.
 - **Work the output cannot depend on is removed** (light-cone reduction) before planning.
-- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes.
+- **Budgets are enforced**, not merely estimated: memory before any allocation, time while the run executes. Every memory estimate is an upper bound on what the job really holds, checked by measurement, and each result reports its measured peak.
 - **Exact results, reproducibly.** Every engine reachable from Python is exact, and the same circuit, options and seed give the same counts.
 
 ## Key capabilities
@@ -31,8 +31,10 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 | | |
 |---|---|
 | Output | Counts, exact statevectors, exact Pauli expectation values, exact noisy simulation |
-| Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix |
-| Planner | Cost model in work units, automatic factorization, CPU/CUDA selection by calibrated seconds |
+| Engines | Dense, stabilizer, Pauli propagation, matrix product state, tensor network, exact circuit cutting, density matrix, trajectory. The dense CPU engine fuses neighbouring gates and uses AVX2 kernels, bit for bit the generic kernel |
+| Planner | Cost model in work units with a calibrated time model per engine, automatic factorization, CPU/CUDA selection by calibrated seconds; branch-and-bound pruning of expensive searches and a plan cache for variational loops, so most jobs plan in milliseconds |
+| Memory | Every estimate an upper bound on use, checked by measurement; measured peaks in RAM, GPU memory and disk on every result; a GPU memory pool reused across jobs; a disk tier for dense states beyond the memory budget, bit for bit the in-memory result |
+| Circuits | `CircuitBuilder` in Python and C++: named gates, run-time parameters, registers, composition, exact inverse, OpenQASM 3 export |
 | Integration | Qiskit `BackendV2` (`MENOSBackend`), `EstimatorV2` (`MENOSEstimator`) and `SamplerV2` (`MENOSSampler`), with Qiskit Aer noise models; the PennyLane device `menos.qubit`; OpenQASM 3 import (`menos.from_qasm3`, static subset) and OpenQASM 2/3 on the command line |
 | Mitigation | Opt-in readout-error mitigation with calibrated, reported uncertainty; batch execution of several circuits (`run_batch`) |
 | GPU | NVIDIA CUDA dense backend, bitwise identical to the CPU |
@@ -41,12 +43,13 @@ Instead of pushing every circuit through one fixed algorithm, MENOS:
 ## Architecture
 
 ```text
-Qiskit QuantumCircuit → KIR → light-cone reduction → analysis → cost model → planner
-        → execution plan → runtime → engines (dense · CUDA · stabilizer · Pauli · MPS · tensor network · cut)
+Qiskit · PennyLane · OpenQASM · CircuitBuilder → KIR → light-cone reduction → plan cache → analysis
+        → cost model (pruned) → planner → execution plan → runtime (memory ledger)
+        → engines (dense CPU · CUDA · disk tier · stabilizer · Pauli · MPS · tensor network · cut · density matrix · trajectory)
                                    ↘ monitoring → replanning
 ```
 
-The C++ layers depend on each other in one direction (`api → runtime → engines → kernels`; `api → planner → cost → analysis → ir → common`), enforced by the build. See the documentation's Architecture page, and `docs/adr/` for the recorded design decisions.
+The C++ layers depend on each other in one direction (`api → runtime → engines → kernels`; `api → planner → cost → analysis → ir → common`), enforced by the build. See the documentation's Architecture, Memory Architecture and How Planning Stays Fast pages, and `docs/adr/` for the recorded design decisions.
 
 ## Installation
 
@@ -100,6 +103,22 @@ print(counts)            # {'00': 507, '11': 493}
 assert set(counts) <= {"00", "11"}
 ```
 
+To write circuits by hand without Qiskit, use the circuit builder ([Writing Circuits](docs/build/circuit-builder.md)): named gates, parameters, registers, composition, inverse and OpenQASM 3 export:
+
+```python
+import menos
+
+theta = menos.Parameter("theta")
+ansatz = menos.CircuitBuilder(2)
+ansatz.h(0).cx(0, 1).rz(theta, 1).measure_all()
+
+options = menos.RunOptions()
+options.shots = 100
+options.seed = 1
+counts = menos.run(ansatz.bind({"theta": 0.5}), options).counts
+print(ansatz.to_qasm3())
+```
+
 To see how MENOS planned a job, use the native API, whose results carry a plan report:
 
 ```python
@@ -139,7 +158,7 @@ Analytic results are exact and agree with `default.qubit` within 1e-12. Paramete
 
 | Engine | Outputs | Best for |
 |---|---|---|
-| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector |
+| Dense | counts, statevector, expectation | small to medium circuits; the only engine that produces a statevector. Beyond the memory budget it streams the state through a scratch file (the disk tier: counts and expectation values, bitwise the same) |
 | Stabilizer | counts, expectation | Clifford circuits, hundreds of qubits |
 | Pauli propagation | expectation | local observables on circuits of Clifford gates and rotations |
 | MPS | counts, expectation | low-entanglement circuits, large qubit counts |
@@ -176,11 +195,11 @@ print(run(circuit, options).statevector)
 
 In a process that also runs NumPy or SciPy work between MENOS calls (Qiskit does), OpenBLAS's own idle workers can compete with MENOS's threads. Setting `OPENBLAS_NUM_THREADS=1` before starting Python measured 1.8× faster at 16–18 qubits on the Phase 15 gate machine (`docs/adr/0019` section 10.9). MENOS does not set it, because the setting is process-wide.
 
-With `time_budget_seconds`, the planner's time estimate uses the calibrated single-threaded rate. That estimate is conservative for large threaded jobs, which can be refused when they would fit, and optimistic for a run capped at fewer threads, which the run-time monitor handles like any other overrun.
+With `time_budget_seconds`, the planner predicts seconds from a time model calibrated per engine on this machine, and picks the plan predicted to be fastest. The calibration runs once per process, the first time a job needs it (about 1.5–2 s on the development machine); later jobs in the same process reuse it. A CPU-only build never calibrates for a job without a time budget. A prediction that turns out wrong is handled by the run-time monitor like any other overrun.
 
 ## CUDA
 
-Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6).
+Neither the PyPI wheel nor a default source install has GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6). GPU states are allocated from a memory pool that keeps a finished job's memory for the next job; `release_device_memory()` gives it back to the driver.
 
 Building with CUDA requires setting the GPU architecture explicitly:
 

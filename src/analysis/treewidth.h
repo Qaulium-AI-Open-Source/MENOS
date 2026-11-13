@@ -198,6 +198,14 @@ struct EliminationOrder {
     // estimate_treewidth_min_fill) asked the search to stop; order and
     // per_step_degree are then the prefix up to and including that step.
     bool stopped_by_caller = false;
+    // The most heap bytes the search itself held at once (Phase 21,
+    // docs/adr/0025 section 3.4): the adjacency sets with every fill-in edge,
+    // the per-vertex fill counts and elimination flags, this result's own
+    // vectors, and each step's neighbor list and affected set. Counted from
+    // the containers' sizes as the search runs, with one std::set node per
+    // element (the element plus four pointer-sized words of links and
+    // colour) and one sentinel node per set.
+    std::uint64_t search_peak_bytes = 0;
 };
 
 // Called with each step's degree right after that step is recorded; returning
@@ -254,5 +262,24 @@ using MinFillStopPredicate = std::function<bool(std::size_t degree)>;
     const TensorNetworkGraph& graph,
     std::uint64_t max_peak_bytes = std::numeric_limits<std::uint64_t>::max(),
     const MinFillStopPredicate& stop_after_step = {});
+
+// Upper bounds on the heap bytes of the closed network's analysis objects
+// (Phase 21, docs/adr/0025 section 3.4), computed from the objects the
+// builders return, whose sizes fix every container they build:
+//   * closed_timelines_peak_bytes: the most build_closed_timelines() holds
+//     at once, including its result; closed_timelines_bytes: its result;
+//   * line_graph_peak_bytes: the most build_line_graph() holds at once,
+//     including its result; line_graph_bytes: its result;
+//   * elimination_order_bytes: what estimate_treewidth_min_fill() returns.
+// A vector grown one element at a time is charged
+// common::grown_vector_bytes; a std::map or std::set node one element plus
+// four pointer-sized words, with one sentinel node per container.
+[[nodiscard]] std::uint64_t closed_timelines_peak_bytes(const ClosedTimelines& timelines,
+                                                        std::size_t num_operations);
+[[nodiscard]] std::uint64_t closed_timelines_bytes(const ClosedTimelines& timelines);
+[[nodiscard]] std::uint64_t line_graph_peak_bytes(const ClosedTimelines& timelines,
+                                                  const LineGraph& line_graph);
+[[nodiscard]] std::uint64_t line_graph_bytes(const LineGraph& line_graph);
+[[nodiscard]] std::uint64_t elimination_order_bytes(const EliminationOrder& order);
 
 }  // namespace menos::analysis

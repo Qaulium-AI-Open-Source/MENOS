@@ -33,6 +33,13 @@ public:
     // bit ranges by construction (docs/BUILD_PLAN.md 3.4).
     BitString& operator|=(const BitString& other);
 
+    // Bitwise XOR, in place. Precondition: other.num_bits() == num_bits().
+    // Checked via common::ensure -> InternalError. Used by the stabilizer
+    // engine's counts sampler to flip a generator into the base outcome
+    // (docs/adr/0006: every outcome is base XOR a subset of generators; an OR
+    // here was the Phase 24 sampler bug, docs/adr/0028 section 18).
+    BitString& operator^=(const BitString& other);
+
     friend bool operator==(const BitString& lhs, const BitString& rhs);
 
     // Numeric lexicographic-by-most-significant-word: compares the
