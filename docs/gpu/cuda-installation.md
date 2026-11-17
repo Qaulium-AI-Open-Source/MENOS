@@ -1,6 +1,6 @@
 # CUDA Installation
 
-A default MENOS install has **no GPU support**. This page shows how to build the CUDA backend and confirm it is used.
+The **Linux wheels on PyPI have the CUDA backend compiled in** (version 1.3.0 and later): they are built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carry the CUDA runtime, so `pip install menos` on Linux x86-64 needs only an NVIDIA GPU and a driver that supports CUDA 12. With such a wheel, skip to [confirming the GPU is used](#confirm-it-is-used). The Windows wheels and a default source build have **no GPU support**. The rest of this page shows how to build the CUDA backend from source and confirm it is used.
 
 ## Do I need CUDA?
 

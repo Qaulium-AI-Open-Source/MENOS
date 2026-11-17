@@ -31,8 +31,8 @@ Each entry is a **symptom**, its **cause**, and a **solution**.
 | | |
 |---|---|
 | **Symptom** | `pip` or `uv` refuses to install, naming a Python version requirement |
-| **Cause** | `menos` requires Python `>=3.10`, and PyPI has wheels only for CPython 3.10–3.14 on Linux x86-64 |
-| **Solution** | Use Python 3.10–3.14 (`uv python install 3.14` installs one). No source distribution is published; on other platforms, including Windows, [install from source](/get-started/installation#install-from-source) |
+| **Cause** | `menos` requires Python `>=3.10`, and PyPI has wheels only for CPython 3.10–3.14 on Linux x86-64 and Windows x64 |
+| **Solution** | Use Python 3.10–3.14 (`uv python install 3.14` installs one). No source distribution is published; on other platforms [install from source](/get-started/installation#install-from-source) |
 
 ## Qiskit version problems
 

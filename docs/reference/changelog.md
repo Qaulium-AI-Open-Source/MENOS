@@ -1,6 +1,13 @@
 # Changelog
 
-MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
+MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.3.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
+
+## 1.3.0: packaging
+
+- **Linux wheels with the CUDA backend compiled in**, for CPython 3.10–3.14 (manylinux 2.28, x86-64), built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carrying the CUDA runtime. The planner offers the GPU only when a device is present, so the same wheel runs on the CPU engines on a machine without one.
+- **Windows wheels** (CPython 3.10–3.14, `win_amd64`, CPU-only) are published alongside them.
+- `twine` is no longer a runtime dependency of the package.
+- The release contains everything through Phase 25 below.
 
 ## Phase 25: circuit builder
 

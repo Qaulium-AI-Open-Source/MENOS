@@ -20,7 +20,7 @@ Each requirement is labelled by how much you need it.
 
 ## Software
 
-The **Required to build** rows apply only to a source install. The [PyPI wheels](/get-started/installation#install-from-pypi) (CPython 3.10–3.14, Linux x86-64) and the Windows wheels need none of them.
+The **Required to build** rows apply only to a source install. The [PyPI wheels](/get-started/installation#install-from-pypi) (CPython 3.10–3.14, Linux x86-64 and Windows x64) need none of them.
 
 | | Version | Label | Notes |
 |---|---|---|---|
@@ -36,6 +36,8 @@ The **Required to build** rows apply only to a source install. The [PyPI wheels]
 | `uv` | any | **Recommended** | `uv add menos`, and used by the project's scripts; `pip` also works |
 
 ## GPU (CUDA)
+
+The Linux wheels on PyPI have the CUDA backend compiled in and carry the CUDA 12.9 runtime, so they need only an NVIDIA GPU (compute capability 7.5 or newer) and a driver that supports CUDA 12. The table below is for building with CUDA from source.
 
 | | Requirement | Label |
 |---|---|---|

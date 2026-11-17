@@ -7,7 +7,7 @@ Every entry here is a real limitation of this release. None is speculative, and 
 - **Only Linux on x86-64 and Windows x64 have been verified.** macOS arm64 and Linux aarch64 are intended but untested.
 - **Windows is CPU-only and MSVC-only.** CUDA on Windows is refused at configure time (use WSL); ARM64, MinGW and clang-cl are not supported.
 - **Python 3.10–3.14**, with **Qiskit pinned to 2.5.2**.
-- **PyPI has Linux wheels only.** Windows wheels are built by the wheel workflow but not yet published. Building from source needs network access to GitHub (for test-only dependencies) and LAPACKE.
+- **PyPI has wheels for Linux x86-64 and Windows x64 only**, and no source distribution. The Linux wheels have the CUDA backend compiled in; the Windows wheels are CPU-only. Building from source needs network access to GitHub (for test-only dependencies) and LAPACKE.
 - **No CMake install or export rules.** The C++ libraries are not installable packages; the only installed artifact is the Python extension.
 
 ## Circuits

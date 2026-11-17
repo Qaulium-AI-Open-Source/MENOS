@@ -14,8 +14,9 @@ This page states what the project has actually been verified on. "Intended to wo
 
 | Channel | What it covers |
 |---|---|
-| PyPI (`pip install menos`, `uv add menos`) | Version 1.1.0: prebuilt wheels for **CPython 3.10–3.14, Linux x86-64** (manylinux 2.28), **CPU-only**. No source distribution is published |
-| Windows wheels | CPython 3.10–3.14, `win_amd64`, **CPU-only**, with OpenBLAS inside. Built by the wheel workflow (`.github/workflows/build-wheels.yml`) or `cibuildwheel --platform windows`; not yet published to PyPI |
+| PyPI (`pip install menos`, `uv add menos`) | Version 1.3.0: prebuilt wheels for CPython 3.10–3.14 on Linux x86-64 and Windows x64, described in the next two rows. No source distribution is published |
+| Linux wheels | CPython 3.10–3.14, **Linux x86-64** (manylinux 2.28), with the **CUDA backend compiled in**: built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0, with the CUDA runtime, OpenBLAS and LAPACKE inside. The GPU is used only when a device is present; otherwise the wheel runs on the CPU engines. Built by the wheel workflow (`.github/workflows/build-wheels.yml`), whose runner has no GPU: each wheel is tested there on the CPU path only |
+| Windows wheels | CPython 3.10–3.14, `win_amd64`, **CPU-only**, with OpenBLAS inside. Built by the wheel workflow or `cibuildwheel --platform windows` |
 | Source build | Everything on this page, including the CUDA backend (Linux only) |
 
 ## Intended but not verified
