@@ -409,5 +409,29 @@ Three options were put to the owner under the Phase 18 rule that a Windows last-
 
 ### 13.4 After the pin
 
-On the development machine `ctest --preset windows-release -R MemoryFixtureTest` passes 40 of 40 with the pin (it selects Haswell there with or without it, so this shows only that nothing moved). Not yet run: the workflow on the runner with the pin.
+On the development machine `ctest --preset windows-release -R MemoryFixtureTest` passes 40 of 40 with the pin (it selects Haswell there with or without it, so this shows only that nothing moved).
+
+**The workflow with the pin** (run 45029085673, on `8ca0c8b`, dispatched by the owner). Both attempts ran on a runner with `AMD64 Family 25 Model 17`, not the Family 26 CPU of section 13.1, and `mps_expectation` passed in both. So the pin is shown to do no harm there, but it has **not** been shown to restore the baseline digest on the Family 26 CPU that failed.
+
+| Attempt | Linux job | Windows job |
+|---|---|---|
+| 1 | passed | failed: `windows-release` 977 of 978; `CalibrateHardwareTest.RepeatedCalibrationAgreesWithinAnOrderOfMagnitude` saw spreads of 10.8x (bandwidth) and 36.1x (throughput) against its 4x limit |
+| 2 (the Windows job re-run, nothing changed) | kept from attempt 1 | passed |
+
+Attempt 1's failure is the timing-repeatability check of section 10.6, here with four tests at once on a shared four-core runner. The test and its limit were not changed; the same commit passed on the re-run. It remains a way for this job to fail without a code fault.
+
+Attempt 2, Windows job, on a runner with no GPU:
+
+| Stage | Result |
+|---|---|
+| `ctest --preset windows-release -j 4` | 978 of 978 passed, 168 s |
+| `ctest --preset windows-cuda-release -j 4` | 1070 of 1070 passed, 426 s; the CUDA tests skip themselves (133 skipped in all) |
+| cp310 wheel | backend check OK; 396 passed, 9 skipped |
+| cp311, cp312, cp313, cp314 wheels | backend check OK; 639 passed each |
+
+The backend check on each wheel printed `OK: cuda wheel: automatic choice runs on the CPU; forced CUDA: backend=cuda was requested, but this build of MENOS has no CUDA support`: the wheel imports, runs on the CPU and refuses a forced CUDA run, which is gate criterion 4's second half. The refusal's wording is the planner's existing message for "no CUDA engine registered" and is the same on a CUDA wheel with no device as on a CPU-only build; it is not changed here.
+
+The Linux job built and validated the five `manylinux_2_27_x86_64.manylinux_2_28_x86_64` wheels for cp310–cp314. Artifacts: `menos-windows-wheels` and `menos-linux-wheels`. Nothing was uploaded to PyPI.
+
+With this, every gate criterion of section 8 has evidence; criterion 6 (the split Windows run of section 12.2, and the runs being on the tree before it was committed) is still the owner's ruling.
 
