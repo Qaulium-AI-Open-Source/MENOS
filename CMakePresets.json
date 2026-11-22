@@ -252,6 +252,9 @@
       "configurePreset": "windows-dev",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "OPENBLAS_CORETYPE": "Haswell"
       }
     },
     {
@@ -259,6 +262,9 @@
       "configurePreset": "windows-release",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "OPENBLAS_CORETYPE": "Haswell"
       }
     },
     {
@@ -266,6 +272,9 @@
       "configurePreset": "windows-cuda-dev",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "OPENBLAS_CORETYPE": "Haswell"
       }
     },
     {
@@ -273,6 +282,9 @@
       "configurePreset": "windows-cuda-release",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "OPENBLAS_CORETYPE": "Haswell"
       }
     }
   ]

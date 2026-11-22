@@ -368,3 +368,46 @@ The `cuda-dev` and `cuda12-dev` stages took about four and six times as long as 
 4. **The documentation site build**, skipped in WSL for want of Node.
 
 Not covered by any run: a second Windows GPU, or a compute capability other than 8.9.
+
+## 13. The wheel workflow: an OpenBLAS kernel-selection difference — [MEASURED] 2026-11-22
+
+### 13.1 The failure
+
+`.github/workflows/build-wheels.yml` was dispatched on `phase-26-windows-cuda` at `8c14f55` (run 45020858503). The Linux job passed. The Windows job failed in `ctest --preset windows-release`, twice (the job was re-run once): 977 of 978 tests passed, and `MemoryFixtureTest.OutputsMatchTheBaselineAndMemoryIsReported/"mps_expectation"` gave expectation digest `174e7f1963d05ebf` both times against the baseline's `03caedeae1ee0dad`. The job stops there, so no Windows wheel was built and gate criterion 4's GPU-less half was not reached.
+
+### 13.2 The cause
+
+| Run | Commit | Runner CPU (`PROCESSOR_IDENTIFIER`) | Runner image | `mps_expectation` |
+|---|---|---|---|---|
+| 44155536559, `main`, 2026-11-17 | `1a2af73` | AMD64 Family 25 Model 1 | `windows-2025-vs2026` 20261103.298.1 | passed |
+| 45020858503, both attempts | `8c14f55` | AMD64 Family 26 Model 2 | `windows-2025-vs2026` 20261116.315.1 | failed, the same digest |
+| the development machine | the verified tree | Intel, OpenBLAS core `Haswell` | | passed |
+
+The compiler is MSVC 14.50.35717 in both workflow runs, OpenBLAS is the hash-pinned 0.3.34, Phase 26 changed no MPS source, and the baseline entry is the one at `1a2af73`. The official OpenBLAS build chooses its kernels from the CPU at load time. On the development machine, the same `windows-release` test binary with `OPENBLAS_VERBOSE=2`:
+
+| `OPENBLAS_CORETYPE` | Core OpenBLAS reports | `mps_expectation` digest |
+|---|---|---|
+| unset | Haswell | `03caedeae1ee0dad` (baseline) |
+| `Haswell` | Haswell | `03caedeae1ee0dad` |
+| `Zen` | Zen | `03caedeae1ee0dad` |
+| `Sandybridge` | Sandybridge | `bc5f43748f1d98b6` |
+| `Nehalem` | Nehalem | `ed219c325f799ff1` |
+
+So the MPS expectation's last bits depend on the kernel set the SVD runs on. Which core OpenBLAS picks on the Family 26 runner was not read (the development machine has no AVX-512 and cannot run those kernels); that it is a different one is inferred from the digest. `main` would fail the same test on that runner: the difference is in the runner fleet, not in this branch. It is also not Windows-only in kind, since the Linux builds take LAPACK from a CPU-dispatching library too.
+
+### 13.3 The decision (owner, 2026-11-22: option 1)
+
+Three options were put to the owner under the Phase 18 rule that a Windows last-bit numeric difference is the owner's and never a tolerance change:
+
+1. Pin OpenBLAS's kernel choice for the test runs only (chosen).
+2. Pin it inside the shipped library, which would cost AVX-512 machines their faster kernels.
+3. Compare this fixture with a tolerance instead of a digest.
+
+**Built:** the four Windows test presets (`windows-dev`, `windows-release`, `windows-cuda-dev`, `windows-cuda-release`) set `OPENBLAS_CORETYPE=Haswell` in the test environment. Haswell is the core the Windows baseline was recorded on. Nothing in the library, the wheels or a user's process is changed, and no baseline digest moves.
+
+**What this does not change, knowingly.** A result that passes through the SVD still differs in its last bits between machines whose OpenBLAS cores differ; the pin only stops the digest tests from depending on the runner. A machine without AVX2 cannot run the Windows test presets as pinned. The Python suite that `cibuildwheel` runs against each wheel is not pinned.
+
+### 13.4 After the pin
+
+On the development machine `ctest --preset windows-release -R MemoryFixtureTest` passes 40 of 40 with the pin (it selects Haswell there with or without it, so this shows only that nothing moved). Not yet run: the workflow on the runner with the pin.
+
