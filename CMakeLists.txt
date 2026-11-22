@@ -49,12 +49,18 @@ if(MSVC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.51
                         "-vcvars_ver=14.50\"")
 endif()
 
-# Windows is supported for the CPU build only (docs/adr/0022). Refuse a CUDA
-# request outright rather than silently building without CUDA.
-if(MSVC AND MENOS_ENABLE_CUDA)
-    message(FATAL_ERROR "menos: MENOS_ENABLE_CUDA is not supported with MSVC. "
-                        "CUDA on Windows is a recorded Phase 18 deferral "
-                        "(docs/adr/0022 section 7); configure with MENOS_ENABLE_CUDA=OFF")
+# CUDA on Windows (docs/adr/0030 section 3). nvcc 12.x refuses MSVC 19.50, the
+# toolset the C++ is built with (its crt/host_config.h stops at _MSC_VER 1950),
+# so the .cu files are compiled with a Visual Studio 2022 toolset as nvcc's
+# host compiler, named by CMAKE_CUDA_HOST_COMPILER or by the CUDAHOSTCXX
+# environment variable CMake reads it from; everything else, and the link, stay
+# on the developer environment's toolset. Asked for here, before
+# enable_language(CUDA) fails with nvcc's own less direct error.
+if(MSVC AND MENOS_ENABLE_CUDA AND NOT CMAKE_CUDA_HOST_COMPILER AND "$ENV{CUDAHOSTCXX}" STREQUAL "")
+    message(FATAL_ERROR "menos: MENOS_ENABLE_CUDA with MSVC needs CMAKE_CUDA_HOST_COMPILER (or the "
+                        "CUDAHOSTCXX environment variable) set to the cl.exe of a Visual Studio "
+                        "2022 toolset (14.4x), because nvcc 12.x refuses MSVC "
+                        "${CMAKE_CXX_COMPILER_VERSION} (docs/adr/0030 section 3)")
 endif()
 
 if(MENOS_ENABLE_CUDA)
@@ -81,6 +87,34 @@ if(MENOS_ENABLE_CUDA)
         message(FATAL_ERROR "menos: libcudart ${menos_cudart_real} is from CUDA "
                             "${CMAKE_MATCH_1}, but the headers are CUDA ${CUDAToolkit_VERSION}; "
                             "set CUDAToolkit_ROOT")
+    endif()
+    if(WIN32)
+        # The Windows twin of the libcudart check above: cudart.lib carries no
+        # version in its name, the DLL it imports does. The DLL is also what
+        # has to sit beside every executable and beside _core.pyd.
+        find_file(MENOS_CUDART_DLL "cudart64_${CUDAToolkit_VERSION_MAJOR}.dll"
+                  PATHS "${CUDAToolkit_BIN_DIR}" NO_DEFAULT_PATH)
+        if(NOT MENOS_CUDART_DLL)
+            message(FATAL_ERROR "menos: cudart64_${CUDAToolkit_VERSION_MAJOR}.dll is not in "
+                                "${CUDAToolkit_BIN_DIR}, but the headers are CUDA "
+                                "${CUDAToolkit_VERSION}; set CUDAToolkit_ROOT")
+        endif()
+        set(menos_cudart_real "${MENOS_CUDART_DLL}")
+        # nvcc's host compiler is not the developer environment's (see above),
+        # but it runs inside that environment, whose INCLUDE names the newer
+        # toolset's standard library, which the older compiler cannot read.
+        # The host compiler's own headers are therefore put on the CUDA include
+        # path, which is searched before INCLUDE.
+        # <toolset>/bin/Hostx64/x64/cl.exe -> <toolset>/include.
+        cmake_path(GET CMAKE_CUDA_HOST_COMPILER PARENT_PATH menos_cuda_host_root)
+        foreach(level RANGE 2)
+            cmake_path(GET menos_cuda_host_root PARENT_PATH menos_cuda_host_root)
+        endforeach()
+        set(MENOS_CUDA_HOST_INCLUDE_DIR "${menos_cuda_host_root}/include")
+        if(NOT EXISTS "${MENOS_CUDA_HOST_INCLUDE_DIR}/vector")
+            message(FATAL_ERROR "menos: no C++ standard library at ${MENOS_CUDA_HOST_INCLUDE_DIR} "
+                                "for the CUDA host compiler ${CMAKE_CUDA_HOST_COMPILER}")
+        endif()
     endif()
     set(CMAKE_CUDA_STANDARD 20)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
@@ -233,14 +267,19 @@ if(MENOS_BUILD_BENCHMARKS)
 endif()
 
 # Windows has no rpath: an executable finds a DLL in its own directory. Copy
-# the OpenBLAS DLL (src/common) next to every menos executable, at configure
-# time so that gtest_discover_tests can already run them when they are first
-# built (docs/adr/0022 section 4). A single-config generator (the windows-*
-# presets use Ninja) puts each executable in its directory's binary dir; a
-# multi-config one (Visual Studio, scikit-build-core's default) in a
-# per-configuration subdirectory of it.
+# the OpenBLAS DLL (src/common), and in a CUDA build the CUDA runtime DLL, next
+# to every menos executable, at configure time so that gtest_discover_tests can
+# already run them when they are first built (docs/adr/0022 section 4,
+# docs/adr/0030 section 4). A single-config generator (the windows-* presets
+# use Ninja) puts each executable in its directory's binary dir; a multi-config
+# one (Visual Studio, scikit-build-core's default) in a per-configuration
+# subdirectory of it.
 if(WIN32)
-    function(menos_copy_openblas_dll directory)
+    set(menos_runtime_dlls "${MENOS_OPENBLAS_DLL}")
+    if(MENOS_ENABLE_CUDA)
+        list(APPEND menos_runtime_dlls "${MENOS_CUDART_DLL}")
+    endif()
+    function(menos_copy_runtime_dlls directory)
         get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target IN LISTS targets)
             get_target_property(type ${target} TYPE)
@@ -248,17 +287,17 @@ if(WIN32)
                 get_target_property(binary_dir ${target} BINARY_DIR)
                 if(CMAKE_CONFIGURATION_TYPES)
                     foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
-                        file(COPY "${MENOS_OPENBLAS_DLL}" DESTINATION "${binary_dir}/${config}")
+                        file(COPY ${menos_runtime_dlls} DESTINATION "${binary_dir}/${config}")
                     endforeach()
                 else()
-                    file(COPY "${MENOS_OPENBLAS_DLL}" DESTINATION "${binary_dir}")
+                    file(COPY ${menos_runtime_dlls} DESTINATION "${binary_dir}")
                 endif()
             endif()
         endforeach()
         get_property(subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
         foreach(subdirectory IN LISTS subdirectories)
-            menos_copy_openblas_dll("${subdirectory}")
+            menos_copy_runtime_dlls("${subdirectory}")
         endforeach()
     endfunction()
-    menos_copy_openblas_dll("${CMAKE_SOURCE_DIR}")
+    menos_copy_runtime_dlls("${CMAKE_SOURCE_DIR}")
 endif()

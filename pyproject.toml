@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "menos"
-version = "1.3.0"
+version = "1.3.1"
 description = "A quantum circuit simulation runtime with Qiskit and PennyLane adapters"
 readme = "README.md"
 license = "Apache-2.0"
@@ -61,21 +61,33 @@ rebuild = false
 build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_*"
 
-# Native Windows wheels (docs/adr/0022 section 5): CPU only, LP64 OpenBLAS
-# fetched and hash-checked once, installed beside _core.pyd by CMake. delvewheel
-# vendors the MSVC C++ runtime and fails on any unresolved dependency; it skips
-# libopenblas.dll, which the wheel already carries. Each wheel runs the full
-# Python suite. Must run inside a Visual Studio x64 developer environment:
-# Ninja with cl is pinned here so that no other compiler on PATH (a MinGW GCC,
-# for example) can be picked up; CMake refuses anything but MSVC.
+# Native Windows wheels (docs/adr/0022 section 5, docs/adr/0030 sections 4 and
+# 5): LP64 OpenBLAS fetched and hash-checked once. Like the Linux wheels these
+# are the "auto" wheel: CUDA is compiled in and the planner offers the GPU only
+# when a device is present at run time. The CUDA 12.9 compiler and runtime are
+# fetched and hash-checked the same way (scripts/fetch-cuda-windows.ps1).
+# delvewheel vendors the MSVC C++ runtime, OpenBLAS and the CUDA runtime into
+# menos.libs under hashed names and fails on any unresolved dependency. The
+# hashed names matter: Windows binds an import to any already loaded DLL of
+# the same file name, and qiskit-aer ships its own libopenblas.dll, so a
+# plainly named copy beside _core.pyd is not the one used when Aer is imported
+# first (measured, docs/adr/0030 section 10.4). CMake therefore does not
+# install the two DLLs itself here (MENOS_INSTALL_RUNTIME_DLLS=OFF). Each
+# wheel runs the full Python suite. Must run inside a Visual Studio x64
+# developer environment with CUDA_PATH and CUDAHOSTCXX set
+# (scripts/verify-windows.ps1 and the workflow do both): Ninja with cl is
+# pinned here so that no other compiler on PATH (a MinGW GCC, for example) can
+# be picked up; CMake refuses anything but MSVC. The architectures are the
+# Linux wheels' (Turing through Blackwell); CUDAARCHS is read by CMake itself.
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
-environment = { CMAKE_GENERATOR = "Ninja", CC = "cl", CXX = "cl" }
+environment = { CMAKE_GENERATOR = "Ninja", CC = "cl", CXX = "cl", CUDACXX = "$CUDA_PATH/bin/nvcc.exe", CUDAARCHS = "75;80;86;89;90;120", CMAKE_ARGS = "-DMENOS_ENABLE_CUDA=ON -DMENOS_INSTALL_RUNTIME_DLLS=OFF" }
 before-all = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-openblas-windows.ps1"
 before-build = "pip install delvewheel==1.13.1"
 # The C++ runtime is taken from the compiler's own redist directory, not the
-# first msvcp140.dll on PATH, which on CI runners can be an older copy. -v logs
+# first msvcp140.dll on PATH, which on CI runners can be an older copy; OpenBLAS
+# from where before-all unpacked it; the CUDA runtime from the toolkit. -v logs
 # where each vendored DLL came from.
-repair-wheel-command = "delvewheel repair -v --add-path \"%VCToolsRedistDir%x64\\Microsoft.VC145.CRT\" --exclude libopenblas.dll --wheel-dir {dest_dir} {wheel}"
+repair-wheel-command = "delvewheel repair -v --add-path \"%VCToolsRedistDir%x64\\Microsoft.VC145.CRT;build\\_deps\\openblas-0.3.34\\bin;%CUDA_PATH%\\bin\" --wheel-dir {dest_dir} {wheel}"
 test-extras = ["test"]
 test-command = "pytest {project}/python/tests -q"

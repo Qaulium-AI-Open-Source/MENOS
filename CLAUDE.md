@@ -159,6 +159,10 @@ Invariants:
 
 **Circuit builder (C++ and Python).** Specification: `docs/BUILD_PLAN.md`, Phase 25. Design: `docs/adr/0029`. The owner started the phase on 2026-11-11, while Phase 24's verification and gate are open. Branch `phase-25-circuit-builder`, from `phase-24-simd-kernels` at `5d074e8`; it merges after Phase 24. The owner answered section 9 the same day, taking every recommended option (a `CircuitBuilder` type, affine parameters, `bind` plus `run` of a parameter-free builder, OpenQASM 3 export with the exact `rzz` definition read back as `RZZ`, no drawing, Qiskit's names, parameter identity by name, the Q9 gate). The owner approved the implementation plan the same day; implemented on 2026-11-11 (`eeb44f5`–`932f68e` and the record commit, `docs/adr/0029` section 10). **COMPLETE: gate recorded passed on 2026-11-13** on the owner's instruction; verified with Phase 24 on `61ecf46` (`docs/adr/0029` sections 10.3–10.4).
 
+## Phase 26
+
+**CUDA on native Windows.** Specification: `docs/BUILD_PLAN.md`, Phase 26. Design: `docs/adr/0030`. The owner started the phase on 2026-11-20 and answered section 9 the same day: a new phase with its own ADR (the proposed interoperability roadmap renumbered to Phases 27–32); CUDA toolkit 12.9, as in the Linux wheels; version 1.3.1, built and verified but not published; the toolkit on the development machine. Step 1 measured that nvcc 12.9 refuses the pinned MSVC 14.50 toolset, and the owner chose a Visual Studio 2022 toolset (14.44) as nvcc's host compiler for the `.cu` files only; `-allow-unsupported-compiler` is not used. Branch `phase-26-windows-cuda`, from `main` at `1a2af73`. **IN PROGRESS: the gate is open.** It supersedes the Phase 18 scope decision "CUDA on Windows is refused at configure time" (`docs/adr/0022` section 7 and gate criterion 6); the Phase 18 record above is kept as written.
+
 ## Definition of done
 
 1. `scripts/verify.sh` exits 0 in the current session.

@@ -104,7 +104,7 @@
     {
       "name": "windows-release",
       "displayName": "Windows x64, MSVC, Release, warnings as errors",
-      "description": "Native Windows build (docs/adr/0022). Run from a Visual Studio x64 developer environment (scripts/verify-windows.ps1 enters one). OpenBLAS comes from scripts/fetch-openblas-windows.ps1. CPU only: MSVC with MENOS_ENABLE_CUDA is refused.",
+      "description": "Native Windows build (docs/adr/0022). Run from a Visual Studio x64 developer environment (scripts/verify-windows.ps1 enters one). OpenBLAS comes from scripts/fetch-openblas-windows.ps1. CPU only; the CUDA build is windows-cuda-release.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/windows-release",
       "condition": {
@@ -115,6 +115,36 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_CXX_COMPILER": "cl"
+      }
+    },
+    {
+      "name": "windows-cuda-dev",
+      "displayName": "Windows dev with the CUDA dense backend",
+      "description": "The device code's host pass gets the same AddressSanitizer and Debug flags as the C++ (windows-dev): MSVC refuses to link an instrumented object with an uninstrumented one, and CMake's default CUDA Debug flags add /RTC1, which AddressSanitizer rejects. CUDA_PATH is the toolkit root (scripts/fetch-cuda-windows.ps1 prints one) and CUDAHOSTCXX the cl.exe of a Visual Studio 2022 toolset (14.4x): nvcc 12.x refuses the MSVC 14.50 toolset the C++ is built with, so the .cu files alone are compiled with the older one (docs/adr/0030 section 3). scripts/verify-windows.ps1 sets both. Architecture 89 is the development GPU's (RTX 4060); the wheels set their own list.",
+      "inherits": "windows-dev",
+      "binaryDir": "${sourceDir}/build/windows-cuda-dev",
+      "cacheVariables": {
+        "MENOS_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_COMPILER": "$env{CUDA_PATH}/bin/nvcc.exe",
+        "CMAKE_CUDA_HOST_COMPILER": "$env{CUDAHOSTCXX}",
+        "CMAKE_CUDA_ARCHITECTURES": "89",
+        "CUDAToolkit_ROOT": "$env{CUDA_PATH}",
+        "CMAKE_CUDA_FLAGS": "-D_WINDOWS -Xcompiler=/EHsc,/fsanitize=address",
+        "CMAKE_CUDA_FLAGS_DEBUG": "-Xcompiler=/Ob0,/Od"
+      }
+    },
+    {
+      "name": "windows-cuda-release",
+      "displayName": "Windows release with the CUDA dense backend",
+      "description": "CUDA_PATH is the toolkit root (scripts/fetch-cuda-windows.ps1 prints one) and CUDAHOSTCXX the cl.exe of a Visual Studio 2022 toolset (14.4x): nvcc 12.x refuses the MSVC 14.50 toolset the C++ is built with, so the .cu files alone are compiled with the older one (docs/adr/0030 section 3). scripts/verify-windows.ps1 sets both. Architecture 89 is the development GPU's (RTX 4060); the wheels set their own list.",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build/windows-cuda-release",
+      "cacheVariables": {
+        "MENOS_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_COMPILER": "$env{CUDA_PATH}/bin/nvcc.exe",
+        "CMAKE_CUDA_HOST_COMPILER": "$env{CUDAHOSTCXX}",
+        "CMAKE_CUDA_ARCHITECTURES": "89",
+        "CUDAToolkit_ROOT": "$env{CUDA_PATH}"
       }
     }
   ],
@@ -150,6 +180,14 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release"
+    },
+    {
+      "name": "windows-cuda-dev",
+      "configurePreset": "windows-cuda-dev"
+    },
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda-release"
     }
   ],
   "testPresets": [
@@ -219,6 +257,20 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-cuda-dev",
+      "configurePreset": "windows-cuda-dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda-release",
       "output": {
         "outputOnFailure": true
       }

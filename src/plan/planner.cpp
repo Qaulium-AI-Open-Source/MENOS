@@ -408,8 +408,10 @@ Plan plan_job(const JobSpec& job_spec,
     // once per region, since each region is its own execution.
     // The host terms are the work the CUDA engine does on the CPU, reported
     // in the CPU dense engine's own time components and priced at its
-    // measured rates: drawing counts from the copied-back state (docs/adr/0028
-    // section 23). Zero when the time model has no dense figures.
+    // measured rates: the CPU dense engine's pass count, which carries the
+    // host-side preparation of every gate pass (docs/adr/0030 section 11),
+    // and drawing counts from the copied-back state (docs/adr/0028 section
+    // 23). Zero when the time model has no dense figures.
     const auto cuda_seconds = [&](std::uint64_t work_units,
                                   const DeviceCost& device,
                                   const TimeTerms& host) {

@@ -5,9 +5,9 @@ Every entry here is a real limitation of this release. None is speculative, and 
 ## Platforms and installation
 
 - **Only Linux on x86-64 and Windows x64 have been verified.** macOS arm64 and Linux aarch64 are intended but untested.
-- **Windows is CPU-only and MSVC-only.** CUDA on Windows is refused at configure time (use WSL); ARM64, MinGW and clang-cl are not supported.
+- **Windows is MSVC-only.** ARM64, MinGW and clang-cl are not supported. The CUDA build on Windows needs a second MSVC toolset for the device code (see [CUDA Installation](/gpu/cuda-installation#on-windows)).
 - **Python 3.10–3.14**, with **Qiskit pinned to 2.5.2**.
-- **PyPI has wheels for Linux x86-64 and Windows x64 only**, and no source distribution. The Linux wheels have the CUDA backend compiled in; the Windows wheels are CPU-only. Building from source needs network access to GitHub (for test-only dependencies) and LAPACKE.
+- **PyPI has wheels for Linux x86-64 and Windows x64 only**, and no source distribution. The Linux wheels have the CUDA backend compiled in; the 1.3.0 Windows wheels are CPU-only, and from version 1.3.1 the Windows wheels have it too. Building from source needs network access to GitHub (for test-only dependencies) and LAPACKE.
 - **No CMake install or export rules.** The C++ libraries are not installable packages; the only installed artifact is the Python extension.
 
 ## Circuits
@@ -68,9 +68,9 @@ Every entry here is a real limitation of this release. None is speculative, and 
 ## GPU
 
 - **One device; dense regions only.** A `factorized` plan chooses CPU or CUDA per dense region (Phase 17); a direct plan has one backend; `cut_and_recombine` fragments always run on the CPU. Gates within a region are never split between CPU and GPU.
-- **Verified on two GPUs**: compute capability 8.6 (4 GB) with CUDA 13.4, and compute capability 8.9 (8 GB, running code built for 8.6) with CUDA 12.4. CUDA 11.x is not supported, and CUDA 12.0 to 12.3 are not tested.
+- **Verified on two GPUs**: compute capability 8.6 (4 GB) with CUDA 13.4, and compute capability 8.9 (8 GB) with CUDA 12.4 under WSL (code built for 8.6) and with CUDA 12.9 on native Windows (code built for 8.9). CUDA 11.x is not supported, and CUDA 12.0 to 12.3 are not tested.
 - **A CUDA build needs an explicit `CMAKE_CUDA_ARCHITECTURES`.** Without it CMake targets a default architecture and the kernels fail at run time.
-- The CMake presets pin machine-specific values (`/usr/local/cuda`, compute capability 8.6).
+- The CMake presets pin machine-specific values (`/usr/local/cuda` and compute capability 8.6 on Linux; compute capability 8.9 on Windows).
 - **CUDA gate kernels are double-precision-bound on consumer GPUs.** One- and two-qubit gates have specialised kernels, but bitwise identity with the CPU rules out fused multiply-add and kernels that skip zero products, so large circuits run at the GPU's double-precision arithmetic rate. Kernels specialised to diagonal or permutation gates are not implemented.
 - **MENOS keeps GPU memory between jobs.** A finished job's device state stays in MENOS's memory pool for the next job of that size (Phase 22). The planner counts it as available and `explain()` shows it as `device_pool_bytes`; other processes see it as used until `release_device_memory()` (C++ and Python) gives it back or the process exits. A device without memory-pool support falls back to a `cudaMalloc` per job (`pooled=false` in `explain()`).
 - **The pool has no cap below the device's total memory**, and there is no setting for one; `release_device_memory()` is the only control. If another process takes device memory between `plan_job`'s read of free memory and the allocation, the allocation fails inside CUDA and surfaces as `ResourceExceeded` naming the bytes asked for, the bytes free and the bytes the pool retains (since Phase 23). Under WSL the driver backs device memory with shared system memory and may grant an allocation past the free figure, so there the refusal can come one allocation later than the figure suggests (`docs/adr/0027` section 10.3).

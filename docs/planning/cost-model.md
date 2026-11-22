@@ -64,13 +64,21 @@ If an engine has no calibrated figures, its candidate falls back to `work_units 
 ### Seconds for a CUDA candidate
 
 ```text
-seconds = kernel_launches · launch_overhead
+seconds = host_seconds
+        + execution_overhead
+        + kernel_launches · launch_overhead
         + host_to_device_bytes / h2d_rate
         + work_units / device_work_rate
         + device_to_host_bytes / d2h_rate
 ```
 
-The launch term is what makes small circuits slower on the GPU: each launch costs a fixed amount however little it does. A model without it would claim the GPU always wins.
+The launch term is what makes small circuits slower on the GPU: each launch costs a fixed amount however little it does. A model without it would claim the GPU always wins. `execution_overhead` is the fixed cost of one run on the device beyond its launches (since Phase 24).
+
+`host_seconds` is the work the CUDA engine does on the CPU, priced at the CPU dense engine's measured cost per time count:
+- the passes the CPU dense engine would make for the same job, because each gate pass is prepared on the host by the same code (since Phase 26, `docs/adr/0030` section 11);
+- for counts, the sampling of the copied-back state: its amplitudes and its shots (since Phase 24).
+
+So a CUDA candidate costs what the CPU's passes cost plus the device's own terms, and wins only where the device's work rate pays for them.
 
 ## How accurate is it?
 

@@ -63,7 +63,7 @@ uv add menos
 
 Add the `qiskit` extra (`pip install "menos[qiskit]"` or `uv add "menos[qiskit]"`) to use `MENOSBackend`, `MENOSEstimator` and `MENOSSampler`; it pins Qiskit 2.5.2.
 
-The 1.3.0 wheels on PyPI are prebuilt for CPython 3.10–3.14 on Linux x86-64 (manylinux 2.28) and Windows x64 (`win_amd64`). The **Linux wheels have the CUDA backend compiled in** (built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0, with the CUDA runtime inside the wheel): on a machine with an NVIDIA GPU and driver the planner can use the GPU, and on a machine without one they run on the CPU engines. The **Windows wheels are CPU-only**. No source distribution is published, so on other platforms build from source.
+The 1.3.1 wheels are prebuilt for CPython 3.10–3.14 on Linux x86-64 (manylinux 2.28) and Windows x64 (`win_amd64`). **Both have the CUDA backend compiled in** (built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0, with the CUDA runtime inside the wheel): on a machine with an NVIDIA GPU and driver the planner can use the GPU, and on a machine without one they run on the CPU engines. The Windows wheels have it from 1.3.1; the 1.3.0 Windows wheels are CPU-only. No source distribution is published, so on other platforms build from source.
 
 ### From source
 
@@ -75,7 +75,7 @@ uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python ".[qiskit]"
 ```
 
-On Windows (x64, CPU only), install Visual Studio 2026's C++ tools, then:
+On Windows (x64; this builds the CPU engines, see the documentation's CUDA Installation page for the CUDA build), install Visual Studio 2026's C++ tools, then:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\fetch-openblas-windows.ps1   # pinned OpenBLAS, provides LAPACKE
@@ -199,7 +199,7 @@ With `time_budget_seconds`, the planner predicts seconds from a time model calib
 
 ## CUDA
 
-The Linux wheels on PyPI have the CUDA backend compiled in; the Windows wheels and a default source install have no GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6). GPU states are allocated from a memory pool that keeps a finished job's memory for the next job; `release_device_memory()` gives it back to the driver.
+The Linux wheels on PyPI have the CUDA backend compiled in, and from 1.3.1 so do the Windows wheels (the 1.3.0 Windows wheels are CPU-only); a default source install has no GPU support. The CUDA backend accelerates the dense engine when the calibrated model says the GPU is faster end to end, transfers included. It needs CUDA 12.0 or newer, and was verified on Linux x86-64 with CUDA 13.4 (compute capability 8.6) and CUDA 12.4 (compute capability 8.9, built for 8.6), and on Windows x64 with CUDA 12.9 (compute capability 8.9). GPU states are allocated from a memory pool that keeps a finished job's memory for the next job; `release_device_memory()` gives it back to the driver.
 
 Building from source with CUDA requires setting the GPU architecture explicitly:
 
@@ -267,7 +267,7 @@ scripts/verify.sh
 
 ## Platforms
 
-**Linux on x86-64** and **Windows x64 (MSVC, CPU only)** have been verified; `scripts/verify.sh` and `scripts/verify-windows.ps1` are their verification scripts. macOS arm64 and Linux aarch64 are intended but untested. The CUDA backend is Linux-only (on Windows, use WSL). See the documentation's Supported Platforms and Limitations pages.
+**Linux on x86-64** and **Windows x64 (MSVC)** have been verified; `scripts/verify.sh` and `scripts/verify-windows.ps1` are their verification scripts. macOS arm64 and Linux aarch64 are intended but untested. The CUDA backend builds on both verified platforms (on Windows from 1.3.1, `docs/adr/0030`). See the documentation's Supported Platforms and Limitations pages.
 
 ## Contributing
 
