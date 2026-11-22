@@ -33,7 +33,7 @@ pip install "menos[pennylane]"
 ```
 
 ::: warning What the PyPI wheels cover
-Version 1.3.0 ships wheels for **CPython 3.10–3.14 on Linux x86-64** (manylinux 2.28, so glibc 2.28 or newer) and on **Windows x64** (`win_amd64`). The Linux wheels have the **CUDA backend compiled in**: with an NVIDIA GPU and driver the planner can use the GPU, and without one they run on the CPU engines (see [Enabling CUDA](#enabling-cuda)). The Windows wheels are **CPU-only**. No source distribution is published, so on any other platform, Python version or architecture `pip` finds no matching distribution; [build from source](#install-from-source) there.
+Version 1.3.1 ships wheels for **CPython 3.10–3.14 on Linux x86-64** (manylinux 2.28, so glibc 2.28 or newer) and on **Windows x64** (`win_amd64`). Both have the **CUDA backend compiled in**: with an NVIDIA GPU and driver the planner can use the GPU, and without one they run on the CPU engines (see [Enabling CUDA](#enabling-cuda)). The Windows wheels have it from 1.3.1; the 1.3.0 Windows wheels are **CPU-only**. No source distribution is published, so on any other platform, Python version or architecture `pip` finds no matching distribution; [build from source](#install-from-source) there.
 :::
 
 You need **Python 3.10 or newer** (up to 3.14). If your system does not provide it, [`uv`](https://docs.astral.sh/uv/) can install it:
@@ -86,7 +86,7 @@ The `qiskit` extra installs Qiskit 2.5.2, which `MENOSBackend` and `MENOSEstimat
 
 ### On Windows
 
-Native Windows builds use MSVC and are **CPU-only** (for the CUDA backend on a Windows machine, use WSL). You need:
+Native Windows builds use MSVC. The steps below build the CPU engines; the CUDA backend needs two more things, described in [CUDA Installation](/gpu/cuda-installation#on-windows). You need:
 
 - Visual Studio 2026 with the **Desktop development with C++** workload (the free Build Tools are enough). Its CMake and Ninja are used.
 - `git` and [`uv`](https://docs.astral.sh/uv/).
@@ -142,9 +142,9 @@ powershell -ExecutionPolicy Bypass -File scripts\verify-windows.ps1 -Wheels
 
 ## Enabling CUDA
 
-The Linux wheels on PyPI have the CUDA backend compiled in. They are built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carry the CUDA runtime, so they need only an NVIDIA GPU and a driver that supports CUDA 12; no toolkit has to be installed. On a machine with no usable GPU they behave like a CPU-only build.
+The Linux wheels have the CUDA backend compiled in, and from version 1.3.1 so do the Windows wheels (the 1.3.0 Windows wheels are CPU-only). They are built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carry the CUDA runtime, so they need only an NVIDIA GPU and a driver that supports CUDA 12; no toolkit has to be installed. On a machine with no usable GPU they behave like a CPU-only build.
 
-The Windows wheels and a default source install have no GPU support, and the CUDA backend is not available in native Windows builds (use WSL). See [CUDA Installation](/gpu/cuda-installation) for how to confirm the GPU is used and how to build with CUDA from source.
+A default source install has no GPU support. See [CUDA Installation](/gpu/cuda-installation) for how to confirm the GPU is used and how to build with CUDA from source.
 
 ## If installation fails
 

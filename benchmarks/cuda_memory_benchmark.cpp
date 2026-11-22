@@ -43,6 +43,13 @@
 // device_buffer.cpp does: the allocation and transfer calls it times are the
 // runtime's own, and wrapping each in a probe would measure the wrapper.
 
+#if defined(_WIN32) && !defined(_CRT_SECURE_NO_WARNINGS)
+// std::getenv is the portable call for the environment variable read below;
+// MSVC warns about it as it does for every C standard call with a _s variant
+// (benchmarks/tiered_memory_benchmark.cpp takes the same route).
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <benchmark/benchmark.h>
 #include <cuda_runtime.h>
 

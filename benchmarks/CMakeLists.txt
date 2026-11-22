@@ -229,8 +229,16 @@ if(MENOS_ENABLE_CUDA)
     # reasons given there: the host warning set minus -Wpedantic and
     # -Wold-style-cast, and -fmad=false so the probe's arithmetic is compiled
     # as the generic kernel's is.
+    if(MSVC)
+        target_compile_options(menos_cuda_kernel_benchmark PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/W4,/WX,/permissive-,/Zc:__cplusplus>)
+        target_include_directories(menos_cuda_kernel_benchmark SYSTEM BEFORE PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:${MENOS_CUDA_HOST_INCLUDE_DIR}>)
+    else()
+        target_compile_options(menos_cuda_kernel_benchmark PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>)
+    endif()
     target_compile_options(menos_cuda_kernel_benchmark PRIVATE
-        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>
         $<$<COMPILE_LANGUAGE:CUDA>:-fmad=false>)
 
     # Phase 22 step 1 (docs/adr/0026 section 4): allocation, the expectation
