@@ -37,8 +37,19 @@ target_compile_options(menos_kernels_cuda PRIVATE
 #   -Wold-style-cast fires inside CUDA's own channel_descriptor.h.
 # -Wconversion is deliberately KEPT: it fires on real index arithmetic in our
 # kernels, which is exactly where it earns its place.
-target_compile_options(menos_kernels_cuda PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>)
+#
+# With MSVC as nvcc's host compiler (docs/adr/0030 section 3) the .cu TUs get
+# MSVC's own warning bar, /W4 with warnings as errors, and the host compiler's
+# standard library ahead of the developer environment's (root CMakeLists.txt).
+if(MSVC)
+    target_compile_options(menos_kernels_cuda PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/W4,/WX,/permissive-,/Zc:__cplusplus>)
+    target_include_directories(menos_kernels_cuda SYSTEM BEFORE PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:${MENOS_CUDA_HOST_INCLUDE_DIR}>)
+else()
+    target_compile_options(menos_kernels_cuda PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wconversion,-Wsign-conversion,-Wshadow,-Wnon-virtual-dtor,-Woverloaded-virtual,-Werror>)
+endif()
 
 # -fmad=false disables nvcc's default fusing of a*b+c into FMA. This is a
 # correctness requirement here, not a style preference: the device

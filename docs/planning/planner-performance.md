@@ -55,8 +55,6 @@ Who pays it:
 | CPU build, no time budget | Never. The planner uses detected figures |
 | CPU build, with a time budget | On the first budgeted job of the process |
 | CUDA build | On the first job of the process, budgeted or not, because the planner compares CPU with CUDA |
-| Windows | CPU builds only: native Windows has no CUDA backend ([Supported Platforms](/introduction/supported-platforms)) |
-
 What that means in practice:
 
 | How MENOS is used | Cost |

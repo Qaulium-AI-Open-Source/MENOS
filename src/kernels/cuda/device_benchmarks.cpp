@@ -15,7 +15,7 @@ namespace {
 
 // 16 MiB: comfortably past the per-transfer fixed overhead, and small enough
 // that the whole calibration stays well under a second.
-constexpr std::size_t kTransferBytes = 16UL * 1024 * 1024;
+constexpr std::size_t kTransferBytes = std::size_t{16} << 20;
 
 // Two qubits: a kernel's actual work here is negligible against the cost of
 // launching it, so the measured per-call time is the fixed overhead.

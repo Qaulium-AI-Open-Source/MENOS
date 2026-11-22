@@ -66,6 +66,14 @@ Each entry is a **symptom**, its **cause**, and a **solution**.
 | **Cause** | Usually the `qiskit` extra is missing, or you are running a different interpreter |
 | **Solution** | Run [Verify Installation](/get-started/verify-installation) |
 
+## Python exits with an access violation on Windows
+
+| | |
+|---|---|
+| **Symptom** | With the 1.3.0 Windows wheel, a script that imports `qiskit_aer` before `menos` exits with status 3221225477 (0xC0000005) on a job with a time budget |
+| **Cause** | `qiskit-aer` ships its own `libopenblas.dll`. Once it is loaded, Windows gives MENOS that library in place of its own, and the first job that reaches LAPACK crashes |
+| **Solution** | Import `menos` before `qiskit_aer`, or use version 1.3.1 or later, whose wheels carry their libraries under hashed names |
+
 ## See also
 
 [Build Errors](/troubleshooting/build-errors) · [Requirements](/get-started/requirements)

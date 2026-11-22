@@ -25,6 +25,13 @@
 //
 // Setting MENOS_FACTORIZED_BACKEND_JSON=<path> also writes the tables as JSON.
 
+#if defined(_WIN32) && !defined(_CRT_SECURE_NO_WARNINGS)
+// std::getenv is the portable call for the environment variable read below;
+// MSVC warns about it as it does for every C standard call with a _s variant
+// (benchmarks/tiered_memory_benchmark.cpp takes the same route).
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <benchmark/benchmark.h>
 
 #include <algorithm>

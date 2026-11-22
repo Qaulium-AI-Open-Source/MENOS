@@ -281,16 +281,35 @@ CostEstimate CudaDenseEngine::estimate(const EngineEstimateRequest& request) con
                               work,
                               /*infeasible_reason=*/"",
                               DeviceCost{device_bytes, h2d_bytes, d2h_bytes, launches}};
-        // Counts are drawn on the HOST, by the CPU dense engine's sampler on
-        // the copied-back state (execute() below), so that work is reported in
-        // the CPU dense engine's own time components, as DenseEngine reports
-        // it: one pass (the cumulative distribution), its 2^n amplitudes and
-        // the shots. The planner prices them at that engine's measured rates
-        // beside the device terms (docs/adr/0028 section 23). Without them a
-        // job with many shots looked as cheap on the GPU as one with none.
+        // The work this engine does on the HOST, reported in the CPU dense
+        // engine's own time components so the planner prices it at that
+        // engine's measured rates beside the device terms.
+        //
+        // Component 0, the passes: exactly the count DenseEngine reports for
+        // the same request (initialisation, one per gate pass, one per output
+        // pass). Every gate pass is prepared on the host by the code the CPU
+        // engine runs (plan_fusion and the block build, or generate_matrix),
+        // and the CPU's per-pass rate is where that cost is measured. Without
+        // it a tiny circuit was predicted at under a tenth of its real time
+        // in a sanitizer build, where the block build is 80-90% of the run on
+        // either backend, and was planned onto the GPU (docs/adr/0030
+        // section 11). Charging the CPU's whole pass count, not the gate
+        // passes alone, keeps the comparison structural: the device then
+        // costs what the CPU's passes cost plus its own execution, launch and
+        // transfer terms, so it wins only where its work rate pays for them.
+        // It over-counts by the initialisation and output passes, which are
+        // launches or copies here: about 6 us each in a release build.
+        //
+        // Components 1 and 2, counts only: they are drawn by the CPU dense
+        // engine's sampler on the copied-back state (execute() below), over
+        // its 2^n amplitudes, once per shot (docs/adr/0028 section 23).
+        // Without them a job with many shots looked as cheap on the GPU as
+        // one with none.
+        auto& dense = estimate.time.counts[static_cast<std::size_t>(Engine::Dense)];
+        // launches is 1 (initialise) + the gate passes + the expectation terms.
+        dense[0] = static_cast<double>(launches) + (request.want_statevector ? 1.0 : 0.0) +
+                   (request.want_counts ? 1.0 : 0.0);
         if (request.want_counts) {
-            auto& dense = estimate.time.counts[static_cast<std::size_t>(Engine::Dense)];
-            dense[0] = 1.0;
             dense[1] = static_cast<double>(checked_pow2(request.num_qubits));
             dense[2] = static_cast<double>(request.shots);
         }

@@ -1,6 +1,8 @@
 #include <cuComplex.h>
 #include <cuda_runtime.h>
 
+#include <algorithm>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -403,7 +405,7 @@ std::complex<double> expectation_of_term(ConstDeviceState state,
     for (const std::complex<double>& partial : partials) {
         sum += partial;
     }
-    return i_power(__builtin_popcountll(x_mask & z_mask)) * sum;
+    return i_power(std::popcount(x_mask & z_mask)) * sum;
 }
 
 }  // namespace menos::kernels::cuda
