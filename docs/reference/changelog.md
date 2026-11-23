@@ -1,6 +1,20 @@
 # Changelog
 
-MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.1.0**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
+MENOS was built in phases, each passing an acceptance gate before the next began. The package version is **1.3.1**. The repository has no release tags, so this page records the development history by phase rather than by tagged release.
+
+## 1.3.1: CUDA on native Windows (Phase 26)
+
+- **The CUDA backend builds natively on Windows** (x64, MSVC), with the presets `windows-cuda-dev` and `windows-cuda-release`. Kernels, results and plans are those of the Linux CUDA build. The CUDA 12 compiler does not accept the Visual Studio 2026 toolset, so the device code alone is compiled with the MSVC 14.44 toolset (`docs/adr/0030`). See [CUDA Installation](/gpu/cuda-installation#on-windows).
+- **Windows wheels with the CUDA backend compiled in**, for CPython 3.10–3.14 (`win_amd64`), built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carrying the CUDA runtime (`cudart64_12.dll`). As on Linux, the planner offers the GPU only when a device is present, and the wheel runs on the CPU engines on a machine with no NVIDIA driver.
+- Configuring with MSVC and `MENOS_ENABLE_CUDA=ON` is no longer refused outright; it asks for the device code's host compiler.
+- **Fixed: a crash on Windows when `qiskit_aer` is imported before `menos`.** `qiskit-aer` ships its own `libopenblas.dll`; once it was loaded, Windows resolved MENOS's import of that name to it, and the first MENOS job that reached LAPACK ended in an access violation. The 1.3.0 Windows wheel has this fault on a job that runs the hardware calibration (one with a time budget, for example). The wheels now carry OpenBLAS and the CUDA runtime under hashed names in `menos.libs` (`docs/adr/0030` section 10.4).
+
+## 1.3.0: packaging
+
+- **Linux wheels with the CUDA backend compiled in**, for CPython 3.10–3.14 (manylinux 2.28, x86-64), built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carrying the CUDA runtime. The planner offers the GPU only when a device is present, so the same wheel runs on the CPU engines on a machine without one.
+- **Windows wheels** (CPython 3.10–3.14, `win_amd64`, CPU-only) are published alongside them.
+- `twine` is no longer a runtime dependency of the package.
+- The release contains everything through Phase 25 below.
 
 ## Phase 25: circuit builder
 

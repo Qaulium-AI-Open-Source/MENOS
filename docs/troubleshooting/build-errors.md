@@ -22,9 +22,9 @@ Each entry is a **symptom**, its **cause**, and a **solution**. The exact wordin
 
 | | |
 |---|---|
-| **Symptom** | CMake stops with `MENOS_ENABLE_CUDA is not supported with MSVC` |
-| **Cause** | Native Windows builds are CPU-only; CUDA on Windows is a recorded deferral (`docs/adr/0022`) |
-| **Solution** | Configure without `MENOS_ENABLE_CUDA`, or build the CUDA backend under WSL |
+| **Symptom** | CMake stops with `MENOS_ENABLE_CUDA with MSVC needs CMAKE_CUDA_HOST_COMPILER`, or nvcc stops with `unsupported Microsoft Visual Studio version` |
+| **Cause** | The CUDA 12 compiler accepts Visual Studio 2017 to 2022 only, and MENOS's C++ is built with the Visual Studio 2026 toolset (14.50) |
+| **Solution** | Install the MSVC 14.44 toolset beside 14.50 and set `CUDAHOSTCXX` to its `cl.exe`; only the device code is compiled with it (`docs/adr/0030` section 3). `scripts\verify-windows.ps1` does this |
 
 ## MSVC 14.51 refused
 

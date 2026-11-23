@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "engines/dense/dense_engine.h"
 #include "engines/dense_cuda/cuda_dense_engine.h"
 #include "plan/hardware_profile.h"
 #include "plan/planner.h"
@@ -178,6 +179,94 @@ TEST_F(CudaBackendSelectionTest,
     ASSERT_TRUE(dense->feasible) << dense->infeasible_reason;
     EXPECT_EQ(dense->backend, Backend::Cuda)
         << "a 24-qubit dense expectation should be faster on this GPU";
+}
+
+// ---------------------------------------------------------------------------
+// Phase 26: the host-side preparation of every gate pass (docs/adr/0030
+// section 11). The CUDA engine builds each fused block, or generates each
+// gate's matrix, on the host with the CPU engine's code, so it reports the CPU
+// dense engine's pass count and the planner prices it at the CPU's per-pass
+// rate. Before this, a build in which that preparation dominates (measured
+// 80-90% of a 3-qubit run under AddressSanitizer) planned tiny circuits onto
+// the GPU.
+// ---------------------------------------------------------------------------
+
+TEST_F(CudaBackendSelectionTest, TheCudaEngineReportsTheCpuDenseEnginesPassCount) {
+    const JobSpec job = dense_job(3);
+    const PauliString z0{.num_qubits = 3, .x_words = {0}, .z_words = {1}};
+    const PauliString z1{.num_qubits = 3, .x_words = {0}, .z_words = {2}};
+    const Observable observable{.terms = {{z0, {1.0, 0.0}}, {z1, {1.0, 0.0}}}};
+    const engines::dense::DenseEngine cpu;
+    const engines::dense_cuda::CudaDenseEngine cuda;
+    const auto dense = static_cast<std::size_t>(Engine::Dense);
+
+    struct Outputs {
+        bool statevector;
+        bool counts;
+        bool expectation;
+    };
+    for (const bool fuse : {true, false}) {
+        for (const Outputs& out : {Outputs{false, false, false},
+                                   Outputs{true, false, false},
+                                   Outputs{false, true, false},
+                                   Outputs{false, false, true},
+                                   Outputs{true, true, true}}) {
+            const EngineEstimateRequest request{
+                .num_qubits = 3,
+                .operations = &job.circuit.operations(),
+                .want_statevector = out.statevector,
+                .want_counts = out.counts,
+                .want_expectation = out.expectation,
+                .observable = out.expectation ? &observable : nullptr,
+                .shots = out.counts ? std::uint64_t{100} : std::uint64_t{0},
+                .bitstring_width = out.counts ? 3U : 0U,
+                .fuse_gates = fuse,
+            };
+            const CostEstimate on_cpu = cpu.estimate(request);
+            const CostEstimate on_cuda = cuda.estimate(request);
+            ASSERT_TRUE(on_cpu.feasible) << on_cpu.infeasible_reason;
+            ASSERT_TRUE(on_cuda.feasible) << on_cuda.infeasible_reason;
+            const std::string where = std::string("fuse=") + (fuse ? "1" : "0") +
+                                      " statevector=" + (out.statevector ? "1" : "0") +
+                                      " counts=" + (out.counts ? "1" : "0") +
+                                      " expectation=" + (out.expectation ? "1" : "0");
+            EXPECT_GT(on_cuda.time.counts[dense][0], 1.0) << where;
+            EXPECT_EQ(on_cuda.time.counts[dense][0], on_cpu.time.counts[dense][0]) << where;
+            // The host does no per-amplitude work and draws no shots unless
+            // counts are sampled there (docs/adr/0028 section 23).
+            EXPECT_EQ(on_cuda.time.counts[dense][1], out.counts ? 8.0 : 0.0) << where;
+            EXPECT_EQ(on_cuda.time.counts[dense][2], out.counts ? 100.0 : 0.0) << where;
+        }
+    }
+}
+
+// A profile with the figures measured in the AddressSanitizer build
+// (docs/adr/0030 section 11.3), rounded: a pass costs a millisecond on the
+// host, far more than the device's execution and launch costs. Without the
+// pass term the device was predicted at about 0.4 ms against the CPU's 6 ms
+// and took the tiny circuit. With it the device pays the same passes plus its
+// own fixed costs and loses, and it still wins where the work term is what
+// the CPU spends its time on.
+TEST_F(CudaBackendSelectionTest, HostGatePreparationKeepsATinyCircuitOnTheCpu) {
+    HardwareProfile hw = fast_device_profile();
+    auto& dense = hw.seconds_per_time_count[static_cast<std::size_t>(Engine::Dense)];
+    dense[0] = 1.0e-3;  // per pass
+    dense[1] = 1.6e-7;  // per work unit
+    dense[2] = 3.0e-5;  // per shot
+    hw.cuda_execution_seconds = 2.0e-4;
+    hw.cuda_kernel_launch_seconds = 4.0e-5;
+
+    const Plan tiny = plan_job(dense_job(3), hw);
+    ASSERT_EQ(tiny.strategy, Strategy::DirectDense);
+    ASSERT_EQ(tiny.regions.size(), 1U);
+    EXPECT_EQ(tiny.regions[0].backend, Backend::Cpu)
+        << "the device pays the CPU's passes and its own launches on top";
+
+    const Plan large = plan_job(dense_job(16), hw);
+    ASSERT_EQ(large.strategy, Strategy::DirectDense);
+    ASSERT_EQ(large.regions.size(), 1U);
+    EXPECT_EQ(large.regions[0].backend, Backend::Cuda)
+        << "the pass term must not keep a work-bound circuit off a faster device";
 }
 
 // ---------------------------------------------------------------------------

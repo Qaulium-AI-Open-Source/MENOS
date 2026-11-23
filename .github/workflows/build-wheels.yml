@@ -6,13 +6,154 @@ on:
 permissions:
   contents: read
 
+env:
+  CUDA_VERSION: "12-9"
+  CUDA_HOME: /usr/local/cuda-12.9
+
 jobs:
+  linux:
+    # Linux wheels for CPython 3.10-3.14 (manylinux 2.28, x86-64), every one
+    # the "auto" wheel: CUDA is compiled in and the planner offers the GPU only
+    # when a device is present at run time, otherwise the CPU engines. So one
+    # `pip install menos` serves machines with and without an NVIDIA GPU. The
+    # Python versions and the musllinux skip come from pyproject.toml
+    # [tool.cibuildwheel].
+    name: Build MENOS Linux Wheels (CUDA + CPU)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout MENOS
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install build tools
+        run: python -m pip install cibuildwheel==4.2.1 auditwheel packaging
+
+      - name: Build MENOS wheels for Python 3.10-3.14
+        run: |
+          set -o pipefail
+          python -m cibuildwheel --platform linux --output-dir wheelhouse 2>&1 | tee cibuildwheel-linux.log
+        env:
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_BUILD_VERBOSITY: "1"
+
+          # nvcc from the CUDA 12.9 toolkit, kernels for Turing through
+          # Blackwell (the last entry also embeds PTX, so newer GPUs still load
+          # it). CUDAARCHS is read by CMake itself, which avoids quoting a ';'
+          # list inside CMAKE_ARGS. auditwheel bundles libcudart; libcuda comes
+          # from the GPU driver and is only dlopen'd, so the wheel imports and
+          # runs on the CPU on a machine with no GPU.
+          CIBW_ENVIRONMENT_LINUX: >-
+            LD_LIBRARY_PATH="/usr/local/lib64:/usr/local/lib:${{ env.CUDA_HOME }}/lib64:${{ env.CUDA_HOME }}/targets/x86_64-linux/lib:$LD_LIBRARY_PATH"
+            CMAKE_ARGS="-DMENOS_ENABLE_CUDA=ON -DCMAKE_CUDA_COMPILER=${{ env.CUDA_HOME }}/bin/nvcc -DCUDAToolkit_ROOT=${{ env.CUDA_HOME }}"
+            CUDAARCHS="75;80;86;89;90;120"
+
+          # Once per container, not once per Python version.
+          CIBW_BEFORE_ALL_LINUX: |
+            set -eux
+
+            echo "===== Installing system dependencies ====="
+            yum install -y openblas-devel lapack-devel cmake make gcc gcc-c++ git
+
+            echo "===== Installing the CUDA toolkit (nvcc + cudart) ====="
+            dnf install -y dnf-plugins-core
+            dnf config-manager --add-repo \
+              https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
+            dnf install -y \
+              cuda-nvcc-${{ env.CUDA_VERSION }} \
+              cuda-cudart-devel-${{ env.CUDA_VERSION }}
+            ${{ env.CUDA_HOME }}/bin/nvcc --version
+            test -f ${{ env.CUDA_HOME }}/include/cuda_runtime.h
+
+            echo "===== Building and installing LAPACKE ====="
+            rm -rf /tmp/lapacke-src
+            git clone --depth 1 --branch v3.12.1 \
+              https://github.com/Reference-LAPACK/lapack.git /tmp/lapacke-src
+            cmake -S /tmp/lapacke-src -B /tmp/lapacke-src/build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr/local \
+              -DBUILD_SHARED_LIBS=ON \
+              -DLAPACKE=ON \
+              -DBUILD_TESTING=OFF
+            cmake --build /tmp/lapacke-src/build --parallel 2
+            cmake --install /tmp/lapacke-src/build
+            ldconfig
+
+            test -f /usr/local/include/lapacke.h
+            ldconfig -p | grep -i lapacke
+
+          # Each wheel is installed into a clean environment and run. The
+          # runner has no GPU, so this proves the wheel imports, runs on the
+          # CPU and refuses a forced CUDA run. That the wheel really has CUDA
+          # is checked below (bundled libcudart); that it runs on a GPU must be
+          # checked on a machine with one before a release:
+          #   python scripts/check_wheel_backends.py cuda --gpu
+          CIBW_TEST_EXTRAS: "test"
+          CIBW_TEST_COMMAND: >-
+            python {project}/scripts/check_wheel_backends.py cuda &&
+            pytest {project}/python/tests/test_wheel_smoke.py {project}/python/tests/test_backend_selection.py -q
+
+      - name: Validate generated wheels
+        shell: python
+        run: |
+          import tomllib
+          from pathlib import Path
+          from zipfile import ZipFile
+          from packaging.utils import parse_wheel_filename
+
+          with open("pyproject.toml", "rb") as f:
+              project_version = tomllib.load(f)["project"]["version"]
+
+          expected = {"cp310", "cp311", "cp312", "cp313", "cp314"}
+          found = set()
+          for wheel in sorted(Path("wheelhouse").glob("*.whl")):
+              name, version, _, tags = parse_wheel_filename(wheel.name)
+              assert name == "menos", name
+              assert str(version) == project_version, (version, project_version)
+              # auditwheel may add an older manylinux alias beside 2_28.
+              assert all(
+                  tag.platform.startswith("manylinux") and tag.platform.endswith("x86_64")
+                  for tag in tags
+              ), tags
+              with ZipFile(wheel) as archive:
+                  files = archive.namelist()
+              assert any(n.startswith("menos/_core") for n in files), wheel.name
+              assert any("libcudart" in n for n in files), f"{wheel.name}: libcudart was not bundled"
+              found |= {tag.interpreter for tag in tags}
+          missing = expected - found
+          assert not missing, f"missing wheels: {sorted(missing)}"
+          print(f"SUCCESS: manylinux x86_64 CUDA wheels {project_version} for CPython 3.10-3.14")
+
+      - name: Show what auditwheel bundled
+        run: |
+          for wheel in wheelhouse/*.whl; do
+            auditwheel show "$wheel"
+          done
+
+      - name: Upload wheels and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menos-linux-wheels
+          path: |
+            cibuildwheel-linux.log
+            wheelhouse/
+          if-no-files-found: warn
+          retention-days: 14
+
   windows:
-    # Native Windows wheels (docs/adr/0022 section 5). The cibuildwheel
-    # settings live in pyproject.toml [tool.cibuildwheel.windows]: OpenBLAS is
-    # fetched and hash-checked, delvewheel repairs, and each wheel runs the
-    # Python suite.
-    name: Build MENOS Windows Wheels
+    # Native Windows wheels (docs/adr/0022 section 5, docs/adr/0030 section 4),
+    # the "auto" wheel like the Linux ones: CUDA is compiled in and used only
+    # when a device is present. The cibuildwheel settings live in
+    # pyproject.toml [tool.cibuildwheel.windows]: OpenBLAS and the CUDA 12.9
+    # compiler and runtime are fetched and hash-checked, delvewheel repairs,
+    # and each wheel runs the backend check and the Python suite.
+    name: Build MENOS Windows Wheels (CUDA + CPU)
     runs-on: windows-latest
 
     steps:
@@ -30,38 +171,52 @@ jobs:
       # The runner also has MinGW on PATH; MENOS builds with MSVC only, so enter
       # the Visual Studio x64 developer environment for every later step. The
       # 14.50 toolset is pinned: 14.51 miscompiles MENOS and CMake refuses it
-      # (docs/adr/0022 section 3.1).
-      - name: Enter the Visual Studio developer environment (MSVC 14.50)
+      # (docs/adr/0022 section 3.1). nvcc 12.x refuses 14.50, so the 14.44
+      # toolset (Visual Studio 2022's) is installed beside it as nvcc's host
+      # compiler for the .cu files only (docs/adr/0030 section 3); CMake reads
+      # it from CUDAHOSTCXX and the toolkit from CUDA_PATH.
+      - name: Enter the Visual Studio developer environment (MSVC 14.50, 14.44 for nvcc)
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
             -property installationPath
-          if (-not (Test-Path "$vs\VC\Tools\MSVC\14.50.*")) {
-            $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-            Start-Process -Wait -FilePath $setup -ArgumentList @("modify", "--installPath", "`"$vs`"",
-              "--add", "Microsoft.VisualStudio.Component.VC.14.50.18.0.x86.x64",
-              "--quiet", "--norestart", "--nocache")
+          $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          foreach ($toolset in @(@("14.50", "Microsoft.VisualStudio.Component.VC.14.50.18.0.x86.x64"),
+                                 @("14.44", "Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64"))) {
+            if (-not (Test-Path "$vs\VC\Tools\MSVC\$($toolset[0]).*")) {
+              Start-Process -Wait -FilePath $setup -ArgumentList @("modify", "--installPath", "`"$vs`"",
+                "--add", $toolset[1], "--quiet", "--norestart", "--nocache")
+            }
+            if (-not (Test-Path "$vs\VC\Tools\MSVC\$($toolset[0]).*")) {
+              Get-ChildItem "$vs\VC\Tools\MSVC" | ForEach-Object Name
+              throw "the MSVC $($toolset[0]) toolset is not available"
+            }
           }
-          if (-not (Test-Path "$vs\VC\Tools\MSVC\14.50.*")) {
-            Get-ChildItem "$vs\VC\Tools\MSVC" | ForEach-Object Name
-            throw "the MSVC 14.50 toolset is not available"
-          }
+          $hostCl = Get-ChildItem "$vs\VC\Tools\MSVC\14.44.*\bin\Hostx64\x64\cl.exe" |
+            Sort-Object FullName | Select-Object -Last 1
           Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation `
             -DevCmdArguments "-arch=x64 -host_arch=x64 -vcvars_ver=14.50"
           $cmake = "$vs\Common7\IDE\CommonExtensions\Microsoft\CMake"
           $env:PATH = "$cmake\CMake\bin;$cmake\Ninja;$env:PATH"
           (Get-Command cl).Source
+          # Forward slashes: both are substituted into CMake presets and into
+          # cibuildwheel's environment, where a backslash is an escape character.
+          $env:CUDAHOSTCXX = $hostCl.FullName -replace "\\", "/"
+          $env:CUDA_PATH = (& .\scripts\fetch-cuda-windows.ps1) -replace "\\", "/"
+          & "$env:CUDA_PATH/bin/nvcc.exe" --version
           # PSModulePath is left out: this step's PowerShell 7 value puts PowerShell
           # 7's modules first, and Windows PowerShell 5.1 (which runs
           # scripts/fetch-openblas-windows.ps1) then cannot load Get-FileHash.
           Get-ChildItem env: | Where-Object Name -ne "PSModulePath" |
             ForEach-Object { "$($_.Name)=$($_.Value)" } | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
-      # The C++ suite with the same compiler as the wheels, so a miscompile is
-      # caught here too, not only through the Python tests.
-      - name: Build and test the C++ suite (windows-release)
+      # The C++ suite with the same compilers as the wheels, so a miscompile is
+      # caught here too, not only through the Python tests: once CPU only, once
+      # with CUDA. The runner has no GPU, so the CUDA tests skip themselves and
+      # the second run shows that a CUDA build still passes on the CPU.
+      - name: Build and test the C++ suite (windows-release, windows-cuda-release)
         shell: powershell
         run: |
           & .\scripts\fetch-openblas-windows.ps1 | Out-Null
@@ -71,35 +226,62 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           ctest --preset windows-release -j 4 --output-on-failure
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --preset windows-cuda-release
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build --preset windows-cuda-release
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ctest --preset windows-cuda-release -j 4 --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build MENOS wheels for Python 3.10-3.14
         shell: bash
         run: |
           set -o pipefail
           python -m cibuildwheel --platform windows --output-dir wheelhouse 2>&1 | tee cibuildwheel-windows.log
+        env:
+          # As on Linux: the runner has no GPU (and no NVIDIA driver at all), so
+          # this proves the wheel imports, runs on the CPU and refuses a forced
+          # CUDA run. That it runs on a GPU must be checked on a machine with
+          # one before a release:
+          #   python scripts/check_wheel_backends.py cuda --gpu
+          CIBW_TEST_COMMAND_WINDOWS: >-
+            python {project}/scripts/check_wheel_backends.py cuda &&
+            pytest {project}/python/tests -q
 
       - name: Validate generated wheels
         shell: python
         run: |
+          import tomllib
           from pathlib import Path
           from zipfile import ZipFile
           from packaging.utils import parse_wheel_filename
+
+          with open("pyproject.toml", "rb") as f:
+              project_version = tomllib.load(f)["project"]["version"]
 
           expected = {"cp310", "cp311", "cp312", "cp313", "cp314"}
           found = set()
           for wheel in sorted(Path("wheelhouse").glob("*.whl")):
               name, version, _, tags = parse_wheel_filename(wheel.name)
               assert name == "menos", name
-              assert str(version) == "1.2.0", version
+              assert str(version) == project_version, (version, project_version)
               assert {tag.platform for tag in tags} == {"win_amd64"}, tags
               with ZipFile(wheel) as archive:
                   files = archive.namelist()
-              assert "menos/libopenblas.dll" in files, wheel.name
+              # Vendored by delvewheel under hashed names (docs/adr/0030 section
+              # 5); a plainly named copy would lose to another package's DLL
+              # of the same name.
+              vendored = [n for n in files if n.startswith("menos.libs/")]
+              for dll in ("libopenblas", "cudart64_12", "msvcp140"):
+                  assert any(n.startswith(f"menos.libs/{dll}-") for n in vendored), f"{wheel.name}: {dll} was not vendored"
+              assert "menos/libopenblas.dll" not in files, wheel.name
+              assert "menos/cudart64_12.dll" not in files, wheel.name
               assert "menos/OPENBLAS_LICENSE" in files, wheel.name
+              assert "menos/CUDA_LICENSE" in files, wheel.name
               found |= {tag.interpreter for tag in tags}
           missing = expected - found
           assert not missing, f"missing wheels: {sorted(missing)}"
-          print("SUCCESS: win_amd64 wheels for CPython 3.10-3.14")
+          print(f"SUCCESS: win_amd64 CUDA wheels {project_version} for CPython 3.10-3.14")
 
       - name: Upload wheels and log
         if: always()

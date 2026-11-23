@@ -31,8 +31,8 @@ Each entry is a **symptom**, its **cause**, and a **solution**.
 | | |
 |---|---|
 | **Symptom** | `pip` or `uv` refuses to install, naming a Python version requirement |
-| **Cause** | `menos` requires Python `>=3.10`, and PyPI has wheels only for CPython 3.10–3.14 on Linux x86-64 |
-| **Solution** | Use Python 3.10–3.14 (`uv python install 3.14` installs one). No source distribution is published; on other platforms, including Windows, [install from source](/get-started/installation#install-from-source) |
+| **Cause** | `menos` requires Python `>=3.10`, and PyPI has wheels only for CPython 3.10–3.14 on Linux x86-64 and Windows x64 |
+| **Solution** | Use Python 3.10–3.14 (`uv python install 3.14` installs one). No source distribution is published; on other platforms [install from source](/get-started/installation#install-from-source) |
 
 ## Qiskit version problems
 
@@ -65,6 +65,14 @@ Each entry is a **symptom**, its **cause**, and a **solution**.
 | **Symptom** | An example in the repository fails immediately |
 | **Cause** | Usually the `qiskit` extra is missing, or you are running a different interpreter |
 | **Solution** | Run [Verify Installation](/get-started/verify-installation) |
+
+## Python exits with an access violation on Windows
+
+| | |
+|---|---|
+| **Symptom** | With the 1.3.0 Windows wheel, a script that imports `qiskit_aer` before `menos` exits with status 3221225477 (0xC0000005) on a job with a time budget |
+| **Cause** | `qiskit-aer` ships its own `libopenblas.dll`. Once it is loaded, Windows gives MENOS that library in place of its own, and the first job that reaches LAPACK crashes |
+| **Solution** | Import `menos` before `qiskit_aer`, or use version 1.3.1 or later, whose wheels carry their libraries under hashed names |
 
 ## See also
 

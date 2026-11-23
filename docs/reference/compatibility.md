@@ -26,7 +26,7 @@ What MENOS was built and tested against. "Tested" means exercised by `scripts/ve
 | Linux x86-64 | **Verified** |
 | Linux aarch64 | Intended, not verified |
 | macOS arm64 | Intended, not verified |
-| Windows x64 (MSVC) | **Verified**, CPU only |
+| Windows x64 (MSVC) | **Verified** |
 | Windows ARM64 | Not supported |
 
 ## GPU
@@ -36,7 +36,8 @@ What MENOS was built and tested against. "Tested" means exercised by `scripts/ve
 | NVIDIA GPU | Compute capability 8.6 verified (RTX 3050 Laptop GPU); 8.9 verified running code built for 8.6 (RTX 4060 Laptop GPU) |
 | CUDA toolkit | 12.0 or newer required; 13.4 and 12.4 verified |
 | NVIDIA driver | 595.91.07 verified with toolkit 13.4 (advertises CUDA 13.2); 566.14 verified with toolkit 12.4 under WSL (advertises CUDA 12.7) |
-| CUDA on aarch64, macOS or native Windows | Not supported (on Windows, use WSL) |
+| CUDA on native Windows | Toolkit 12.9 with MSVC 14.44 as the device code's host compiler; verified with driver 566.14 on an RTX 4060 Laptop GPU, code built for 8.9 |
+| CUDA on aarch64 or macOS | Not supported |
 | AMD ROCm, Apple Metal | Not implemented |
 
 ## Qiskit interfaces

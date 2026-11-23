@@ -1,17 +1,29 @@
-# Native Windows verification (docs/adr/0022). The Windows counterpart of
-# scripts/verify.sh, which stays the Linux gate and keeps clang-format,
-# clang-tidy, UBSan/LSan, CUDA and the documentation build.
+# Native Windows verification (docs/adr/0022, docs/adr/0030). The Windows
+# counterpart of scripts/verify.sh, which stays the Linux gate and keeps
+# clang-format, clang-tidy, UBSan/LSan, the Linux CUDA build and the
+# documentation build.
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-windows.ps1 [-Wheels]
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-windows.ps1 [-Wheels] [-Jobs N]
+#
+# -Jobs is how many CPU-preset tests ctest runs at once (default: every
+# hardware thread). The AddressSanitizer build needs fewer on a machine where
+# that many calibrating tests at once exhaust its allocator or starve each
+# other's timings (docs/adr/0028 section 23.5 used 4); the NUMBER_OF_PROCESSORS
+# environment variable can no longer be overridden for this on current Windows
+# builds (docs/adr/0030 section 10.6).
 #
 # Stages: enter a Visual Studio x64 developer environment; fetch OpenBLAS;
 # configure, build and ctest windows-dev (MSVC + AddressSanitizer) and
-# windows-release; build the benchmarks; editable install + pytest on CPython
-# 3.14; build a wheel and run the smoke test from a clean venv. With -Wheels,
-# also cibuildwheel for CPython 3.10-3.14, each wheel running the Python suite.
+# windows-release; build the benchmarks; fetch the CUDA toolkit and do the same
+# for windows-cuda-dev and windows-cuda-release, whose CUDA tests run on the
+# GPU when the machine has one and skip themselves when it has none; editable
+# install + pytest on CPython 3.14; build a wheel and run the smoke test from a
+# clean venv. With -Wheels, also cibuildwheel for CPython 3.10-3.14 (CUDA
+# compiled in), each wheel running the backend check and the Python suite.
 # Exits non-zero at the first failing stage.
 param(
-    [switch]$Wheels
+    [switch]$Wheels,
+    [ValidateRange(1, 1024)][int]$Jobs = [int]$env:NUMBER_OF_PROCESSORS
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,7 +94,7 @@ foreach ($Preset in @("windows-dev", "windows-release")) {
     Stage "build $Preset"
     Run "build $Preset" { cmake --build --preset $Preset }
     Stage "ctest $Preset"
-    Run "ctest $Preset" { ctest --preset $Preset -j $env:NUMBER_OF_PROCESSORS }
+    Run "ctest $Preset" { ctest --preset $Preset -j $Jobs }
 }
 
 Stage "benchmarks build (windows-release)"
@@ -90,6 +102,55 @@ $CacheDefines = Get-CacheDefines
 Run "benchmarks configure" { cmake --preset windows-release -DMENOS_BUILD_BENCHMARKS=ON @CacheDefines }
 Run "benchmarks build" { cmake --build --preset windows-release }
 Run "benchmarks reconfigure" { cmake --preset windows-release -DMENOS_BUILD_BENCHMARKS=OFF }
+
+# CUDA (docs/adr/0030). nvcc 12.x refuses the MSVC 14.50 toolset, so the .cu
+# files are compiled with a Visual Studio 2022 toolset (14.4x) as nvcc's host
+# compiler; CMake takes it from CUDAHOSTCXX and the toolkit from CUDA_PATH.
+Stage "cuda toolkit"
+$HostCl = Get-ChildItem (Join-Path $VsPath "VC\Tools\MSVC\14.4*\bin\Hostx64\x64\cl.exe") -ErrorAction SilentlyContinue |
+    Sort-Object FullName | Select-Object -Last 1
+if (-not $HostCl) {
+    Fail "no Visual Studio 2022 toolset for nvcc (Visual Studio Installer component Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64)"
+}
+# Forward slashes: both values are substituted into CMake presets and into
+# cibuildwheel's environment, where a backslash is an escape character.
+$env:CUDAHOSTCXX = $HostCl.FullName -replace "\\", "/"
+$env:CUDA_PATH = (& (Join-Path $PSScriptRoot "fetch-cuda-windows.ps1")) -replace "\\", "/"
+Write-Output "CUDA_PATH: $env:CUDA_PATH"
+Write-Output "CUDAHOSTCXX: $env:CUDAHOSTCXX"
+Run "nvcc version" { & "$env:CUDA_PATH/bin/nvcc.exe" --version | Select-Object -Last 2 }
+$Gpu = $null
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    $Gpu = & nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>$null
+    if ($LASTEXITCODE -ne 0) { $Gpu = $null }
+}
+if ($Gpu) { Write-Output "GPU: $Gpu" } else { Write-Output "no GPU visible; CUDA tests will skip themselves" }
+
+foreach ($Preset in @("windows-cuda-dev", "windows-cuda-release")) {
+    Stage "configure $Preset"
+    $CacheDefines = Get-CacheDefines
+    Run "configure $Preset" { cmake --preset $Preset @CacheDefines }
+    # When CMake finds CMAKE_CUDA_COMPILER changed (even only in the case of
+    # the repository's path) it deletes the cache and configures again without
+    # the preset's variables: the result is a build with no CUDA and no
+    # sanitizer that would pass this stage untested (docs/adr/0030 section 10.6).
+    $Cache = Get-Content (Join-Path $RepoRoot "build\$Preset\CMakeCache.txt")
+    if (-not ($Cache -match '^MENOS_ENABLE_CUDA:BOOL=ON$')) {
+        Fail "$Preset was configured without CUDA; delete build\$Preset\CMakeCache.txt and run again"
+    }
+    Stage "build $Preset"
+    Run "build $Preset" { cmake --build --preset $Preset }
+    Stage "ctest $Preset"
+    # Not in parallel: the CUDA tests share one device, and several of them
+    # assert on its free memory.
+    Run "ctest $Preset" { ctest --preset $Preset }
+}
+
+Stage "benchmarks build (windows-cuda-release)"
+$CacheDefines = Get-CacheDefines
+Run "cuda benchmarks configure" { cmake --preset windows-cuda-release -DMENOS_BUILD_BENCHMARKS=ON @CacheDefines }
+Run "cuda benchmarks build" { cmake --build --preset windows-cuda-release }
+Run "cuda benchmarks reconfigure" { cmake --preset windows-cuda-release -DMENOS_BUILD_BENCHMARKS=OFF }
 
 Stage "python: venv"
 $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
@@ -127,11 +188,29 @@ if ($Wheels) {
         $env:SKBUILD_CMAKE_DEFINE = ($CacheDefines | ForEach-Object { $_.Substring(2) }) -join ";"
         $env:CIBW_ENVIRONMENT_PASS_WINDOWS = "SKBUILD_CMAKE_DEFINE"
     }
+    # The wheels have CUDA compiled in (pyproject.toml). Each is first shown to
+    # run on the CPU, and on this machine's GPU when it has one or to refuse a
+    # forced CUDA run when it has none (scripts/check_wheel_backends.py).
+    $BackendCheck = "python {project}/scripts/check_wheel_backends.py cuda"
+    if ($Gpu) { $BackendCheck += " --gpu" }
+    $env:CIBW_TEST_COMMAND_WINDOWS = "$BackendCheck && pytest {project}/python/tests -q"
     Run "cibuildwheel" { uvx --python 3.14 cibuildwheel==4.2.1 --platform windows --output-dir wheelhouse }
     $Built = @(Get-ChildItem wheelhouse\*.whl | ForEach-Object { $_.Name })
     $Built | ForEach-Object { Write-Output $_ }
     foreach ($Tag in @("cp310", "cp311", "cp312", "cp313", "cp314")) {
         if (-not ($Built | Where-Object { $_ -like "*-$Tag-$Tag-win_amd64.whl" })) { Fail "no $Tag win_amd64 wheel" }
+    }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    foreach ($WheelFile in Get-ChildItem wheelhouse\*.whl) {
+        $Zip = [System.IO.Compression.ZipFile]::OpenRead($WheelFile.FullName)
+        $Names = @($Zip.Entries | ForEach-Object { $_.FullName })
+        $Zip.Dispose()
+        # Vendored by delvewheel under hashed names (docs/adr/0030 section 5).
+        foreach ($Dll in @("libopenblas", "cudart64_12", "msvcp140")) {
+            if (-not ($Names | Where-Object { $_ -like "menos.libs/$Dll-*.dll" })) {
+                Fail "$($WheelFile.Name) does not carry menos.libs/$Dll-<hash>.dll"
+            }
+        }
     }
 }
 

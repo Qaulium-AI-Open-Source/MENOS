@@ -14,13 +14,13 @@ Each requirement is labelled by how much you need it.
 
 | | Requirement | Label |
 |---|---|---|
-| OS | Linux or Windows | **Required** (macOS and aarch64 are [unverified](/introduction/supported-platforms); Windows is CPU-only) |
+| OS | Linux or Windows | **Required** (macOS and aarch64 are [unverified](/introduction/supported-platforms)) |
 | CPU | x86-64 (x64) | **Required** for what has been verified |
 | Memory | See [Memory](#memory) below | **Required** |
 
 ## Software
 
-The **Required to build** rows apply only to a source install. The [PyPI wheels](/get-started/installation#install-from-pypi) (CPython 3.10–3.14, Linux x86-64) and the Windows wheels need none of them.
+The **Required to build** rows apply only to a source install. The [PyPI wheels](/get-started/installation#install-from-pypi) (CPython 3.10–3.14, Linux x86-64 and Windows x64) need none of them.
 
 | | Version | Label | Notes |
 |---|---|---|---|
@@ -37,14 +37,16 @@ The **Required to build** rows apply only to a source install. The [PyPI wheels]
 
 ## GPU (CUDA)
 
+The Linux wheels on PyPI have the CUDA backend compiled in and carry the CUDA 12.9 runtime, so they need only an NVIDIA GPU (compute capability 7.5 or newer) and a driver that supports CUDA 12. From version 1.3.1 the same holds for the Windows wheels (the 1.3.0 Windows wheels are CPU-only). The table below is for building with CUDA from source.
+
 | | Requirement | Label |
 |---|---|---|
 | NVIDIA GPU | **Compute capability 8.6** is what the build targets by default | **GPU-only** |
-| NVIDIA driver | A driver supporting your CUDA toolkit; 595.91.07 was used with toolkit 13.4, 566.14 with toolkit 12.4 | **GPU-only** |
-| CUDA toolkit | **12.0 or newer**; 13.4 and 12.4 were verified | **GPU-only** |
-| Host compiler | The same C++ compiler as above | **GPU-only** |
+| NVIDIA driver | A driver supporting your CUDA toolkit; 595.91.07 was used with toolkit 13.4, 566.14 with toolkits 12.4 (WSL) and 12.9 (Windows) | **GPU-only** |
+| CUDA toolkit | **12.0 or newer**; 13.4 and 12.4 were verified on Linux, 12.9 on Windows | **GPU-only** |
+| Host compiler | On Linux, the same C++ compiler as above. On Windows, the MSVC 14.44 toolset for the device code only, beside 14.50 | **GPU-only** |
 
-GPUs of other compute capabilities can be targeted by overriding the architecture at configure time; only compute capability 8.6 has been tested. Details, including a two-toolkit pitfall, are in [CUDA Requirements](/gpu/cuda-requirements).
+GPUs of other compute capabilities can be targeted by overriding the architecture at configure time; builds for compute capability 8.6 (Linux) and 8.9 (Windows) are the ones tested. Details, including a two-toolkit pitfall, are in [CUDA Requirements](/gpu/cuda-requirements).
 
 ## Development
 

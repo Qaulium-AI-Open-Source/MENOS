@@ -1,6 +1,6 @@
 # CUDA Installation
 
-A default MENOS install has **no GPU support**. This page shows how to build the CUDA backend and confirm it is used.
+The **Linux wheels on PyPI have the CUDA backend compiled in** (version 1.3.0 and later): they are built with the CUDA 12.9 toolkit for compute capabilities 7.5 to 12.0 and carry the CUDA runtime, so `pip install menos` on Linux x86-64 needs only an NVIDIA GPU and a driver that supports CUDA 12. From version 1.3.1 the **Windows wheels (`win_amd64`) have it too**, built with the same toolkit and carrying `cudart64_12.dll`; the 1.3.0 Windows wheels are CPU-only. With such a wheel, skip to [confirming the GPU is used](#confirm-it-is-used). A default source build has **no GPU support**. The rest of this page shows how to build the CUDA backend from source and confirm it is used.
 
 ## Do I need CUDA?
 
@@ -62,6 +62,25 @@ ctest --preset cuda12-release --output-on-failure
 ```
 
 The `cuda-dev` and `cuda-release` presets pin `/usr/local/cuda` and compute capability 8.6, and the `cuda12-*` presets pin `/usr/bin/nvcc`, `/usr`, `g++-13` and compute capability 8.6. Those are values for the development machine; on another machine change them. CMake allows command-line definitions to override a preset's cache variables, but overriding the architecture that way has not been tested here.
+
+## On Windows
+
+The native Windows build (MSVC) has the CUDA backend from version 1.3.1 (`docs/adr/0030`). It needs two things beyond the [CPU build](/get-started/installation#on-windows):
+
+- **The CUDA 12.9 compiler and runtime.** `scripts\fetch-cuda-windows.ps1` downloads NVIDIA's redistributable archives, checks their SHA-256 hashes and unpacks them under `build\_deps`; it prints the directory to use as `CUDA_PATH`. Nothing is installed system-wide and the GPU driver is not touched.
+- **A second MSVC toolset for the device code.** The CUDA 12 compiler accepts Visual Studio 2017 to 2022 only, and MENOS's C++ is built with the Visual Studio 2026 toolset (14.50). Install the **MSVC v143 (14.44)** toolset beside it (Visual Studio Installer component `Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64`) and set `CUDAHOSTCXX` to its `cl.exe`. Only the `.cu` files are compiled with it.
+
+`scripts\verify-windows.ps1` sets both and then builds and tests the two CUDA presets. By hand, from a Visual Studio x64 developer environment entered with `-vcvars_ver=14.50`:
+
+```powershell
+$env:CUDA_PATH = (& .\scripts\fetch-cuda-windows.ps1) -replace "\\", "/"
+$env:CUDAHOSTCXX = "<Visual Studio>/VC/Tools/MSVC/14.44.<build>/bin/Hostx64/x64/cl.exe"
+cmake --preset windows-cuda-release
+cmake --build --preset windows-cuda-release
+ctest --preset windows-cuda-release --output-on-failure
+```
+
+The `windows-cuda-*` presets build for compute capability 8.9, the development GPU's; on another GPU pass `-DCMAKE_CUDA_ARCHITECTURES=<yours>`. The build places `cudart64_12.dll` beside every executable, and the wheel carries it under a hashed name in `menos.libs`, so a machine that runs MENOS needs only the NVIDIA driver.
 
 ## How MENOS detects CUDA
 
