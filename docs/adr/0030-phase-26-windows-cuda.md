@@ -435,3 +435,28 @@ The Linux job built and validated the five `manylinux_2_27_x86_64.manylinux_2_28
 
 With this, every gate criterion of section 8 has evidence; criterion 6 (the split Windows run of section 12.2, and the runs being on the tree before it was committed) is still the owner's ruling.
 
+
+## 14. Publication of 1.3.1 — 2026-11-23
+
+**This reverses the owner's answer to Q3** (section 9: "version 1.3.1, built and verified only. Nothing is uploaded to PyPI in this phase") and the statements that follow from it in sections 2.2 and 5. Those are kept as written; this section is the record of the change. The owner decided on 2026-11-23 to publish, and uploaded the wheels with `twine upload` from the development machine, under the owner's own PyPI token.
+
+What was uploaded: the ten wheels built and tested by workflow run 45029085673 (section 13.4) on `8ca0c8b`, downloaded from its artifacts `menos-linux-wheels` and `menos-windows-wheels`. `twine check` passed on all ten before the upload. `twine upload` reported each of the ten files at 100% and ended with `View at: https://pypi.org/project/menos/1.3.1/`. A first attempt was refused with `403 Forbidden` before any file was accepted (a credentials error); the second attempt is the one that uploaded.
+
+| File | SHA-256 |
+|---|---|
+| `menos-1.3.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` | `6340f0abf38aba6e14ea11b904e2bfb289e9ba69e46fc740fab0bb627089c4e9` |
+| `menos-1.3.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` | `50620261b4310b1789f279c580ec6e255c6198ba52043c0ca369ebdc436cf163` |
+| `menos-1.3.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` | `3ba9f8945c47e92a9e35bef11a67e2f19b799b911e8e2031bf0ef0bae7c54bbb` |
+| `menos-1.3.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` | `e914cafe3a3dfbf87b5849748f18c923452e1535bfd9622385977e3f80cf0cc0` |
+| `menos-1.3.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` | `a9ede0a6535545180a0a5d89118b6efdac84a7c550513b3ad073bd7bcf4868d3` |
+| `menos-1.3.1-cp310-cp310-win_amd64.whl` | `9abc771b0efb60a4459e070c013686acadb646ac59d62f6f0f19f203666316ca` |
+| `menos-1.3.1-cp311-cp311-win_amd64.whl` | `602eb5a9b50997f6b56247b239a377a5121357cf9944e0a4f9e6d1851485e95e` |
+| `menos-1.3.1-cp312-cp312-win_amd64.whl` | `e20cc1c291fef50ba27da7c83d72162e8fa311b1cd7849c9c4d99d0a18dfa7a7` |
+| `menos-1.3.1-cp313-cp313-win_amd64.whl` | `e4ad755b477c2d2cac156a188fd43e4715eb73a6540ecb07b90d1281b92a2833` |
+| `menos-1.3.1-cp314-cp314-win_amd64.whl` | `808b953835c77f0e552f2944702e75bccbfae4ee9779fefd0e32acd3ba276d4f` |
+
+The hashes are of the files on the development machine that were handed to `twine`. Not verified here: the hashes PyPI lists, and an install of 1.3.1 from PyPI into a clean environment.
+
+The branch reached `main` the same day (pull request #2, merge `407ed9b`; `main` at `bb74576`). Between `8ca0c8b` and `bb74576` no source, test or build file changed: the only differences are this ADR and the five files under `wheelhouse-1.3.1/` added by `881ee7d`. Those five are **not** the published wheels. They are an earlier local Windows build from before the fixes of sections 10.4 and 11, and differ in size from the published `win_amd64` files.
+
+The gate is still open: publishing and merging do not pass it. Criterion 6 and the gate itself remain the owner's ruling (sections 12.5 and 13.4).
